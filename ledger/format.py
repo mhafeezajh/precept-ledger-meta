@@ -11,7 +11,7 @@ import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import rfc8785
 
@@ -76,7 +76,7 @@ def check_ijson(value: object, path: str = "$") -> None:
 def canonical_bytes(value: object) -> bytes:
     """RFC 8785 bytes of ``value``: the only serialization used for hashing or signing."""
     check_ijson(value)
-    return rfc8785.dumps(value)
+    return rfc8785.dumps(cast(Any, value))  # check_ijson just proved value is a JSON value
 
 
 def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
