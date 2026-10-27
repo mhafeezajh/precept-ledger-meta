@@ -9,7 +9,7 @@ without answering the question. The owner can overturn them; the code changes wi
 These are not up for trade-off. Every module is checked against them before it is called done.
 
 | ID | Rule |
-|---|---|
+| --- | --- |
 | H1 | **New work only.** Every line of code is written from Oct 27, 2026 onward; the demo shows only work built during the event. No code from `precept-insight` or any other private source. The README's "Built during the hackathon" section lists every component. |
 | H2 | **Commercial core stays out.** No commercial Gate runtime, bundle signing, SPIFFE/mTLS or Terraform. |
 | H3 | **Code decides, models extract.** No model call in the allow / deny / escalate path, in verification or in the claim checker. |
@@ -21,7 +21,7 @@ These are not up for trade-off. Every module is checked against them before it i
 ## Architecture decisions (from `docs/ARCHITECTURE.md`)
 
 | ID | Decision | Rejected | Why | Date |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | D1 | Transparency log with witness quorum and external anchors | Public blockchain; permissioned chain (Hyperledger Fabric) | Same tamper guarantees without exposing data, fees or running consensus nodes in 9 days | 2026-10-25 |
 | D2 | Python for the whole build | Go, as in the product | Speed for a solo 9-day build; AI libraries are Python-native | 2026-10-25 |
 | D3 | Postgres with insert-only triggers | SQLite; an immutable database product | One engine, real permission model for the tamper demo | 2026-10-25 |
@@ -36,7 +36,7 @@ These are not up for trade-off. Every module is checked against them before it i
 These resolve conflicts C1–C9 found between the kickoff, `docs/ARCHITECTURE.md` and the engineering skill.
 
 | ID | Decision | Rejected | Why | Date |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | D9 (C1, **default**) | The producer signs the record **without** `seq`, `prev_hash` and `producer.sig`. The ledger assigns `seq` and `prev_hash`; the chain and leaf hashes cover the full stored record including the signature. | Producer signs the whole record minus `sig` (as ARCHITECTURE first read) | The producer cannot know `seq`/`prev_hash` without locking the ledger head, which breaks concurrent appends. Consequence: the operator can reorder or drop records and recompute the chain without breaking producer signatures; that attack is caught by receipts held by producers (signed `seq` + `chain_hash`) and, from day 2–3, by checkpoints and witnesses. Tested in the tamper suite. | 2026-10-27 |
 | D10 (C2, **default**) | Envelopes carry `alg`: `producer.alg` on records, top-level `alg` on receipts. Only `ed25519` is accepted. | No `alg` field | Algorithm agility (skill §4); a later hybrid with ML-DSA needs no hash change. Unknown `alg` is rejected, never guessed. | 2026-10-27 |
 | D11 (C3, **default**) | Receipt = `{v, alg, stream, record_id, seq, leaf_hash, chain_hash, received_at, key_id, sig}`, table `receipt`. | Kickoff's `ledger_receipt(record_id, seq, hash, signature, key_id)` | Follows ARCHITECTURE; `stream` added because `seq` is only unique within a stream; `v`/`alg`/`key_id` make the receipt self-describing. | 2026-10-27 |
@@ -57,7 +57,7 @@ These resolve conflicts C1–C9 found between the kickoff, `docs/ARCHITECTURE.md
 ## Dependencies
 
 | Package | Version | Licence | Why | Added |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `cryptography` | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Ed25519, SHA-256 | 2026-10-27 |
 | `rfc8785` | 0.1.4 | Apache-2.0 | RFC 8785 canonical JSON | 2026-10-27 |
 | `psycopg[binary]` | 3.3.6 | LGPL-3.0 | Postgres driver (used unmodified as a library) | 2026-10-27 |

@@ -80,7 +80,8 @@ The ledger is a transparency log, the design behind Certificate Transparency and
 | Merkle leaf | `SHA-256(0x00 ‖ JCS(record))` |
 | Merkle node | `SHA-256(0x01 ‖ left ‖ right)` |
 | Checkpoint | Text note: log origin, tree size, base64 root hash, signed by the log key as a signed note |
-| Receipt | Ledger signs `{record_id, seq, leaf_hash, chain_hash, received_at}` immediately; the inclusion proof follows at the next checkpoint, at most 10 seconds later in the demo |
+| Producer signature | `Ed25519(producer_key, "PL-record-v1\x00" ‖ JCS(record − {seq, prev_hash, producer.sig}))` (D9, D18) |
+| Receipt | Ledger signs `"PL-receipt-v1\x00" ‖ JCS({v, alg, stream, record_id, seq, leaf_hash, chain_hash, received_at, key_id})` immediately (D11, D18); the inclusion proof follows at the next checkpoint, at most 10 seconds later in the demo |
 | Cosignature | Witness signs `{checkpoint, timestamp}` after verifying a consistency proof from its last cosigned size |
 
 The prefixes `PL-chain-v1`, `0x00` and `0x01` keep one kind of hash from ever being mistaken for another.
@@ -95,13 +96,13 @@ The prefixes `PL-chain-v1`, `0x00` and `0x01` keep one kind of hash from ever be
   "record_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0",
   "ts": "2026-10-29T21:14:03.112Z",
   "type": "gate.decision",
-  "producer": {"id": "gate-1", "key_id": "ed25519:9f2c...", "sig": "base64..."},
+  "producer": {"id": "gate-1", "alg": "ed25519", "key_id": "ed25519:9f2c...", "sig": "base64..."},
   "body": {"agent": "payments-ops", "action": "value.transfer", "decision": "escalate", "resource": {"amount": 48000, "payee_new": true}, "policy_ids": ["pay-new-payee-01"]},
   "prev_hash": "base64..."
 }
 ```
 
-The producer signature covers the canonical record without the `sig` field. Unknown fields and non-I-JSON values are rejected.
+The producer signature covers the canonical record without `seq`, `prev_hash` and `sig`: the ledger assigns `seq` and `prev_hash` at append time, so the producer cannot know them (D9). The chain and leaf hashes cover the full stored record, signature included. Unknown fields, unknown `alg`, floats and other non-I-JSON values are rejected. The first record in a stream has `seq` 1 and `prev_hash` = 32 zero bytes (D16). `key_id` is `"ed25519:"` + hex SHA-256 of the raw public key; hashes and signatures are canonical standard base64 (D19).
 
 ### How it compares to a blockchain
 
@@ -197,8 +198,8 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 
 | Table | Key fields | Write rule |
 | --- | --- | --- |
-| `ledger_record` | stream, seq, record\_id, ts, type, producer, body, prev\_hash, chain\_hash, leaf\_hash | Insert only; UPDATE and DELETE rejected by trigger |
-| `receipt` | record\_id, seq, signature, key\_id | Insert only |
+| `ledger_record` | stream, seq, record\_id, v, ts, type, producer\_id, producer\_alg, producer\_key\_id, producer\_sig, body (jsonb), prev\_hash, chain\_hash, leaf\_hash | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger. The record is rebuilt from these columns for verification (D21) |
+| `receipt` | record\_id, v, alg, stream, seq, leaf\_hash, chain\_hash, received\_at, key\_id, sig | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger |
 | `checkpoint` | stream, tree\_size, root\_hash, note, log\_signature | Insert only; also written to a write-once directory |
 | `cosignature` | checkpoint\_id, witness\_id, signature, ts | Insert only |
 | `anchor` | checkpoint\_id, kind (`rfc3161`, `ots`), token, status | Insert, then status updates |
@@ -322,3 +323,13 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | O4 | Whether one witness can run on a separate host (Modal or a second machine) to make independence visible | Oct 29 |
 | O5 | OpenTimestamps confirmation takes hours: submit on day 3 so a confirmed Bitcoin proof is ready for the video | Oct 29 |
 | O6 | Managed Postgres for the Modal deployment (Modal Volumes are not suited to a live database) | Nov 2 |
+
+## Change log
+
+| Date | Section | Change | Why |
+| --- | --- | --- | --- |
+| 2026-10-27 | Record envelope | Added `producer.alg` | Algorithm agility; unknown `alg` rejected (D10) |
+| 2026-10-27 | Record envelope, Exact formulas | Producer signature excludes `seq` and `prev_hash`; added the signing formula with context string `PL-record-v1\x00` | Producer cannot know ledger-assigned fields; domain separation (D9, D18). Re-chaining attacks this allows are caught by receipts now and by witnesses from day 3 |
+| 2026-10-27 | Exact formulas | Receipt adds `v`, `alg`, `stream`, `key_id`; signed with context `PL-receipt-v1\x00` | `seq` is unique only per stream; self-describing receipts (D11, D18) |
+| 2026-10-27 | Record envelope | `seq` starts at 1; integers only (no floats); `key_id` and base64 encodings defined | D16, D17, D19 |
+| 2026-10-27 | Data model | `ledger_record` producer split into columns; `receipt` columns listed in full; TRUNCATE also blocked | Direct row edits must change what the verifier sees (D21) |
