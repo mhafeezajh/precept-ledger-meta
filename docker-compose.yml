@@ -11,7 +11,7 @@ services:
       - "${PG_PORT:-5432}:5432"
     volumes:
       - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
-      - ./ledger/schema.sql:/docker-entrypoint-initdb.d/20-ledger-schema.sql:ro
+      - ./ledger/schema.sql:/schema/ledger.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d precept_ledger"]
       interval: 2s

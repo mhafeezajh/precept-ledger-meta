@@ -1,3 +1,7 @@
+# Load .env if present so make targets see DATABASE_URL etc. .env is git-ignored.
+-include .env
+export
+
 .PHONY: check lint typecheck test test-integration vectors secrets db-up db-down
 
 check: lint typecheck test secrets
