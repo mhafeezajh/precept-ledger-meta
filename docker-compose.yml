@@ -1,0 +1,19 @@
+# Day 1: Postgres only. Ledger API, witnesses, Gate, web and agent join as they are built.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: precept_ledger
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      PL_APP_PASSWORD: ${PL_APP_PASSWORD:?set PL_APP_PASSWORD in .env}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - ./deploy/postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./ledger/schema.sql:/docker-entrypoint-initdb.d/20-ledger-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d precept_ledger"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

@@ -1,0 +1,8 @@
+title = "precept-ledger gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deterministic TEST ONLY key seeds used by unit tests and published test vectors"
+paths = ['''^tests/keys/''', '''^tests/vectors/''']
