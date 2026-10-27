@@ -8,9 +8,9 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 
 | Module | Status | Docs |
 | --- | --- | --- |
-| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores, C2SP signed checkpoints and the Postgres tree adapter done. HTTP API and export bundle next | [`docs/modules/ledger.md`](docs/modules/ledger.md), [`docs/modules/checkpoints.md`](docs/modules/checkpoints.md) |
+| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores, C2SP signed checkpoints and the Postgres tree adapter done. HTTP API next | [`docs/modules/ledger.md`](docs/modules/ledger.md), [`docs/modules/checkpoints.md`](docs/modules/checkpoints.md) |
 | `merkle/` | Done for now. RFC 9162 core, inclusion and consistency proofs, `TreeStore` port, memory adapter | [`docs/modules/merkle.md`](docs/modules/merkle.md) |
-| `verify/` (`pl-verify`) | Not started | |
+| `verify/` (`pl-verify`) | Done for now. Export bundle v1, `pl-export`, offline `pl-verify` naming the first broken seq and record; witness quorum later | [`docs/modules/verify.md`](docs/modules/verify.md) |
 | `witness/` | Not started | |
 | `anchor/` | Not started | |
 | `gate/` | Not started | |
@@ -27,11 +27,12 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 277 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 357 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
-make test-integration   # Postgres 16 via docker compose; 14 tests incl. an admin edit caught at its seq
-                        # and a rewritten leaf the checkpointer refuses to sign
+make test-integration   # Postgres 16 via docker compose; 16 tests incl. demo beat 4 end to end
+                        # (edit a row, export, pl-verify names the record)
 make vectors            # regenerate tests/vectors/ledger-v1.json and checkpoint-v1.json
+uv run pl-export --out export.tar && uv run pl-verify export.tar --keys keys.json   # offline check
 ```
 
 ## Built during the hackathon (Oct 27 – Nov 4)
@@ -49,5 +50,6 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | `merkle/`: RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port, `LogTree`, memory adapter; vectors in `tests/vectors/merkle-rfc9162.json` (published data, see D26) |
 | Oct 27 | `ledger/checkpoint.py`, `ledger/checkpointer.py`, `ledger/pg_tree.py`: C2SP signed checkpoints, consistency-checked checkpointer, write-once directory and Postgres sinks, `checkpoint` table, Postgres and memory tree adapters; vectors in `tests/vectors/checkpoint-v1.json` and `signed-note-published.json` (D29) |
 | Oct 27 | `docs/modules/README.md`: knowledge-base index and table of every signing context |
+| Oct 27 | `ledger/export.py`, `ledger/export_cli.py` (`pl-export`), `verify/` (`pl-verify`): export bundle v1, hostile-input bundle reader, trusted keys, independent chain/receipt/checkpoint checks, CLI; tamper suite, differential test against `ledger.chain`, network-forbidden subprocess test |
 
 Meta tooling used so far: none. Model calls start with Gate and the demo agent (day 4). Muse Code will be used for at least one slice and recorded here.

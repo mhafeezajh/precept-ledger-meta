@@ -2,7 +2,7 @@
 
 Guarantees that every accepted record is signed by its producer, chained to the record before it, and acknowledged with a receipt signed by the log key, so any later edit, deletion, insertion or reordering is caught at its sequence number.
 
-Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores, and signed checkpoints are done ([`checkpoints.md`](checkpoints.md)). The HTTP API and export bundle are not built yet. · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 95%). Checkpoint tests are counted in [`checkpoints.md`](checkpoints.md)
+Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores, and signed checkpoints are done ([`checkpoints.md`](checkpoints.md)). The export bundle is done ([`verify.md`](verify.md)). The HTTP API is not built yet. · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 95%). Checkpoint tests are counted in [`checkpoints.md`](checkpoints.md)
 
 ## Responsibilities
 
@@ -156,7 +156,7 @@ D3, D9–D24 in [`docs/DECISIONS.md`](../DECISIONS.md).
 
 ## Known gaps
 
-- The export bundle (next, with `pl-verify`). Signed checkpoints and the Postgres `TreeStore` adapter are done; see [`checkpoints.md`](checkpoints.md).
+- Range exports. Whole-stream export (`ledger/export.py`, `pl-export`) is done and documented with its verifier in [`verify.md`](verify.md).
 - No HTTP API yet (`/ledger/v1/...`). `Ledger.append_json` is the boundary the POST handler will call.
 - No JSON logging with `trace_id` yet (`common/logging.py`). The ledger currently logs nothing.
 - Key rotation records are not implemented.
