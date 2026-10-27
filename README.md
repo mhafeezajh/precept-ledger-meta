@@ -51,6 +51,7 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | Tests: unit, property (`hypothesis`), tamper suite, test vectors (`tests/vectors/ledger-v1.json`), Postgres integration |
 | Oct 27 | `merkle/`: RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port, `LogTree`, memory adapter; vectors in `tests/vectors/merkle-rfc9162.json` (published data, see D26) |
 | Oct 27 | `ledger/checkpoint.py`, `ledger/checkpointer.py`, `ledger/pg_tree.py`: C2SP signed checkpoints, consistency-checked checkpointer, write-once directory and Postgres sinks, `checkpoint` table, Postgres and memory tree adapters; vectors in `tests/vectors/checkpoint-v1.json` and `signed-note-published.json` (D29) |
+| Oct 27 | `ledger/canonical.py`: canonical JSON, encodings and hashes split out of `ledger/format.py` (size limit), no format change |
 | Oct 27 | `docs/modules/README.md`: knowledge-base index and table of every signing context |
 | Oct 27 | `ledger/export.py`, `ledger/export_cli.py` (`pl-export`), `verify/` (`pl-verify`): export bundle v1, hostile-input bundle reader, trusted keys, independent chain/receipt/checkpoint checks, CLI; tamper suite, differential test against `ledger.chain`, network-forbidden subprocess test |
 | Oct 27 | `ledger/api.py`, `ledger/checkpoint_loop.py`, `ledger/server.py` (`pl-ledger`), `common/logging.py`, `scripts/dev_keys.py`: ledger HTTP API, 10 s checkpoint loop, JSON logs with trace ids, dev keys |

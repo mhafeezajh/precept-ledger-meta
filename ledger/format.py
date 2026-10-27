@@ -1,39 +1,41 @@
-"""Record format v1: canonical JSON, field validation, hash formulas and signing inputs.
+"""Record format v1: field validation, record and receipt types, and signing inputs.
 
 The offline verifier may import this module (skill §2), so it stays pure: no I/O, no keys,
-no network. Every hashed or signed byte string in the project is built here.
+no network. Every hashed or signed byte string in the project is built here or in
+``ledger.canonical`` (canonical JSON, encodings, hashes), whose names are re-exported below.
 """
 
-import base64
-import binascii
-import hashlib
-import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, cast
-
-import rfc8785
+from typing import Any
 
 from common.clock import parse_ts
 from common.errors import FormatError
 from common.ids import is_ulid
-from merkle.hashing import LEAF_PREFIX as LEAF_PREFIX  # re-exported for callers
-from merkle.hashing import NODE_PREFIX as NODE_PREFIX
-from merkle.hashing import leaf_hash as merkle_leaf_hash
+from ledger.canonical import CHAIN_PREFIX as CHAIN_PREFIX  # re-exported: callers import format
+from ledger.canonical import GENESIS_HASH as GENESIS_HASH
+from ledger.canonical import HASH_SIZE as HASH_SIZE
+from ledger.canonical import LEAF_PREFIX as LEAF_PREFIX
+from ledger.canonical import MAX_SAFE_INT as MAX_SAFE_INT
+from ledger.canonical import NODE_PREFIX as NODE_PREFIX
+from ledger.canonical import b64decode as b64decode
+from ledger.canonical import b64encode as b64encode
+from ledger.canonical import canonical_bytes as canonical_bytes
+from ledger.canonical import chain_hash as chain_hash
+from ledger.canonical import check_ijson as check_ijson
+from ledger.canonical import key_id_for as key_id_for
+from ledger.canonical import leaf_hash as leaf_hash
+from ledger.canonical import parse_canonical as parse_canonical
+from ledger.canonical import parse_json_strict as parse_json_strict
 
 RECORD_VERSION = 1
 ALG_ED25519 = "ed25519"
 SUPPORTED_ALGS = frozenset({ALG_ED25519})  # skill §4: unknown alg is rejected, never guessed
-HASH_SIZE = 32
 SIG_SIZE = 64
-MAX_SAFE_INT = 2**53 - 1
 MAX_RECORD_BYTES = 64 * 1024
 
-# Domain separation (skill §4, D18): no two kinds of object are ever hashed or signed alike.
-# LEAF_PREFIX and NODE_PREFIX come from merkle.hashing (D25) and are re-exported here.
-GENESIS_HASH = bytes(HASH_SIZE)
-CHAIN_PREFIX = b"PL-chain-v1"
+# Signing contexts (skill §4, D18); the chain and Merkle prefixes are in ledger.canonical.
 RECORD_SIG_CONTEXT = b"PL-record-v1\x00"
 RECEIPT_SIG_CONTEXT = b"PL-receipt-v1\x00"
 
@@ -41,127 +43,6 @@ _STREAM = re.compile(r"^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*)*$")
 _TYPE = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$")
 _PRODUCER_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _KEY_ID = re.compile(r"^ed25519:[0-9a-f]{64}$")
-
-
-# --- canonical JSON -------------------------------------------------------------------------
-
-
-def check_ijson(value: object, path: str = "$") -> None:
-    """Raise unless ``value`` is I-JSON as this project restricts it: no floats (D17)."""
-    if value is None or isinstance(value, bool):
-        return
-    if isinstance(value, int):
-        if not -MAX_SAFE_INT <= value <= MAX_SAFE_INT:
-            raise FormatError(f"{path}: integer outside ±(2^53-1)", code="format.not_ijson")
-    elif isinstance(value, str):
-        try:
-            value.encode("utf-8")
-        except UnicodeEncodeError as exc:
-            raise FormatError(
-                f"{path}: string is not valid Unicode", code="format.not_ijson"
-            ) from exc
-    elif isinstance(value, list):
-        for index, item in enumerate(value):
-            check_ijson(item, f"{path}[{index}]")
-    elif isinstance(value, dict):
-        for key, item in value.items():
-            if not isinstance(key, str):
-                raise FormatError(
-                    f"{path}: object key {key!r} is not a string", code="format.not_ijson"
-                )
-            check_ijson(key, f"{path}.<key>")
-            check_ijson(item, f"{path}.{key}")
-    else:
-        raise FormatError(f"{path}: {type(value).__name__} is not allowed", code="format.not_ijson")
-
-
-def canonical_bytes(value: object) -> bytes:
-    """RFC 8785 bytes of ``value``: the only serialization used for hashing or signing."""
-    check_ijson(value)
-    return rfc8785.dumps(cast(Any, value))  # check_ijson just proved value is a JSON value
-
-
-def _reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            raise FormatError(f"duplicate key {key!r}", code="format.duplicate_key")
-        result[key] = value
-    return result
-
-
-def _reject_float(text: str) -> None:
-    raise FormatError(f"number {text} is not an integer", code="format.not_ijson")
-
-
-def _parse_int(text: str) -> int:
-    value = int(text)
-    if not -MAX_SAFE_INT <= value <= MAX_SAFE_INT:
-        raise FormatError(f"integer {text} outside ±(2^53-1)", code="format.not_ijson")
-    return value
-
-
-def parse_json_strict(data: bytes) -> object:
-    """Parse UTF-8 JSON, rejecting duplicate keys, NaN/Infinity, floats and unsafe integers."""
-    try:
-        text = data.decode("utf-8")
-        value = json.loads(
-            text,
-            object_pairs_hook=_reject_duplicates,
-            parse_float=_reject_float,
-            parse_int=_parse_int,
-            parse_constant=_reject_float,
-        )
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise FormatError(f"not valid UTF-8 JSON: {exc}", code="format.bad_json") from exc
-    check_ijson(value)
-    return value
-
-
-def parse_canonical(data: bytes) -> object:
-    """Parse ``data`` and require it to be byte-identical to its own canonical form (D20)."""
-    value = parse_json_strict(data)
-    if canonical_bytes(value) != data:
-        raise FormatError("bytes are not RFC 8785 canonical", code="format.not_canonical")
-    return value
-
-
-# --- encodings and hashes -------------------------------------------------------------------
-
-
-def b64encode(data: bytes) -> str:
-    return base64.b64encode(data).decode("ascii")
-
-
-def b64decode(text: str, *, size: int, field: str) -> bytes:
-    """Decode padded standard base64 of exactly ``size`` bytes, canonical spelling only (D19)."""
-    try:
-        data = base64.b64decode(text.encode("ascii"), validate=True)
-    except (UnicodeEncodeError, binascii.Error) as exc:
-        raise FormatError(f"{field}: not standard base64", code="format.bad_base64") from exc
-    if len(data) != size or b64encode(data) != text:
-        raise FormatError(
-            f"{field}: expected canonical base64 of {size} bytes", code="format.bad_base64"
-        )
-    return data
-
-
-def key_id_for(public_key_raw: bytes) -> str:
-    if len(public_key_raw) != 32:
-        raise FormatError("Ed25519 public key must be 32 bytes", code="format.bad_key")
-    return "ed25519:" + hashlib.sha256(public_key_raw).hexdigest()
-
-
-def chain_hash(prev_hash: bytes, record_bytes: bytes) -> bytes:
-    """``h_n = SHA-256("PL-chain-v1" ‖ h_(n-1) ‖ JCS(record_n))``."""
-    if len(prev_hash) != HASH_SIZE:
-        raise FormatError("previous hash must be 32 bytes", code="format.bad_hash")
-    return hashlib.sha256(CHAIN_PREFIX + prev_hash + record_bytes).digest()
-
-
-def leaf_hash(record_bytes: bytes) -> bytes:
-    """RFC 9162 leaf hash of a record: ``SHA-256(0x00 ‖ JCS(record))``, defined in ``merkle``."""
-    return merkle_leaf_hash(record_bytes)
 
 
 # --- field helpers --------------------------------------------------------------------------

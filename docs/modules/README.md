@@ -29,7 +29,7 @@ One table for every hashed or signed byte string, so a new one never collides wi
 | Object | Key | Signed or hashed bytes | Defined in |
 | --- | --- | --- | --- |
 | Record (producer signature) | Producer | `"PL-record-v1\x00" ‖ JCS(record − seq, prev_hash, producer.sig)` | `ledger/format.py` |
-| Chain hash | | `SHA-256("PL-chain-v1" ‖ h_(n−1) ‖ JCS(record))` | `ledger/format.py` |
+| Chain hash | | `SHA-256("PL-chain-v1" ‖ h_(n−1) ‖ JCS(record))` | `ledger/canonical.py` |
 | Merkle leaf, node | | `SHA-256(0x00 ‖ JCS(record))`, `SHA-256(0x01 ‖ left ‖ right)` | `merkle/hashing.py` |
 | Receipt | Log | `"PL-receipt-v1\x00" ‖ JCS(receipt − sig)` | `ledger/format.py` |
 | Checkpoint | Log | Note text (C2SP signed-note); contains no NUL, so it never matches the two above | `ledger/checkpoint.py` |

@@ -8,7 +8,7 @@ Status: partial. Records, producer signatures, chain, receipts, memory and Postg
 
 Owns:
 
-- The v1 record format: RFC 8785 canonical bytes, exact field validation and I-JSON rules (`format.py`).
+- The v1 record format: exact field validation, record and receipt types, signing inputs (`format.py`); RFC 8785 canonical bytes, I-JSON rules, base64 and the chain hash (`canonical.py`, re-exported by `format.py`).
 - Ed25519 keys, producer signatures and the key ring the ledger trusts (`signing.py`).
 - The hash chain and verifying a stream (`chain.py`).
 - Issuing and checking receipts, and detecting conflicting receipts (`receipts.py`).
