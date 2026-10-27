@@ -2,7 +2,7 @@
 
 Guarantees that every accepted record is signed by its producer, chained to the record before it, and acknowledged with a receipt signed by the log key, so any later edit, deletion, insertion or reordering is caught at its sequence number.
 
-Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores are done. The Merkle tree, checkpoints, proofs and HTTP API are not built yet (day 2). · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 92%)
+Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores, and signed checkpoints are done ([`checkpoints.md`](checkpoints.md)). The HTTP API and export bundle are not built yet. · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 95%). Checkpoint tests are counted in [`checkpoints.md`](checkpoints.md)
 
 ## Responsibilities
 
@@ -18,7 +18,7 @@ Owns:
 Does not own:
 
 - Deciding anything. That is Gate's job; the ledger records decisions.
-- Merkle hashing and proofs: the `merkle/` package (D25). Checkpoints and the export bundle are day 2.
+- Merkle hashing and proofs: the `merkle/` package (D25). Checkpoints live in `ledger/` but have their own page, [`checkpoints.md`](checkpoints.md).
 - Witnesses and anchors (day 3).
 - Key storage in production (KMS/HSM). Keys are loaded from files under `KEYS_DIR`.
 
@@ -107,7 +107,7 @@ Postgres tables (`ledger/schema.sql`): `ledger_record` has the record split into
 
 What it does not protect against yet:
 
-- An operator who rewrites history while no producer kept its receipts. Witnessed checkpoints (day 2–3) close this.
+- An operator who rewrites history while no producer kept its receipts. Signed checkpoints now make the rewrite visible to anyone holding an older checkpoint; witnesses (day 3) close it.
 - A stolen producer key. Forged records would verify.
 - Edits to the stored `chain_hash` column alone. Verification recomputes hashes and never reads that column, so the edit changes no verified data and is not reported at its row. The column is used only to find the head: the next append chains from the edited value and is reported as `prev_hash_mismatch` at that new `seq`.
 
@@ -144,11 +144,11 @@ receipt =
 uv sync
 make check              # ruff, mypy --strict, unit + property tests with coverage ≥ 90%, gitleaks
 cp .env.example .env    # then set passwords
-make test-integration   # starts Postgres 16 via docker compose, runs the 7 integration tests
+make test-integration   # starts Postgres 16, re-applies schema.sql, runs all 14 integration tests
 make vectors            # regenerates tests/vectors/ledger-v1.json; a diff means the format changed
 ```
 
-Environment variables: `DATABASE_URL` (app role), `ADMIN_DATABASE_URL` (superuser; integration tests and the demo tamper button only), `KEYS_DIR`, `LEDGER_STREAM`, `DEMO_MODE`, plus `POSTGRES_PASSWORD` and `PL_APP_PASSWORD` for compose.
+Environment variables: `DATABASE_URL` (app role), `ADMIN_DATABASE_URL` (superuser; integration tests and the demo tamper button only), `KEYS_DIR`, `LEDGER_STREAM`, `LEDGER_ORIGIN`, `CHECKPOINT_DIR`, `DEMO_MODE`, plus `POSTGRES_PASSWORD` and `PL_APP_PASSWORD` for compose.
 
 ## Decisions
 
@@ -156,7 +156,7 @@ D3, D9–D24 in [`docs/DECISIONS.md`](../DECISIONS.md).
 
 ## Known gaps
 
-- Signed checkpoints, the Postgres `TreeStore` adapter and the export bundle (day 2, with `pl-verify`). The Merkle tree itself is now the `merkle/` package (D25).
+- The export bundle (next, with `pl-verify`). Signed checkpoints and the Postgres `TreeStore` adapter are done; see [`checkpoints.md`](checkpoints.md).
 - No HTTP API yet (`/ledger/v1/...`). `Ledger.append_json` is the boundary the POST handler will call.
 - No JSON logging with `trace_id` yet (`common/logging.py`). The ledger currently logs nothing.
 - Key rotation records are not implemented.

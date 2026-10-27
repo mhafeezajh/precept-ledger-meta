@@ -2,7 +2,7 @@
 
 Guarantees RFC 9162 Merkle tree hashing, inclusion proofs and consistency proofs over any sequence of leaf hashes, with verification that returns `False` for every malformed or tampered input.
 
-Status: done for this step (pure core, port, in-memory adapter). The Postgres adapter and signed checkpoints are next. · Last updated: 2026-10-27 · Tests: 38 (unit + property) plus 4 import-boundary checks, coverage 100% lines and branches
+Status: done for now (pure core, port, in-memory adapter). The ledger adapters and signed checkpoints are built on it; see [`checkpoints.md`](checkpoints.md). · Last updated: 2026-10-27 · Tests: 38 (unit + property) plus 4 import-boundary checks, coverage 100% lines and branches
 
 ## Responsibilities
 
@@ -17,8 +17,8 @@ Does not own:
 
 - Ledger records. Callers hand it 32-byte leaf hashes. For the ledger, leaf `i` is the `leaf_hash` of the record with `seq = i + 1` (D16).
 - Writing leaves. The port is read-only; whoever owns the data appends it.
-- Signed checkpoints and cosignatures (next step, in `ledger/` and `witness/`).
-- Storage adapters for real systems. Each lives with the system it reads: the Postgres adapter will be in `ledger/`, because it reads `ledger_record.leaf_hash`.
+- Signed checkpoints (`ledger/checkpoint.py`, [`checkpoints.md`](checkpoints.md)) and cosignatures (`witness/`, day 3).
+- Storage adapters for real systems. Each lives with the system it reads: the Postgres adapter is `ledger.pg_tree.PostgresTreeStore`, because it reads `ledger_record.leaf_hash`.
 
 ## How it works
 
@@ -35,7 +35,7 @@ flowchart LR
         L --> S
         M[MemoryTreeStore] -.implements.-> S
     end
-    PG["ledger: Postgres adapter (next)"] -.implements.-> S
+    PG["ledger: PostgresTreeStore, MemoryLedgerTree"] -.implements.-> S
     V["verify/ · witness/ · claims/"] --> P
     F[ledger.format] --> H
 ```
@@ -72,7 +72,7 @@ No tables or files. Inputs and outputs are raw 32-byte SHA-256 hashes; encoding 
 | Adapter returns too few or too many leaves | `MerkleError merkle.bad_store`; no head or proof is produced | `test_adapter_returning_wrong_count_fails_closed` |
 | Malformed input reaching verification | `False`, never an exception, so an error path cannot skip a check | negative tests above |
 
-What it does not protect against on its own: a tree head nobody signed or witnessed. Consistency proofs only help when someone kept an earlier root. That is what checkpoints (next step) and witnesses (day 3) are for.
+What it does not protect against on its own: a tree head nobody signed or witnessed. Consistency proofs only help when someone kept an earlier root. That is what signed checkpoints ([`checkpoints.md`](checkpoints.md)) and witnesses (day 3) are for.
 
 ## Formulas and formats
 
@@ -112,5 +112,4 @@ D16 (leaf index = seq − 1), D25 (separate package with a port), D26 (vector so
 ## Known gaps
 
 - `LogTree` reads every leaf up to `size` on each call, which is O(n). That's fine at demo scale. An adapter that caches complete subtrees can replace it later behind the same interface.
-- There's no Postgres adapter yet. It will read `ledger_record.leaf_hash` ordered by `seq` and come with checkpoints.
 - The published vectors include no proofs, so the expected proofs were derived by hand from the published node hashes. Each one lists its node coordinates so it can be checked.

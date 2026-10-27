@@ -201,7 +201,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | --- | --- | --- |
 | `ledger_record` | stream, seq, record\_id, v, ts, type, producer\_id, producer\_alg, producer\_key\_id, producer\_sig, body (jsonb), prev\_hash, chain\_hash, leaf\_hash | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger. The record is rebuilt from these columns for verification (D21) |
 | `receipt` | record\_id, v, alg, stream, seq, leaf\_hash, chain\_hash, received\_at, key\_id, sig | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger |
-| `checkpoint` | stream, tree\_size, root\_hash, note, log\_signature | Insert only; also written to a write-once directory |
+| `checkpoint` | stream, tree\_size, root\_hash, note (the full signed note, signature included) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; also written to a write-once directory, one file per tree size (D30) |
 | `cosignature` | checkpoint\_id, witness\_id, signature, ts | Insert only |
 | `anchor` | checkpoint\_id, kind (`rfc3161`, `ots`), token, status | Insert, then status updates |
 | `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept |
@@ -335,3 +335,6 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-27 | Record envelope | `seq` starts at 1; integers only (no floats); `key_id` and base64 encodings defined | D16, D17, D19 |
 | 2026-10-27 | Data model | `ledger_record` producer split into columns; `receipt` columns listed in full; TRUNCATE also blocked | Direct row edits must change what the verifier sees (D21) |
 | 2026-10-27 | Components | Merkle tree moved out of `ledger/` into its own `merkle/` package: a pure core plus a read-only `TreeStore` port. Verifier, witnesses and claim checker import only the core; storage adapters live with the data they read | Owner direction; lets the tree run over other storage (for example tiles) without touching verification (D25) |
+| 2026-10-27 | Data model, Exact formulas | `checkpoint` table holds the full signed note, with no separate `log_signature` column. Checkpoint origin and signed-note key name are `<LEDGER_ORIGIN>/<stream>`: one tree per stream | One authoritative copy of the signature; `seq` is per stream (D28, D30) |
+| 2026-10-27 | Components | Verifier side may import `ledger.checkpoint` (pure C2SP checkpoint and signed-note code) | Verifier and witnesses must parse and check checkpoints (D28) |
+| 2026-10-27 | Flow D | The checkpointer checks a consistency proof from its last checkpoint before signing, and refuses otherwise | An edited table never gets a fresh signature from the honest process (D30) |

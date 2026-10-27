@@ -1,0 +1,32 @@
+# Knowledge base
+
+One page per module, written when the module is finished and kept current with the code (skill §8). Each page has the same sections: responsibilities, how it works, interfaces, data, security and failure behaviour, formulas with a worked vector, how to run, decisions and known gaps.
+
+| Page | What it covers | Status |
+| --- | --- | --- |
+| [ledger.md](ledger.md) | Record format v1, canonical JSON, producer signatures, hash chain, receipts, memory and Postgres stores | Partial: API and export bundle next |
+| [merkle.md](merkle.md) | RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port | Done for now |
+| [checkpoints.md](checkpoints.md) | C2SP checkpoints and signed notes, the checkpointer, write-once sinks, Postgres tree adapter | Done for this step: loop and witnesses next |
+
+## Where to look for what
+
+| Question | Page and section |
+| --- | --- |
+| Exact bytes that get hashed or signed | Each page's "Formulas and formats", plus `tests/vectors/` |
+| What happens when Postgres, a sink or a key is wrong | Each page's "Security and failure behaviour" table, with the test that proves it |
+| Why something is built the way it is | [`../DECISIONS.md`](../DECISIONS.md), linked from each page's "Decisions" |
+| What changed from the original design | Change log at the end of [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
+| What is not done yet | Each page's "Known gaps" |
+
+## Signing contexts in use
+
+One table for every hashed or signed byte string, so a new one never collides with an old one (skill §4).
+
+| Object | Key | Signed or hashed bytes | Defined in |
+| --- | --- | --- | --- |
+| Record (producer signature) | Producer | `"PL-record-v1\x00" ‖ JCS(record − seq, prev_hash, producer.sig)` | `ledger/format.py` |
+| Chain hash | | `SHA-256("PL-chain-v1" ‖ h_(n−1) ‖ JCS(record))` | `ledger/format.py` |
+| Merkle leaf, node | | `SHA-256(0x00 ‖ JCS(record))`, `SHA-256(0x01 ‖ left ‖ right)` | `merkle/hashing.py` |
+| Receipt | Log | `"PL-receipt-v1\x00" ‖ JCS(receipt − sig)` | `ledger/format.py` |
+| Checkpoint | Log | Note text (C2SP signed-note); contains no NUL, so it never matches the two above | `ledger/checkpoint.py` |
+| Cosignature | Witness | Not built yet (C2SP tlog-cosignature, day 3) | |
