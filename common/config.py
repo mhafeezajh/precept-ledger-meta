@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     # Checkpoint origin is f"{ledger_origin}/{stream}" and doubles as the signed-note key name.
     ledger_origin: str = "precept-ledger.local"
     checkpoint_dir: Path = Path("var/checkpoints")
+    checkpoint_interval_seconds: float = 10.0
+    api_host: str = "127.0.0.1"  # localhost only: reads are unauthenticated in the demo
+    api_port: int = 8080
+    log_level: str = "INFO"
     demo_mode: bool = False
 
 

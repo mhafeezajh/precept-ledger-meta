@@ -7,19 +7,23 @@ license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "cryptography==50.0.2",
+    "fastapi==0.162.0",
     "psycopg-pool==3.3.3",
     "psycopg[binary]==3.3.6",
     "pydantic==2.14.1",
     "pydantic-settings==2.16.1",
     "rfc8785==0.1.4",
+    "uvicorn==0.54.0",
 ]
 
 [project.scripts]
 pl-verify = "verify.cli:main"
 pl-export = "ledger.export_cli:main"
+pl-ledger = "ledger.server:main"
 
 [dependency-groups]
 dev = [
+    "httpx==0.28.1",
     "hypothesis==6.170.12",
     "mypy==2.4.0",
     "pytest==9.1.1",
@@ -69,7 +73,10 @@ addopts = "-m 'not integration and not live'"
 branch = true
 source = ["common", "ledger", "merkle", "verify"]
 # Postgres modules and pl-export: make test-integration. verify/__main__.py: a subprocess test.
-omit = ["ledger/pg_store.py", "ledger/pg_tree.py", "ledger/export_cli.py", "verify/__main__.py"]
+omit = [
+  "ledger/pg_store.py", "ledger/pg_tree.py", "ledger/export_cli.py", "ledger/server.py",
+  "verify/__main__.py",
+]
 
 [tool.coverage.report]
 fail_under = 90

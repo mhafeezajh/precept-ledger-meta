@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve
 
 check: lint typecheck test secrets
 
@@ -32,6 +32,13 @@ db-up:
 # Re-applies ledger/schema.sql (idempotent) so an existing volume picks up new tables.
 db-schema: db-up
 	docker compose exec -T -e PGOPTIONS='-c client_min_messages=warning' postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U postgres -d "$$POSTGRES_DB" -f /schema/ledger.sql'
+
+# Creates TEST-grade keys in KEYS_DIR (outside the repo) if they are not there yet.
+dev-keys:
+	uv run python scripts/dev_keys.py
+
+serve: db-schema
+	uv run pl-ledger
 
 db-down:
 	docker compose down -v
