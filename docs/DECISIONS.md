@@ -78,6 +78,15 @@ These resolve conflicts C1–C9 found between the kickoff, `docs/ARCHITECTURE.md
 | D32 | `pl-verify` is a second, independent implementation of the chain, receipt and checkpoint checks, built only on `ledger.format`, `ledger.checkpoint` and `merkle.proofs`. Record findings use the same names and order as `ledger.chain`, and a property test requires both to name the same first break. The chain walk stops at the first break; receipts and checkpoints are still checked against the records as exported. | Reuse `ledger.chain` in the verifier; report every cascading break | Skill §2 import rule; two implementations that must agree catch bugs in either. Stopping the walk avoids one edit producing a page of false breaks, while receipts and checkpoints still point at the edited record independently. | 2026-10-27 |
 | D33 | Exit codes: 0 verified, 1 findings, 2 cannot verify. `--trusted-checkpoint` takes a signed checkpoint the auditor kept; a held checkpoint that does not verify is a usage error (2), never a pass. The offline guarantee is tested two ways: no network imports in `verify/`, and a subprocess run under an audit hook that raises on any `socket.*` event, with a positive control. | One failure exit code; only the import test | "Could not check" must never read as "checked" (R4). An audit hook catches network use from any imported library, not just direct imports. | 2026-10-27 |
 
+## Ledger API (step 5, Oct 27)
+
+| ID | Decision | Rejected | Why | Date |
+| --- | --- | --- | --- | --- |
+| D34 | The append endpoint validates bodies with the ledger's own strict parser (`Ledger.append_json`: 64 KiB limit, duplicate keys, floats and unknown fields rejected), not a Pydantic model. Query parameters use FastAPI/Pydantic. Validation errors get our error body (`request.invalid`), never FastAPI's, which echoes the input. | A Pydantic `Submission` model | Skill §7 asks for Pydantic at boundaries, but the bytes that are signed must be parsed exactly once, strictly; Pydantic would accept duplicate keys and floats. Recorded here as a deliberate exception. | 2026-10-27 |
+| D35 | Errors map from their machine code to a status: 400 format and request problems, 403 signatures, 404 not found, 409 duplicates and not yet checkpointed, 413 size, 415 media type, 503 store and the ledger's own integrity failures, 500 for everything else with no detail. `POST` takes one record per request. A proof's `size` must be a stored checkpoint size, and the response includes that signed checkpoint. | 500 for integrity failures; batch append now; proofs against any tree size | A client must be able to tell "my fault" from "the ledger cannot vouch for itself". One record per request keeps "2xx means receipt" exact. A proof against an unsigned size proves nothing to an auditor. | 2026-10-27 |
+| D36 | A background `CheckpointLoop` checkpoints every served stream every `CHECKPOINT_INTERVAL_SECONDS` (10). A `PreceptError` skips that stream for one tick and is logged; any other exception stops the loop, and `/ledger/v1/health` returns 503 `stopped`. | Checkpoint on every append; swallow all exceptions and keep looping | ARCHITECTURE flow D. A bug must be visible, not retried forever in silence (R4). | 2026-10-27 |
+| D37 | `pl-ledger` reads `KEYS_DIR/log.pem` and `KEYS_DIR/trusted.json`; the latter is the same format as `pl-verify --keys`, parsed by `verify.keys.TrustedKeys` (so `ledger.server` imports `verify.keys`). It refuses to start if the log key is not listed there. `scripts/dev_keys.py` creates development keys outside the repo, never overwrites and prints only key ids. Bind address defaults to 127.0.0.1. | Separate key formats for the ledger and the verifier; generating keys at server start | One public-key file that both the ledger and auditors use cannot drift. Keys generated at start would silently change identity on restart. Reads are unauthenticated in the demo. | 2026-10-27 |
+
 ## Dependencies
 
 | Package | Version | Licence | Why | Added |
@@ -94,3 +103,8 @@ These resolve conflicts C1–C9 found between the kickoff, `docs/ARCHITECTURE.md
 | `hypothesis` (dev) | 6.170.12 | MPL-2.0 | Property tests | 2026-10-27 |
 | `ruff` (dev) | 0.17.3 | MIT | Lint and format | 2026-10-27 |
 | `mypy` (dev) | 2.4.0 | MIT | Type checking | 2026-10-27 |
+| `fastapi` | 0.162.0 | MIT | Ledger API (and later witness, Gate, web) | 2026-10-27 |
+| `uvicorn` | 0.54.0 | BSD-3-Clause | ASGI server for `pl-ledger` | 2026-10-27 |
+| `starlette` (via fastapi) | 1.10.0 | BSD-3-Clause | FastAPI's foundation | 2026-10-27 |
+| `opentelemetry-api` (via fastapi) | 1.45.1 | Apache-2.0 | Pulled in by fastapi; not used directly | 2026-10-27 |
+| `httpx` (dev) | 0.28.1 | BSD-3-Clause | In-process API tests | 2026-10-27 |

@@ -2,7 +2,7 @@
 
 Guarantees that every accepted record is signed by its producer, chained to the record before it, and acknowledged with a receipt signed by the log key, so any later edit, deletion, insertion or reordering is caught at its sequence number.
 
-Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores, and signed checkpoints are done ([`checkpoints.md`](checkpoints.md)). The export bundle is done ([`verify.md`](verify.md)). The HTTP API is not built yet. · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 95%). Checkpoint tests are counted in [`checkpoints.md`](checkpoints.md)
+Status: partial. Records, producer signatures, chain, receipts, memory and Postgres stores, and signed checkpoints are done ([`checkpoints.md`](checkpoints.md)). The export bundle ([`verify.md`](verify.md)) and HTTP API ([`api.md`](api.md)) are done. · Last updated: 2026-10-27 · Tests: 162 unit + property (99% coverage of `common/` and `ledger/` without `pg_store.py`), 7 integration (`pg_store.py` 95%). Checkpoint tests are counted in [`checkpoints.md`](checkpoints.md)
 
 ## Responsibilities
 
@@ -157,8 +157,7 @@ D3, D9–D24 in [`docs/DECISIONS.md`](../DECISIONS.md).
 ## Known gaps
 
 - Range exports. Whole-stream export (`ledger/export.py`, `pl-export`) is done and documented with its verifier in [`verify.md`](verify.md).
-- No HTTP API yet (`/ledger/v1/...`). `Ledger.append_json` is the boundary the POST handler will call.
-- No JSON logging with `trace_id` yet (`common/logging.py`). The ledger currently logs nothing.
+- The ledger core logs nothing itself; the API and checkpoint loop log JSON lines with `trace_id` ([`api.md`](api.md)).
 - Key rotation records are not implemented.
 - Strings containing U+0000 are valid I-JSON, but Postgres `jsonb` rejects them, so such an append fails with `StoreError` (fail closed).
 - The import-boundary test lets the verifier side import `common.errors`, `common.clock` and `common.ids`, because `ledger.format` depends on them. The skill lists only `ledger.format` and the Merkle core.

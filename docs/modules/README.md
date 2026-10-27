@@ -7,6 +7,7 @@ One page per module, written when the module is finished and kept current with t
 | [ledger.md](ledger.md) | Record format v1, canonical JSON, producer signatures, hash chain, receipts, memory and Postgres stores | Partial: API and export bundle next |
 | [merkle.md](merkle.md) | RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port | Done for now |
 | [checkpoints.md](checkpoints.md) | C2SP checkpoints and signed notes, the checkpointer, write-once sinks, Postgres tree adapter | Done for this step: loop and witnesses next |
+| [api.md](api.md) | Ledger HTTP API, status codes and error bodies, checkpoint loop, JSON logs, `pl-ledger`, dev keys | Done for this step: batch, ranges and read auth later |
 | [verify.md](verify.md) | Export bundle v1, `pl-export`, the offline `pl-verify` CLI, every finding it can report | Done for this step: witness quorum and anchors later |
 
 ## Where to look for what
@@ -18,6 +19,7 @@ One page per module, written when the module is finished and kept current with t
 | Why something is built the way it is | [`../DECISIONS.md`](../DECISIONS.md), linked from each page's "Decisions" |
 | What changed from the original design | Change log at the end of [`../ARCHITECTURE.md`](../ARCHITECTURE.md) |
 | What is not done yet | Each page's "Known gaps" |
+| Which HTTP status an error becomes | [api.md](api.md), "Interfaces" |
 | What `pl-verify` reports and why | [verify.md](verify.md), "Interfaces" (finding names) and "Security and failure behaviour" |
 
 ## Signing contexts in use
