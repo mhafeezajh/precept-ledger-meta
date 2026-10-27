@@ -18,7 +18,7 @@ Owns:
 Does not own:
 
 - Deciding anything. That is Gate's job; the ledger records decisions.
-- Merkle proofs, checkpoints and the export bundle (day 2).
+- Merkle hashing and proofs: the `merkle/` package (D25). Checkpoints and the export bundle are day 2.
 - Witnesses and anchors (day 3).
 - Key storage in production (KMS/HSM). Keys are loaded from files under `KEYS_DIR`.
 
@@ -156,9 +156,9 @@ D3, D9–D24 in [`docs/DECISIONS.md`](../DECISIONS.md).
 
 ## Known gaps
 
-- Merkle tree, signed checkpoints, inclusion and consistency proofs, and the export bundle (day 2, with `pl-verify`).
+- Signed checkpoints, the Postgres `TreeStore` adapter and the export bundle (day 2, with `pl-verify`). The Merkle tree itself is now the `merkle/` package (D25).
 - No HTTP API yet (`/ledger/v1/...`). `Ledger.append_json` is the boundary the POST handler will call.
 - No JSON logging with `trace_id` yet (`common/logging.py`). The ledger currently logs nothing.
 - Key rotation records are not implemented.
 - Strings containing U+0000 are valid I-JSON, but Postgres `jsonb` rejects them, so such an append fails with `StoreError` (fail closed).
-- The import-boundary test lets the verifier side import `common.errors`, `common.clock` and `common.ids`, because `ledger.format` depends on them. The skill lists only `ledger.format` and `ledger.merkle`.
+- The import-boundary test lets the verifier side import `common.errors`, `common.clock` and `common.ids`, because `ledger.format` depends on them. The skill lists only `ledger.format` and the Merkle core.

@@ -43,7 +43,8 @@ Gate lets a tool call through only after the ledger returns a receipt; the verif
 
 | Component | Responsibility | Key libraries |
 | --- | --- | --- |
-| `ledger/` | Canonical records, signatures, chain, Merkle tree, checkpoints, receipts, proofs | `rfc8785`, `cryptography`, `psycopg` |
+| `merkle/` | RFC 9162 core: leaf/node hashing, roots, inclusion and consistency proofs; `TreeStore` port that storage adapters implement | stdlib |
+| `ledger/` | Canonical records, signatures, chain, checkpoints, receipts, API; Postgres `TreeStore` adapter | `rfc8785`, `cryptography`, `psycopg` |
 | `witness/` | Independent service, own key and storage; verifies consistency and cosigns | `cryptography`, `fastapi` |
 | `anchor/` | RFC 3161 timestamp requests; OpenTimestamps submit and upgrade | `rfc3161ng`, `opentimestamps-client` |
 | `verify/` (`pl-verify`) | Offline verification of an export; no network imports | stdlib, `cryptography` |
@@ -333,3 +334,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-27 | Exact formulas | Receipt adds `v`, `alg`, `stream`, `key_id`; signed with context `PL-receipt-v1\x00` | `seq` is unique only per stream; self-describing receipts (D11, D18) |
 | 2026-10-27 | Record envelope | `seq` starts at 1; integers only (no floats); `key_id` and base64 encodings defined | D16, D17, D19 |
 | 2026-10-27 | Data model | `ledger_record` producer split into columns; `receipt` columns listed in full; TRUNCATE also blocked | Direct row edits must change what the verifier sees (D21) |
+| 2026-10-27 | Components | Merkle tree moved out of `ledger/` into its own `merkle/` package: a pure core plus a read-only `TreeStore` port. Verifier, witnesses and claim checker import only the core; storage adapters live with the data they read | Owner direction; lets the tree run over other storage (for example tiles) without touching verification (D25) |

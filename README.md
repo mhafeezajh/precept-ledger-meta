@@ -8,7 +8,8 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Plan: 
 
 | Module | Status | Docs |
 | --- | --- | --- |
-| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores done. Merkle tree, checkpoints and proofs next | [`docs/modules/ledger.md`](docs/modules/ledger.md) |
+| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores done. Checkpoints and the Postgres tree adapter next | [`docs/modules/ledger.md`](docs/modules/ledger.md) |
+| `merkle/` | Done for now. RFC 9162 core, inclusion and consistency proofs, `TreeStore` port, memory adapter | [`docs/modules/merkle.md`](docs/modules/merkle.md) |
 | `verify/` (`pl-verify`) | Not started | |
 | `witness/` | Not started | |
 | `anchor/` | Not started | |
@@ -26,7 +27,7 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 162 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 205 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 7 tests incl. an admin edit caught at its seq
 make vectors            # regenerate tests/vectors/ledger-v1.json
@@ -44,5 +45,6 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | `ledger/chain.py`, `ledger/receipts.py`: hash chain, stream verification with first-break reporting, signed receipts, conflicting-receipt detection |
 | Oct 27 | `ledger/store.py`, `ledger/service.py`, `ledger/pg_store.py`, `ledger/schema.sql`: append service, memory store, Postgres store with insert-only triggers |
 | Oct 27 | Tests: unit, property (`hypothesis`), tamper suite, test vectors (`tests/vectors/ledger-v1.json`), Postgres integration |
+| Oct 27 | `merkle/`: RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port, `LogTree`, memory adapter; vectors in `tests/vectors/merkle-rfc9162.json` (published data, see D26) |
 
 Meta tooling used so far: none. Model calls start with Gate and the demo agent (day 4). Muse Code will be used for at least one slice and recorded here.
