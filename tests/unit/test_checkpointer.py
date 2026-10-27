@@ -143,6 +143,9 @@ class FailingSink:
     async def latest(self) -> str | None:
         return None
 
+    async def notes(self) -> list[str]:
+        return []
+
 
 async def test_sink_failure_fails_the_publish_and_the_next_publish_heals(tmp_path: Path) -> None:
     flaky = FailingSink()

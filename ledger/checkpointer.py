@@ -41,6 +41,10 @@ class CheckpointSink(Protocol):
         """The stored note with the largest tree size, unverified."""
         ...
 
+    async def notes(self) -> list[str]:
+        """Every stored note, smallest tree size first, unverified."""
+        ...
+
 
 class Checkpointer:
     def __init__(
@@ -117,7 +121,14 @@ class DirectorySink:
         return await asyncio.to_thread(self._latest)
 
     def _latest(self) -> str | None:
+        notes = self._notes()
+        return notes[-1] if notes else None
+
+    async def notes(self) -> list[str]:
+        return await asyncio.to_thread(self._notes)
+
+    def _notes(self) -> list[str]:
         if not self._dir.exists():
-            return None
+            return []
         names = sorted(p.name for p in self._dir.iterdir() if _NOTE_FILE.match(p.name))
-        return (self._dir / names[-1]).read_text(encoding="utf-8") if names else None
+        return [(self._dir / name).read_text(encoding="utf-8") for name in names]

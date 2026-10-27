@@ -84,3 +84,11 @@ class PostgresCheckpointSink:
             (self._stream,),
         )
         return str(rows[0][0]) if rows else None
+
+    async def notes(self) -> list[str]:
+        rows = await _query(
+            self._pool,
+            "SELECT note FROM checkpoint WHERE stream = %s ORDER BY tree_size",
+            (self._stream,),
+        )
+        return [str(row[0]) for row in rows]

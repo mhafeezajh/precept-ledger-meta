@@ -35,6 +35,7 @@ _INSERT_RECEIPT = (
 _SELECT_RECORD = f"SELECT {_RECORD_COLUMNS} FROM ledger_record WHERE record_id = %s"  # noqa: S608
 _SELECT_RECEIPT = f"SELECT {_RECEIPT_COLUMNS} FROM receipt WHERE record_id = %s"  # noqa: S608
 _SELECT_STREAM = f"SELECT {_RECORD_COLUMNS} FROM ledger_record WHERE stream = %s ORDER BY seq"  # noqa: S608
+_SELECT_STREAM_RECEIPTS = f"SELECT {_RECEIPT_COLUMNS} FROM receipt WHERE stream = %s ORDER BY seq"  # noqa: S608
 
 
 def _row_to_json(row: dict[str, Any]) -> dict[str, Any]:
@@ -129,6 +130,9 @@ class PostgresStore:
 
     async def read_raw(self, stream: str) -> list[dict[str, Any]]:
         return [_row_to_json(row) for row in await self._fetch(_SELECT_STREAM, (stream,))]
+
+    async def read_receipts(self, stream: str) -> list[dict[str, Any]]:
+        return await self._fetch(_SELECT_STREAM_RECEIPTS, (stream,))
 
     async def _fetch(self, sql: str, params: tuple[object, ...]) -> list[dict[str, Any]]:
         try:

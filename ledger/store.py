@@ -32,6 +32,10 @@ class Store(Protocol):
         """
         ...
 
+    async def read_receipts(self, stream: str) -> list[dict[str, Any]]:
+        """Receipts as stored, in seq order, as plain JSON objects (untyped, as above)."""
+        ...
+
 
 def check_built(head: ChainHead, stream: str, item: ChainedRecord, receipt: Receipt) -> None:
     """Defensive check every store runs on a builder's output before writing it."""
@@ -75,6 +79,10 @@ class MemoryStore:
 
     async def read_raw(self, stream: str) -> list[dict[str, Any]]:
         return copy.deepcopy(self._rows.get(stream, []))
+
+    async def read_receipts(self, stream: str) -> list[dict[str, Any]]:
+        found = [r for r in self._receipts.values() if r.stream == stream]
+        return [r.to_json() for r in sorted(found, key=lambda r: r.seq)]
 
     def tree(self, stream: str) -> "MemoryLedgerTree":
         """The stream's Merkle leaves, as a ``merkle.store.TreeStore`` adapter."""

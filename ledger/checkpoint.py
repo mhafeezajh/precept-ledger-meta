@@ -210,6 +210,13 @@ def parse_checkpoint(body: str) -> Checkpoint:
     return Checkpoint(lines[0], int(lines[1]), root, tuple(lines[3:]))
 
 
+def peek_checkpoint(note: str) -> Checkpoint:
+    """Parse a checkpoint note WITHOUT verifying it. Only for naming and sorting files;
+    anything that trusts the result must use ``open_checkpoint``."""
+    text, _ = _split_note(note)
+    return parse_checkpoint(text)
+
+
 def sign_checkpoint(checkpoint: Checkpoint, signer: NoteSigner) -> str:
     return sign_note(checkpoint.body(), signer, checkpoint.origin)
 

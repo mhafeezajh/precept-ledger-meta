@@ -14,6 +14,10 @@ dependencies = [
     "rfc8785==0.1.4",
 ]
 
+[project.scripts]
+pl-verify = "verify.cli:main"
+pl-export = "ledger.export_cli:main"
+
 [dependency-groups]
 dev = [
     "hypothesis==6.170.12",
@@ -63,9 +67,9 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle"]
-# pg_store.py is exercised only against a real Postgres; make test-integration measures it.
-omit = ["ledger/pg_store.py", "ledger/pg_tree.py"]  # covered by make test-integration
+source = ["common", "ledger", "merkle", "verify"]
+# Postgres modules and pl-export: make test-integration. verify/__main__.py: a subprocess test.
+omit = ["ledger/pg_store.py", "ledger/pg_tree.py", "ledger/export_cli.py", "verify/__main__.py"]
 
 [tool.coverage.report]
 fail_under = 90
