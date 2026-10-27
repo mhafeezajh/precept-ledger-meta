@@ -12,7 +12,9 @@ LEDGER_FORBIDDEN = {"gate", "policy", "assist", "agent", "web", "learn", "litell
 # Packages the offline verifier side may import from this repo (skill §2).
 VERIFY_ALLOWED_INTERNAL = {
     "ledger.format",
-    "ledger.merkle",
+    "merkle",
+    "merkle.hashing",
+    "merkle.proofs",
     "common.errors",
     "common.clock",
     "common.ids",
@@ -56,3 +58,12 @@ def test_verifier_side_imports_only_allowed_ledger_modules(package: str) -> None
                 assert name in VERIFY_ALLOWED_INTERNAL, f"{path}: {name}"
             if package == "verify":
                 assert top(name) not in NETWORK_MODULES, f"{path}: {name}"
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "merkle").glob("*.py")), ids=lambda p: p.name)
+def test_merkle_knows_nothing_about_the_ledger_or_the_network(path: Path) -> None:
+    # D25: merkle is a pure core plus a port; adapters for real storage live with their owner.
+    names = imports_of(path)
+    tops = {top(n) for n in names}
+    assert not tops & (NETWORK_MODULES | LEDGER_FORBIDDEN | {"ledger"})
+    assert {n for n in names if top(n) == "common"} <= {"common.errors"}

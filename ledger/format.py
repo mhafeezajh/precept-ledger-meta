@@ -18,6 +18,9 @@ import rfc8785
 from common.clock import parse_ts
 from common.errors import FormatError
 from common.ids import is_ulid
+from merkle.hashing import LEAF_PREFIX as LEAF_PREFIX  # re-exported for callers
+from merkle.hashing import NODE_PREFIX as NODE_PREFIX
+from merkle.hashing import leaf_hash as merkle_leaf_hash
 
 RECORD_VERSION = 1
 ALG_ED25519 = "ed25519"
@@ -28,10 +31,9 @@ MAX_SAFE_INT = 2**53 - 1
 MAX_RECORD_BYTES = 64 * 1024
 
 # Domain separation (skill §4, D18): no two kinds of object are ever hashed or signed alike.
+# LEAF_PREFIX and NODE_PREFIX come from merkle.hashing (D25) and are re-exported here.
 GENESIS_HASH = bytes(HASH_SIZE)
 CHAIN_PREFIX = b"PL-chain-v1"
-LEAF_PREFIX = b"\x00"
-NODE_PREFIX = b"\x01"
 RECORD_SIG_CONTEXT = b"PL-record-v1\x00"
 RECEIPT_SIG_CONTEXT = b"PL-receipt-v1\x00"
 
@@ -158,8 +160,8 @@ def chain_hash(prev_hash: bytes, record_bytes: bytes) -> bytes:
 
 
 def leaf_hash(record_bytes: bytes) -> bytes:
-    """RFC 9162 leaf hash: ``SHA-256(0x00 ‖ JCS(record))``."""
-    return hashlib.sha256(LEAF_PREFIX + record_bytes).digest()
+    """RFC 9162 leaf hash of a record: ``SHA-256(0x00 ‖ JCS(record))``, defined in ``merkle``."""
+    return merkle_leaf_hash(record_bytes)
 
 
 # --- field helpers --------------------------------------------------------------------------

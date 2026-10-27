@@ -45,6 +45,12 @@ class StoreError(LedgerError):
     code = "store.unavailable"
 
 
+class MerkleError(PreceptError):
+    """Bad tree size, index or hash, or a tree store that returned inconsistent data."""
+
+    code = "merkle.invalid"
+
+
 class VerificationError(PreceptError):
     code = "verify.failed"
 

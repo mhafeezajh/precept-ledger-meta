@@ -29,7 +29,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["common", "ledger", "witness", "anchor", "verify", "gate", "policy", "assist", "claims", "learn", "agent", "web"]
+packages = ["common", "ledger", "merkle", "witness", "anchor", "verify", "gate", "policy", "assist", "claims", "learn", "agent", "web"]
 
 [tool.ruff]
 line-length = 100
@@ -45,10 +45,10 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "PT"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["common", "ledger", "verify", "witness", "claims", "gate", "anchor"]
+packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor"]
 
 [[tool.mypy.overrides]]
-module = ["common.*", "ledger.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*"]
+module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*"]
 strict = true
 
 [tool.pytest.ini_options]
@@ -63,7 +63,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger"]
+source = ["common", "ledger", "merkle"]
 # pg_store.py is exercised only against a real Postgres; make test-integration measures it.
 omit = ["ledger/pg_store.py"]
 
