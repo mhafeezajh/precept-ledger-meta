@@ -5,9 +5,10 @@ which is what demo beat 4 shows.
 """
 
 import hmac
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from common.errors import FormatError, SignatureError
 from ledger.format import (
@@ -87,10 +88,16 @@ class ChainReport:
         return self.first_break is None
 
 
-def _load(item: Record | bytes) -> Record:
+# A record, a canonical JSON line from an export, or a raw JSON object read from a store.
+type ChainItem = Record | bytes | Mapping[str, Any]
+
+
+def _load(item: ChainItem) -> Record:
     if isinstance(item, Record):
         return item
-    return Record.from_json(parse_canonical(item))  # D20: lines must be canonical
+    if isinstance(item, bytes):
+        return Record.from_json(parse_canonical(item))  # D20: lines must be canonical
+    return Record.from_json(dict(item))
 
 
 def _check_one(
@@ -124,7 +131,7 @@ def _differs_from_trusted(head: ChainHead, trusted: ChainHead | None) -> ChainBr
 
 
 def verify_chain(
-    items: Iterable[Record | bytes],
+    items: Iterable[ChainItem],
     producers: KeyRing,
     *,
     stream: str,
@@ -133,9 +140,10 @@ def verify_chain(
 ) -> ChainReport:
     """Recompute the chain from ``start``; report the first break, if any.
 
-    ``items`` are records or canonical JSON lines from an export. ``expected_head`` is a head
-    the caller already trusts (from a receipt or checkpoint); a chain that ends before it is
-    truncated, and one whose hash at that seq differs has been rewritten.
+    ``items`` are records, canonical JSON lines, or raw stored JSON objects.
+    ``expected_head`` is a head the caller already trusts (from a receipt or checkpoint); a
+    chain that ends before it is truncated, and one whose hash at that seq differs has been
+    rewritten.
     """
     head, seen, checked = start, set[str](), 0
     for item in items:
