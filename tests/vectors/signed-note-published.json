@@ -1,0 +1,7 @@
+{
+  "description": "Published C2SP signed-note example (public key and signature only). Test data, not code (D29).",
+  "source": "golang.org/x/mod/sumdb/note package documentation (BSD-3-Clause)",
+  "verifier_key": "PeterNeumann+c74f20a3+ARpc2QcUPDhMQegwxbzhKqiBfsVkmqq/LDE4izWy10TW",
+  "text": "If you think cryptography is the answer to your problem,\nthen you don't know what your problem is.\n",
+  "note": "If you think cryptography is the answer to your problem,\nthen you don't know what your problem is.\n\n— PeterNeumann x08go/ZJkuBS9UG/SffcvIAQxVBtiFupLLr8pAcElZInNIuGUgYN1FFYC2pZSNXgKvqfqdngotpRZb6KE6RyyBwJnAM=\n"
+}

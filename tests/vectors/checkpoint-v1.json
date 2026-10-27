@@ -1,0 +1,11 @@
+{
+  "description": "C2SP checkpoint over the ledger-v1 records. Keys are TEST ONLY.",
+  "checkpoint": {
+    "origin": "precept-ledger.local/harbor-federal/decisions",
+    "size": 3,
+    "root_hash": "XId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=",
+    "body": "precept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n",
+    "verifier_key": "precept-ledger.local/harbor-federal/decisions+42440d8a+ATNFjeFtxAmLWjjvUBp2BltAA+wkmjYHI7CxXFvHpscV",
+    "note": "precept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n\n— precept-ledger.local/harbor-federal/decisions QkQNiu7O5t50ohHXJQ313xp2fHXgSDLMnDItQ6iF67SmRCD/8CFlJw4plGV3RYi4+Cu5gx+wSqw8CnUVkIF0VMBG+Ao=\n"
+  }
+}

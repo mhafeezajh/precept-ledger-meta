@@ -65,7 +65,7 @@ addopts = "-m 'not integration and not live'"
 branch = true
 source = ["common", "ledger", "merkle"]
 # pg_store.py is exercised only against a real Postgres; make test-integration measures it.
-omit = ["ledger/pg_store.py"]
+omit = ["ledger/pg_store.py", "ledger/pg_tree.py"]  # covered by make test-integration
 
 [tool.coverage.report]
 fail_under = 90

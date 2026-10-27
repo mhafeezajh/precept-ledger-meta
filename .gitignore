@@ -13,3 +13,4 @@ dist/
 logs/
 keys/
 !tests/keys/
+var/

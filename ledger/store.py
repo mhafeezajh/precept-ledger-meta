@@ -76,6 +76,10 @@ class MemoryStore:
     async def read_raw(self, stream: str) -> list[dict[str, Any]]:
         return copy.deepcopy(self._rows.get(stream, []))
 
+    def tree(self, stream: str) -> "MemoryLedgerTree":
+        """The stream's Merkle leaves, as a ``merkle.store.TreeStore`` adapter."""
+        return MemoryLedgerTree(self._streams.setdefault(stream, []))
+
     def history_for_tests(self, stream: str) -> list[ChainedRecord]:
         return list(self._streams.get(stream, []))
 
@@ -84,3 +88,16 @@ class MemoryStore:
     ) -> None:
         """Edit a stored row in place, like a database admin would. Tests only."""
         edit(self._rows[stream][seq - 1])
+
+
+class MemoryLedgerTree:
+    """``TreeStore`` adapter over one stream of a ``MemoryStore``: leaf ``i`` is seq ``i + 1``."""
+
+    def __init__(self, history: list[ChainedRecord]) -> None:
+        self._history = history  # shared with the store, so new appends are visible
+
+    async def size(self) -> int:
+        return len(self._history)
+
+    async def leaf_hashes(self, start: int, end: int) -> list[bytes]:
+        return [item.leaf_hash for item in self._history[start:end]]

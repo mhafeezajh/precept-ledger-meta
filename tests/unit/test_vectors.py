@@ -58,3 +58,36 @@ def test_record_vectors_pass_chain_verification() -> None:
     report = verify_chain(lines, KeyRing([("gate-1", raw)]), stream=VECTORS["stream"])
     assert report.ok
     assert report.checked == 3
+
+
+CHECKPOINT_VECTORS = json.loads(
+    (Path(__file__).parents[1] / "vectors" / "checkpoint-v1.json").read_text("utf-8")
+)
+
+
+def test_checkpoint_vectors_match_generator() -> None:
+    from scripts.make_vectors import build_checkpoint
+
+    assert build_checkpoint() == CHECKPOINT_VECTORS
+
+
+def test_checkpoint_vector_independently() -> None:
+    # The root commits to the three ledger-v1 records; the signature is plain Ed25519 over the
+    # body, with a 4-byte key hash in front (C2SP signed-note).
+    from merkle.proofs import root_hash
+
+    vec = CHECKPOINT_VECTORS["checkpoint"]
+    leaves = [base64.b64decode(r["leaf_hash"]) for r in VECTORS["records"]]
+    assert base64.b64decode(vec["root_hash"]) == root_hash(leaves)
+    assert vec["body"] == f"{vec['origin']}\n{len(leaves)}\n{vec['root_hash']}\n"
+    name, key_hash, key_b64 = vec["verifier_key"].split("+", 2)
+    key = base64.b64decode(key_b64)
+    assert key[0] == 1
+    assert key[1:] == base64.b64decode(VECTORS["keys"]["log"]["public_key"])
+    assert hashlib.sha256(name.encode() + b"\n" + key).digest()[:4].hex() == key_hash
+    text, sig_line = vec["note"].split("\n\n")
+    dash, signer_name, sig_b64 = sig_line.rstrip("\n").split(" ")
+    assert (dash, signer_name) == ("—", name)
+    raw = base64.b64decode(sig_b64)
+    assert raw[:4].hex() == key_hash
+    Ed25519PublicKey.from_public_bytes(key[1:]).verify(raw[4:], (text + "\n").encode())

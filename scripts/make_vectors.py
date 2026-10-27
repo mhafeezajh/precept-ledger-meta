@@ -1,9 +1,11 @@
-"""Generate tests/vectors/ledger-v1.json from fixed inputs and the TEST ONLY keys.
+"""Generate tests/vectors/ledger-v1.json and checkpoint-v1.json from fixed inputs and the
+TEST ONLY keys.
 
 Run with ``make vectors``. Output is deterministic (Ed25519 signatures are deterministic), so a
 diff after running it means the format changed, which needs a DECISIONS.md entry (skill §4).
 """
 
+import base64
 import json
 import sys
 from pathlib import Path
@@ -13,12 +15,16 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from ledger.chain import GENESIS, link  # noqa: E402  # path set up above for a plain script
+from ledger.checkpoint import Checkpoint, NoteKey, sign_checkpoint  # noqa: E402
 from ledger.format import b64encode, canonical_bytes  # noqa: E402
 from ledger.receipts import issue_receipt  # noqa: E402
 from ledger.signing import Signer, sign_submission  # noqa: E402
+from merkle.proofs import root_hash  # noqa: E402
 
 OUT = ROOT / "tests" / "vectors" / "ledger-v1.json"
+CHECKPOINT_OUT = ROOT / "tests" / "vectors" / "checkpoint-v1.json"
 STREAM = "harbor-federal/decisions"
+ORIGIN = f"precept-ledger.local/{STREAM}"
 
 CANONICAL_CASES: list[Any] = [
     {"b": 1, "a": "€", "c": [True, None, -7]},
@@ -117,6 +123,29 @@ def build() -> dict[str, Any]:
     }
 
 
+def build_checkpoint() -> dict[str, Any]:
+    """A checkpoint over the three records in ledger-v1.json, signed by the TEST ONLY log key."""
+    leaves = [base64.b64decode(r["leaf_hash"]) for r in build()["records"]]
+    checkpoint = Checkpoint(ORIGIN, len(leaves), root_hash(leaves))
+    log = seed("log")
+    return {
+        "description": "C2SP checkpoint over the ledger-v1 records. Keys are TEST ONLY.",
+        "checkpoint": {
+            "origin": ORIGIN,
+            "size": checkpoint.size,
+            "root_hash": b64encode(checkpoint.root),
+            "body": checkpoint.body(),
+            "verifier_key": NoteKey(ORIGIN, log.public_key_raw).verifier(),
+            "note": sign_checkpoint(checkpoint, log),
+        },
+    }
+
+
+def write(path: Path, data: dict[str, Any]) -> None:
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"wrote {path.relative_to(ROOT)}")
+
+
 if __name__ == "__main__":
-    OUT.write_text(json.dumps(build(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    print(f"wrote {OUT.relative_to(ROOT)}")
+    write(OUT, build())
+    write(CHECKPOINT_OUT, build_checkpoint())

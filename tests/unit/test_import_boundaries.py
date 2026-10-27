@@ -12,6 +12,7 @@ LEDGER_FORBIDDEN = {"gate", "policy", "assist", "agent", "web", "learn", "litell
 # Packages the offline verifier side may import from this repo (skill §2).
 VERIFY_ALLOWED_INTERNAL = {
     "ledger.format",
+    "ledger.checkpoint",
     "merkle",
     "merkle.hashing",
     "merkle.proofs",
@@ -42,10 +43,11 @@ def test_ledger_does_not_import_upper_layers_or_models(path: Path) -> None:
     assert not {top(m) for m in imports_of(path)} & LEDGER_FORBIDDEN
 
 
-def test_ledger_format_is_pure() -> None:
-    # verify/ will import ledger.format; it must pull in no I/O or network code.
-    names = imports_of(ROOT / "ledger" / "format.py")
-    assert not {top(n) for n in names} & NETWORK_MODULES
+@pytest.mark.parametrize("module", ["format", "checkpoint"])
+def test_verifier_facing_ledger_modules_are_pure(module: str) -> None:
+    # verify/ and witness/ import these; they must pull in no I/O or network code (D28).
+    names = imports_of(ROOT / "ledger" / f"{module}.py")
+    assert not {top(n) for n in names} & (NETWORK_MODULES | {"asyncio", "pathlib", "os"})
     internal = {n for n in names if top(n) in {"ledger", "common"}}
     assert internal <= VERIFY_ALLOWED_INTERNAL
 

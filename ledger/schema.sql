@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS receipt (
     UNIQUE (stream, seq)
 );
 
+-- Signed checkpoints (D30). The note is the full C2SP signed note and the only column the
+-- verifier trusts; tree_size and root_hash are copies for queries. Also written to a
+-- write-once directory by DirectorySink.
+CREATE TABLE IF NOT EXISTS checkpoint (
+    stream     text   NOT NULL,
+    tree_size  bigint NOT NULL CHECK (tree_size >= 0),
+    root_hash  text   NOT NULL,
+    note       text   NOT NULL,
+    PRIMARY KEY (stream, tree_size)
+);
+
 CREATE OR REPLACE FUNCTION pl_reject_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -57,12 +68,19 @@ CREATE OR REPLACE TRIGGER receipt_no_truncate
     BEFORE TRUNCATE ON receipt
     FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
 
-REVOKE ALL ON ledger_record, receipt FROM PUBLIC;
+CREATE OR REPLACE TRIGGER checkpoint_append_only
+    BEFORE UPDATE OR DELETE ON checkpoint
+    FOR EACH ROW EXECUTE FUNCTION pl_reject_change();
+CREATE OR REPLACE TRIGGER checkpoint_no_truncate
+    BEFORE TRUNCATE ON checkpoint
+    FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
+
+REVOKE ALL ON ledger_record, receipt, checkpoint FROM PUBLIC;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pl_app') THEN
-        GRANT SELECT, INSERT ON ledger_record, receipt TO pl_app;
+        GRANT SELECT, INSERT ON ledger_record, receipt, checkpoint TO pl_app;
     END IF;
 END;
 $$;

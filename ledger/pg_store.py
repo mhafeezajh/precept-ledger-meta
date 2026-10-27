@@ -14,6 +14,7 @@ from psycopg_pool import AsyncConnectionPool, PoolTimeout
 from common.errors import LedgerError, StoreError
 from ledger.chain import GENESIS, ChainedRecord, ChainHead
 from ledger.format import HASH_SIZE, Receipt, Record, b64decode, b64encode
+from ledger.pg_tree import PostgresCheckpointSink, PostgresTreeStore
 from ledger.store import AppendBuilder, check_built
 
 _RECORD_COLUMNS = (
@@ -79,6 +80,12 @@ class PostgresStore:
 
     async def close(self) -> None:
         await self._pool.close()
+
+    def tree(self, stream: str) -> PostgresTreeStore:
+        return PostgresTreeStore(self._pool, stream)
+
+    def checkpoint_sink(self, stream: str) -> PostgresCheckpointSink:
+        return PostgresCheckpointSink(self._pool, stream)
 
     async def append(self, stream: str, build: AppendBuilder) -> Receipt:
         try:
