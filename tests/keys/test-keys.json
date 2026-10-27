@@ -1,0 +1,9 @@
+{
+  "warning": "TEST ONLY - public seeds, never use outside tests",
+  "seeds": {
+    "gate-1": "f2921b51966e4a1c36188cacdfd7bd8e9397483aaeb56f25c85725319865fbb6",
+    "gate-2": "421ba7afad415e06cea91ae5c06cdc72f2e942f665cfdd541744e8a98bec830e",
+    "log": "aca53c4a35508143dd333ecd22fb13c160194d2797e47a38699fcb35109133d0",
+    "rogue": "233643ccb45090a41749689a6539d3f3166cc7b20eb9ed8fd31014bfe4e58131"
+  }
+}
