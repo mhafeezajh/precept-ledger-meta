@@ -2,6 +2,7 @@
 real proofs. Only the two model answers are faked."""
 
 import json
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -9,26 +10,20 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from assist.auditor import (
-    QA,
-    Auditor,
-    LedgerRecorder,
-    RecordQuery,
-    build_rows,
-    inject_wrong_assertion,
-    run_query,
-)
+from assist.auditor import QA, Auditor, LedgerRecorder, inject_wrong_assertion
 from assist.evidence import HttpLedgerReader
 from claims.checker import Assertion, Claim
 from common.clock import FixedClock
-from common.errors import ModelOutputError
+from common.errors import ModelOutputError, VerificationError
+from gate.ledger_client import HttpLedgerClient
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing
-from tests.gate_helpers import LOG, LocalLedger
+from tests.gate_helpers import AGENT, LOG, SMALL_PAYMENT, LocalLedger, rig
 from tests.helpers import STREAM, T0, signer_for
 from tests.unit.test_assist_brief import llm
 from tests.unit.test_assist_llm import FakeCompletion
 from tests.unit.test_claims_checker import TRUST, World, world
+from verify.keys import TrustedKeys
 
 __all__ = ["world"]  # fixture
 QUESTION = (
@@ -47,7 +42,12 @@ def check(record_id: str, field: str, value: object) -> dict[str, object]:
     return {"record_id": record_id, "field": field, "op": "eq", "value": value}
 
 
-def answer(w: World, approver: str = "j.ortiz", ids: list[str] | None = None) -> str:
+def answer(
+    w: World,
+    approver: str = "j.ortiz",
+    ids: list[str] | None = None,
+    summary: str = "One payment matches: $48,000.00, approved by j.ortiz.",
+) -> str:
     claim = {
         "text": f"$48,000.00 to northwind-supply was approved by {approver} after hours.",
         "record_ids": ids or [w.decision_id, w.verdict_id],
@@ -58,12 +58,7 @@ def answer(w: World, approver: str = "j.ortiz", ids: list[str] | None = None) ->
             check(w.verdict_id, "body.approver", approver),
         ],
     }
-    summary = "One payment matches: $48,000.00, approved by j.ortiz."
     return json.dumps({"summary": summary, "claims": [claim]})
-
-
-def query(**changes: object) -> RecordQuery:
-    return RecordQuery.model_validate({**QUERY, **changes})
 
 
 def auditor(w: World, fake: FakeCompletion, tmp_path: Path, recorder: Any = None) -> Auditor:
@@ -81,7 +76,11 @@ def auditor(w: World, fake: FakeCompletion, tmp_path: Path, recorder: Any = None
 async def test_beat_3_a_true_answer_is_proven_claim_by_claim(world: World, tmp_path: Path) -> None:
     fake = FakeCompletion(json.dumps(QUERY), answer(world))
     result = await auditor(world, fake, tmp_path).ask(QUESTION)
-    assert result.rows == 1
+    assert (result.rows, result.matched) == (1, (world.decision_id,))
+    assert result.coverage().startswith(
+        "The query ran in code over all 3 records under the final checkpoint (size 3, root "
+    )
+    assert result.coverage().endswith("and matched 1.")
     (claim,) = result.results
     assert claim.accepted, claim.reasons
     assert result.answer_text() == "One payment matches: $48,000.00, approved by j.ortiz."
@@ -123,16 +122,24 @@ async def test_ids_outside_the_rows_get_one_retry(world: World, tmp_path: Path) 
         )
 
 
-async def test_without_a_final_checkpoint_nothing_is_proven(world: World, tmp_path: Path) -> None:
-    class NoFinal(HttpLedgerReader):
-        async def final_size(self) -> int | None:
-            return None
+async def test_a_log_that_does_not_verify_gets_no_answer(world: World, tmp_path: Path) -> None:
+    fake = FakeCompletion(json.dumps(QUERY), answer(world))
+    a = auditor(world, fake, tmp_path)
+    a._trust = replace(TRUST, keys=TrustedKeys(producers={}, log_keys=TRUST.keys.log_keys))
+    with pytest.raises(VerificationError) as caught:
+        await a.ask(QUESTION)
+    assert caught.value.code == "audit.log_unproven"
+    assert fake.calls == []  # the model is never asked
 
-    a = auditor(world, FakeCompletion(json.dumps(QUERY), answer(world)), tmp_path)
-    a._ledger = NoFinal("http://test", world.http, STREAM)
-    result = await a.ask(QUESTION)
-    assert not result.results[0].accepted
-    assert "no evidence" in result.results[0].reasons[0]
+
+async def test_a_summary_that_goes_beyond_the_claims_is_not_shown(
+    world: World, tmp_path: Path
+) -> None:
+    beyond = answer(world, summary="One payment, $48,000.00, approved by m.lee.")
+    result = await auditor(world, FakeCompletion(json.dumps(QUERY), beyond), tmp_path).ask(QUESTION)
+    assert result.results[0].accepted
+    assert any("m.lee" in p for p in result.summary_problems)
+    assert result.answer_text().startswith("1 of 1 claims were proven. $48,000.00")
 
 
 async def test_the_audit_is_itself_recorded(world: World, tmp_path: Path) -> None:
@@ -150,31 +157,12 @@ async def test_the_audit_is_itself_recorded(world: World, tmp_path: Path) -> Non
     body = result.record.body
     assert body["question"] == QUESTION
     assert body["query"]["min_amount_cents"] == 1_000_001
+    assert body["log"]["size"] == 3
+    assert body["matched"] == [world.decision_id]
+    assert body["coverage"] == result.coverage()
     assert body["claims"][0]["accepted"] is False
     assert body["claims"][0]["injected"] is True
-    assert body["prompt_versions"] == ["auditor_query/1", "auditor_answer/1"]
-
-
-async def test_the_query_runs_in_code_over_joined_rows(world: World) -> None:
-    records = await HttpLedgerReader("http://test", world.http, STREAM).records()
-    rows = build_rows(records)
-    assert {r["decision_record_id"] for r in rows} == {world.decision_id, world.small_id}
-    demo = next(r for r in rows if r["decision_record_id"] == world.decision_id)
-    assert (demo["verdict"], demo["approver"], demo["outside_business_hours"]) == (
-        "approve",
-        "j.ortiz",
-        True,
-    )
-    every = query(
-        verdict="any", min_amount_cents=None, since_days=None, outside_business_hours="any"
-    )
-    assert len(run_query(every, records, NOW.now())) == 2
-    not_yet = query(verdict="none", min_amount_cents=None, outside_business_hours="any")
-    assert [r["decision_record_id"] for r in run_query(not_yet, records, NOW.now())] == [
-        world.small_id
-    ]
-    old = query(since_days=1)
-    assert run_query(old, records, NOW.now() + timedelta(days=2)) == []
+    assert body["prompt_versions"] == ["auditor_query/1", "auditor_answer/2"]
 
 
 def test_injection_changes_values_of_every_type() -> None:
@@ -205,3 +193,22 @@ async def test_a_real_audit_answer_from_muse_spark(world: World, tmp_path: Path)
     for claim in result.results:
         print(claim.accepted, claim.claim.text, claim.reasons)
     assert result.results
+
+
+async def test_coverage_says_what_the_query_did_not_search(world: World, tmp_path: Path) -> None:
+    r = rig()
+    r.gate._ledger = HttpLedgerClient("http://test", world.http)
+    await r.gate.decide(AGENT, "create_payment", SMALL_PAYMENT)  # after the final checkpoint
+    fake = FakeCompletion(json.dumps(QUERY), answer(world))
+    result = await auditor(world, fake, tmp_path).ask(QUESTION)
+    assert result.coverage().endswith(
+        "matched 1. 1 newer records are not final yet and were not searched."
+    )
+    assert (
+        replace(result, rows=0)
+        .coverage()
+        .endswith(
+            "matched 1. The model saw the newest 0. 1 newer records are not final yet and were not"
+            " searched."
+        )
+    )

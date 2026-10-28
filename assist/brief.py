@@ -20,6 +20,7 @@ from typing import Annotated, Any, Protocol
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from assist.llm import LlmClient
+from claims.query import BUSINESS_HOURS
 from common.clock import parse_ts
 from common.ids import ULID_PATTERN
 from gate.escalations import Escalation
@@ -28,7 +29,6 @@ from gate.records import DECISION, VERDICT, Receipted
 PROMPT_FILE = Path(__file__).parent / "prompts" / "approval_brief.md"
 HISTORY_DAYS = 30
 MAX_CITED = 8  # record ids listed per history group
-BUSINESS_HOURS = range(9, 17)  # 09:00-16:59 local, Monday to Friday
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _ULID_IN_TEXT = re.compile(r"\b[0-7][0-9A-HJKMNP-TV-Z]{25}\b")
 _VERDICT_WORDS = re.compile(

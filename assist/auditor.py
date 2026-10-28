@@ -1,13 +1,15 @@
 """Auditor Q&A with proof-checked answers (demo beat 3, ARCHITECTURE flow C).
 
-1. Muse Spark turns the question into a ``RecordQuery``: filters only, no answers.
-2. Code runs the query over the stream's records (``run_query``): decisions joined with their
+1. The stream's export is verified up to its latest final checkpoint (``claims.log``). If it
+   does not verify, nothing is asked and nothing is answered.
+2. Muse Spark turns the question into a ``RecordQuery``: filters only, no answers.
+3. Code runs the query over the proven records (``claims.query``): decisions joined with their
    verdicts. This is the model's only view of the ledger, and it is read-only.
-3. Muse Spark answers with claims: text, cited record ids, and field assertions.
-4. ``claims.checker`` fetches proof for every cited record and checks every assertion. Only
-   accepted claims reach the answer text; rejected ones are shown with their reasons.
-5. The question, the query, every claim and its result are appended as ``assist.qa``, signed
-   by ``assist-1``: the audit itself is audited.
+4. Muse Spark answers with claims: text, cited record ids, and field assertions.
+5. ``claims.checker`` checks every claim against the proven records, and the summary against
+   the accepted claims. Only what holds reaches the answer text; the rest is shown with reasons.
+6. The question, the query, the proven log size and root, the matching row ids, every claim
+   and its result are appended as ``assist.qa``, signed by ``assist-1``.
 
 ``inject_fault`` (demo only) changes one assertion of the first claim before checking, and
 the result says so, to show a wrong claim being rejected on demand.
@@ -17,25 +19,33 @@ import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal, Protocol
 from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from assist.brief import BUSINESS_HOURS, load_prompt
+from assist.brief import load_prompt
 from assist.evidence import LedgerReader
 from assist.llm import LlmClient
-from claims.checker import Assertion, Claim, ClaimResult, Trust, check_claims
-from common.clock import Clock, format_ts, parse_ts
+from claims.checker import (
+    Assertion,
+    Claim,
+    ClaimResult,
+    Trust,
+    check_claims_in_log,
+    check_summary,
+)
+from claims.log import ProvenLog, prove_log
+from claims.query import MAX_ROWS, Query, run_query
+from common.clock import Clock, format_ts
+from common.errors import VerificationError
 from common.ids import new_ulid
 from gate.ledger_client import LedgerClient
-from gate.records import DECISION, VERDICT, Receipted, verify_receipted
+from gate.records import Receipted, verify_receipted
 from ledger.signing import KeyRing, Signer, sign_submission
 
 PROMPTS = Path(__file__).parent / "prompts"
-MAX_ROWS = 50
 MAX_QUESTION = 500
 QA = "assist.qa"
 
@@ -54,6 +64,9 @@ class RecordQuery(_Strict):
     approver: Annotated[str, StringConstraints(max_length=64)] | None
     payee_id: Annotated[str, StringConstraints(max_length=64)] | None
     since_days: Annotated[int, Field(ge=1, le=3660)] | None
+
+    def to_query(self) -> Query:
+        return Query(**self.model_dump())
 
 
 class AssertionOut(_Strict):
@@ -76,66 +89,6 @@ class AuditorAnswer(_Strict):
 
 class QaRecorder(Protocol):
     async def record(self, body: dict[str, Any]) -> Receipted: ...
-
-
-def _outside_hours(facts: dict[str, Any]) -> bool | None:
-    hour, weekday = facts.get("local_hour"), facts.get("local_weekday")
-    if not isinstance(hour, int) or not isinstance(weekday, int):
-        return None
-    return weekday > 5 or hour not in BUSINESS_HOURS
-
-
-def build_rows(records: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One row per ``gate.decision``, joined with its ``gate.verdict``, newest first."""
-    verdicts = {r["body"].get("decision_record_id"): r for r in records if r.get("type") == VERDICT}
-    rows = []
-    for r in records:
-        if r.get("type") != DECISION:
-            continue
-        body, facts = r["body"], r["body"].get("resource") or {}
-        verdict = verdicts.get(r["record_id"])
-        rows.append({
-            "decision_record_id": r["record_id"],
-            "ts": r["ts"],
-            "agent": body.get("agent"),
-            "tool": body.get("tool"),
-            "action": body.get("action"),
-            "decision": body.get("decision"),
-            "amount_cents": facts.get("amount_cents"),
-            "payee_id": facts.get("payee_id"),
-            "payee_new": facts.get("payee_new"),
-            "local_hour": facts.get("local_hour"),
-            "local_weekday": facts.get("local_weekday"),
-            "outside_business_hours": _outside_hours(facts),
-            "verdict_record_id": None if verdict is None else verdict["record_id"],
-            "verdict": None if verdict is None else verdict["body"].get("verdict"),
-            "approver": None if verdict is None else verdict["body"].get("approver"),
-        })  # fmt: skip
-    return sorted(rows, key=lambda row: row["ts"], reverse=True)
-
-
-def _matches(row: dict[str, Any], q: RecordQuery, since: datetime | None) -> bool:
-    amount = row["amount_cents"]
-    wanted_hours = {"yes": True, "no": False}.get(q.outside_business_hours)
-    checks = [
-        q.action == "any" or row["action"] == q.action,
-        q.decision == "any" or row["decision"] == q.decision,
-        q.verdict == "any" or row["verdict"] == (None if q.verdict == "none" else q.verdict),
-        q.min_amount_cents is None or (isinstance(amount, int) and amount >= q.min_amount_cents),
-        q.max_amount_cents is None or (isinstance(amount, int) and amount <= q.max_amount_cents),
-        wanted_hours is None or row["outside_business_hours"] is wanted_hours,
-        q.approver is None or row["approver"] == q.approver,
-        q.payee_id is None or row["payee_id"] == q.payee_id,
-        since is None or parse_ts(row["ts"]) >= since,
-    ]
-    return all(checks)
-
-
-def run_query(
-    query: RecordQuery, records: Sequence[dict[str, Any]], now: datetime
-) -> list[dict[str, Any]]:
-    since = None if query.since_days is None else now - timedelta(days=query.since_days)
-    return [row for row in build_rows(records) if _matches(row, query, since)][:MAX_ROWS]
 
 
 def _row_ids(rows: Sequence[dict[str, Any]]) -> set[str]:
@@ -173,8 +126,11 @@ def inject_wrong_assertion(claim: Claim) -> Claim:
 class AuditResult:
     question: str
     query: RecordQuery
-    rows: int
+    log: ProvenLog
+    matched: tuple[str, ...]  # decision ids of every matching row, newest first
+    rows: int  # how many of them the model saw (at most MAX_ROWS)
     summary: str
+    summary_problems: tuple[str, ...]
     results: tuple[ClaimResult, ...]
     injected: int | None  # index of the claim changed by inject_fault
     record: Receipted | None
@@ -184,12 +140,25 @@ class AuditResult:
         return [r for r in self.results if r.accepted]
 
     def answer_text(self) -> str:
-        """The model's summary only if every claim held; otherwise only the accepted claims."""
-        if all(r.accepted for r in self.results):
+        """The model's summary only if it and every claim held; otherwise the accepted claims."""
+        if all(r.accepted for r in self.results) and not self.summary_problems:
             return self.summary
         accepted = [r.claim.text for r in self.accepted]
         held = f"{len(accepted)} of {len(self.results)} claims were proven."
         return " ".join([held, *accepted])
+
+    def coverage(self) -> str:
+        """What the code-run query covered: the basis for any "every" in the answer (D65)."""
+        size, matched = self.log.size, len(self.matched)
+        text = (
+            f"The query ran in code over all {size} records under the final checkpoint"
+            f" (size {size}, root {self.log.root_b64[:12]}…) and matched {matched}."
+        )
+        if self.rows < matched:
+            text += f" The model saw the newest {self.rows}."
+        if self.log.newer:
+            text += f" {self.log.newer} newer records are not final yet and were not searched."
+        return text
 
 
 class Auditor:
@@ -214,6 +183,9 @@ class Auditor:
 
     async def ask(self, question: str, *, inject_fault: bool = False) -> AuditResult:
         question = re.sub(r"\s+", " ", question).strip()[:MAX_QUESTION]
+        log = prove_log(await self._ledger.export(), self._trust)
+        if isinstance(log, str):  # R4: no answer about a log that does not verify
+            raise VerificationError(log, code="audit.log_unproven")
         now = self._clock.now()
         today = now.astimezone(self._timezone).strftime("%A %Y-%m-%d")
         query = await self._llm.complete_structured(
@@ -222,7 +194,8 @@ class Auditor:
              {"role": "user", "content": f"Today is {today}.\nQuestion: {question}"}],
             prompt_version=self.query_version,
         )  # fmt: skip
-        rows = run_query(query, await self._ledger.records(), now)
+        matched = run_query(query.to_query(), log.records, now)
+        rows = matched[:MAX_ROWS]
         answer = await self._llm.complete_structured(
             "spark", AuditorAnswer,
             [{"role": "system", "content": self._answer_prompt},
@@ -233,33 +206,29 @@ class Auditor:
         injected = None
         if inject_fault and claims:
             claims[0], injected = inject_wrong_assertion(claims[0]), 0
-        results = await self._check(claims)
+        results = check_claims_in_log(claims, log)
+        counts = (len(matched), len(rows), log.size)
         result = AuditResult(
-            question, query, len(rows), answer.summary, tuple(results), injected, None
-        )
+            question, query, log, tuple(r["decision_record_id"] for r in matched), len(rows),
+            answer.summary, tuple(check_summary(answer.summary, results, numbers=counts)),
+            tuple(results), injected, None,
+        )  # fmt: skip
         if self._recorder is not None:
             result = replace(result, record=await self._recorder.record(self._qa_body(result)))
         return result
-
-    async def _check(self, claims: Sequence[Claim]) -> list[ClaimResult]:
-        size = await self._ledger.final_size()
-        cited = sorted({i for c in claims for i in c.record_ids})
-        evidence = {}
-        if size is not None:
-            for record_id in cited:
-                found = await self._ledger.evidence(record_id, size)
-                if found is not None:
-                    evidence[record_id] = found
-        return check_claims(claims, evidence, self._trust)
 
     def _qa_body(self, result: AuditResult) -> dict[str, Any]:
         return {
             "question": result.question,
             "query": result.query.model_dump(),
+            "log": {"size": result.log.size, "root": result.log.root_b64},
+            "matched": list(result.matched),
             "rows": result.rows,
+            "coverage": result.coverage(),
             "model": self._llm.config.route("spark").model,
             "prompt_versions": [self.query_version, self.answer_version],
             "answer": result.answer_text(),
+            "summary_problems": list(result.summary_problems),
             "claims": [
                 {
                     "text": r.claim.text,

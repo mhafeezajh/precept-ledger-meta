@@ -1,5 +1,5 @@
-"""assist/evidence.py failure paths, and model_config: every ledger problem is an error or no
-evidence, never a proof."""
+"""assist/evidence.py failure paths, and model_config: every ledger problem is an error, never
+a proof."""
 
 from pathlib import Path
 
@@ -11,8 +11,6 @@ from assist.evidence import HttpLedgerReader
 from assist.llm import model_config
 from common.config import Settings
 from common.errors import ModelOutputError
-
-ULID = "01JB6X7Q2M9ZK3T8V4N5R6S7W0"
 
 
 def reader(status: int = 200, content: bytes = b"{}") -> HttpLedgerReader:
@@ -30,24 +28,9 @@ def down() -> HttpLedgerReader:
 
 
 @pytest.mark.parametrize("r", [down(), reader(503), reader(200, b"not a tar")])
-async def test_records_fail_closed(r: HttpLedgerReader) -> None:
+async def test_the_export_fails_closed(r: HttpLedgerReader) -> None:
     with pytest.raises(ModelOutputError):
-        await r.records()
-
-
-async def test_final_size_answers() -> None:
-    assert await reader(404).final_size() is None
-    assert await reader(200, b'{"size": 7}').final_size() == 7
-    with pytest.raises(ModelOutputError):
-        await reader(500).final_size()
-
-
-async def test_missing_or_odd_evidence_is_none() -> None:
-    assert await reader().evidence("../export", 3) is None
-    assert await reader(404).evidence(ULID, 3) is None
-    assert await reader(200, b'{"record": {}}').evidence(ULID, 3) is None
-    with pytest.raises(ModelOutputError):
-        await down().evidence(ULID, 3)
+        await r.export()
 
 
 def settings(tmp_path: Path, **values: object) -> Settings:
