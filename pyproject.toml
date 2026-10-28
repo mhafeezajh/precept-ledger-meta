@@ -76,7 +76,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist"]
+source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims"]
 # Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [
