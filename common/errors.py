@@ -81,3 +81,9 @@ class AnchorError(PreceptError):
     """A timestamp token or OpenTimestamps proof is malformed, untrusted or does not match."""
 
     code = "anchor.invalid"
+
+
+class GateError(PreceptError):
+    """Gate could not decide, record or confirm a tool call. The call never runs (R3, R4)."""
+
+    code = "gate.error"

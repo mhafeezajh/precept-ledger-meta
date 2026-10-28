@@ -1,0 +1,40 @@
+// Cedar schema for Gate requests. The normalizer (gate/normalizer.py) builds exactly these
+// contexts; a test evaluates every mapped tool against this file, so the two cannot drift.
+// Amounts are integer cents: Cedar has no exact decimals and the ledger rejects floats.
+
+entity Agent;
+entity Tool;
+
+action "value.transfer" appliesTo {
+  principal: [Agent],
+  resource: [Tool],
+  context: {
+    amount_cents: Long,
+    currency: String,
+    payee_id: String,
+    payee_new: Bool,
+    local_hour: Long,
+    local_weekday: Long,
+  },
+};
+
+action "comm.external" appliesTo {
+  principal: [Agent],
+  resource: [Tool],
+  context: {
+    recipients: Long,
+    external_recipients: Long,
+    local_hour: Long,
+    local_weekday: Long,
+  },
+};
+
+action "data.read" appliesTo {
+  principal: [Agent],
+  resource: [Tool],
+  context: {
+    data_class: String,
+    local_hour: Long,
+    local_weekday: Long,
+  },
+};

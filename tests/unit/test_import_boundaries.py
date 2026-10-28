@@ -82,3 +82,13 @@ def test_merkle_knows_nothing_about_the_ledger_or_the_network(path: Path) -> Non
     tops = {top(n) for n in names}
     assert not tops & (NETWORK_MODULES | LEDGER_FORBIDDEN | {"ledger"})
     assert {n for n in names if top(n) == "common"} <= {"common.errors"}
+
+
+GATE_FORBIDDEN = {"litellm", "openai", "assist", "agent", "web", "learn"}
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "gate").rglob("*.py")), ids=lambda p: p.name)
+def test_gate_decides_without_models(path: Path) -> None:
+    # R2: allow, deny and escalate come from Cedar and code. Briefs live in assist/ and are
+    # handed to Gate; Gate never calls a model or imports the layers that do.
+    assert not {top(m) for m in imports_of(path)} & GATE_FORBIDDEN
