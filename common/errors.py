@@ -75,3 +75,9 @@ class WitnessError(PreceptError):
     def __init__(self, message: str, *, code: str | None = None, latest_size: int | None = None):
         super().__init__(message, code=code)
         self.latest_size = latest_size
+
+
+class AnchorError(PreceptError):
+    """A timestamp token or OpenTimestamps proof is malformed, untrusted or does not match."""
+
+    code = "anchor.invalid"

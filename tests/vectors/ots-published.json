@@ -1,0 +1,15 @@
+{
+  "description": "Real OpenTimestamps calendar responses (pending) for SHA-256 of the checkpoint-v1 body, captured 2026-10-28 (published data, D46). Upgrade with the calendar once Bitcoin confirms (O5).",
+  "checkpoint_body": "precept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n",
+  "digest_hex": "29301d7be67cde7ce426ba629dcc3c7d4a6ad84a87664c989d0de0ba29c39808",
+  "calendars": [
+    {
+      "url": "https://a.pool.opentimestamps.org",
+      "timestamp_b64": "8Ai6AeQa7/EUQwjxIGuknWMczWZHHwmIXRp9tin+IthQ5R4VFyuJbQAnliv2CPAQC87lA9b9A1cDhumxwvcArwjwIAaxZcGWmyQje27swp5DsjHp986GYfRjQr2eQHQlT7y2CPAgXGhhsILOSrPIJkoYU3zdEonDPzDmfT0MRpvZqtrIsHkI8CBFOhJ3BQYQc9FH8IauSoyKrYCweuefOqOTVGMiTFu2zAjxBGrh+vLwCIs6QKOGlxA/AIPf4w0u+QyOLi1odHRwczovL2FsaWNlLmJ0Yy5jYWxlbmRhci5vcGVudGltZXN0YW1wcy5vcmc="
+    },
+    {
+      "url": "https://b.pool.opentimestamps.org",
+      "timestamp_b64": "8AhBJ1CVIFK0xwjwENmY2V7I+EL49o7sA39YRugI8CCjc6kcJ0dLJcTOXeGEdJtsphUUWHo2+/aUKDmmrI5pNwjwIDesFi1SqsOocUa8t1qR26GPkYHI/zXo+c1cAIw8nOmCCPEgdX9TLgkgJjUvDPlSed4LFhmQV7VocJu4+zIebXFiVf8I8QRq4frz8AiBwYtb7HLkggCD3+MNLvkMjiwraHR0cHM6Ly9ib2IuYnRjLmNhbGVuZGFyLm9wZW50aW1lc3RhbXBzLm9yZw=="
+    }
+  ]
+}

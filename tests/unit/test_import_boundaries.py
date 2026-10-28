@@ -15,6 +15,8 @@ VERIFY_ALLOWED_INTERNAL = {
     "ledger.canonical",
     "ledger.checkpoint",
     "ledger.cosignature",
+    "anchor.rfc3161",
+    "anchor.ots",
     "merkle",
     "merkle.hashing",
     "merkle.proofs",
@@ -54,11 +56,20 @@ def test_verifier_facing_ledger_modules_are_pure(module: str) -> None:
     assert internal <= VERIFY_ALLOWED_INTERNAL
 
 
+@pytest.mark.parametrize("module", ["rfc3161", "ots"])
+def test_verifier_facing_anchor_modules_are_pure(module: str) -> None:
+    # D44, D46: verify/ checks tokens and proofs with these; no I/O may hide in them.
+    names = imports_of(ROOT / "anchor" / f"{module}.py")
+    assert not {top(n) for n in names} & (NETWORK_MODULES | {"asyncio", "pathlib", "os"})
+    internal = {n for n in names if top(n) in {"ledger", "common", "anchor"}}
+    assert internal <= VERIFY_ALLOWED_INTERNAL
+
+
 @pytest.mark.parametrize("package", ["verify", "claims", "witness"], ids=lambda p: p)
 def test_verifier_side_imports_only_allowed_ledger_modules(package: str) -> None:
     for path in (ROOT / package).rglob("*.py"):
         for name in imports_of(path):
-            if top(name) == "ledger":
+            if top(name) in ("ledger", "anchor"):
                 assert name in VERIFY_ALLOWED_INTERNAL, f"{path}: {name}"
             if package == "verify":
                 assert top(name) not in NETWORK_MODULES, f"{path}: {name}"
