@@ -19,7 +19,12 @@ from ledger.pg_store import PostgresStore
 async def _export(url: str, stream: str, origin: str) -> bytes:
     store = await PostgresStore.open(url)
     try:
-        return await export_bundle(store, store.checkpoint_sink(stream), stream, origin)
+        # The same bundle as GET /ledger/v1/export: cosignatures and anchors included, or a
+        # verifier with --witness-keys finds nothing final (found Oct 28).
+        return await export_bundle(
+            store, store.checkpoint_sink(stream), stream, origin,
+            store.cosignatures(stream), store.anchors(stream),
+        )  # fmt: skip
     finally:
         await store.close()
 

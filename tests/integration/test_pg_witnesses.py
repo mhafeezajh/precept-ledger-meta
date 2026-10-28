@@ -18,6 +18,7 @@ from common.config import Settings
 from ledger.api import create_app
 from ledger.checkpointer import origin_for
 from ledger.cosignature import open_cosignatures
+from ledger.export_cli import _export as export_from_postgres
 from ledger.server import postgres_services
 from ledger.signing import Signer
 from scripts.dev_keys import ensure_keys
@@ -119,6 +120,11 @@ async def test_checkpoints_become_final_and_the_export_verifies_with_quorum(
     assert report.final is not None
     assert (report.final.size, report.final_cosigners) == (3, ("witness-1", "witness-2"))
     assert len(open_cosignatures(str(body["note"]), policy.keys)) == 2
+    # pl-export reads Postgres directly and must carry the same cosignatures (found Oct 28).
+    exported = await export_from_postgres(
+        env("DATABASE_URL"), stream, origin_for("precept-ledger.local", stream)
+    )
+    assert exported == bundle
 
     async with await psycopg.AsyncConnection.connect(env("DATABASE_URL")) as conn:
         with pytest.raises(psycopg.errors.InsufficientPrivilege):
