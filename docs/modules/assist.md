@@ -2,7 +2,7 @@
 
 Guarantees that every model call goes through one function, to a Meta model in Standard mode, and comes back as a validated schema or not at all. Approval briefs say only what code found in the ledger: every cited record and every number is checked against that context before Gate records the brief, and a brief never decides.
 
-Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Not yet run against the real Meta Model API: no key was set (see [`../MODELS.md`](../MODELS.md)). · Last updated: 2026-10-28 · Tests: 51 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 8, `test_assist_evidence.py` 6) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 92%, `assist/brief.py` 99%, `assist/auditor.py` 98%, `assist/evidence.py` 100%.
+Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Not yet run against the real Meta Model API: no key was set (see [`../MODELS.md`](../MODELS.md)). · Last updated: 2026-10-28 · Tests: 50 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 9, `test_assist_evidence.py` 4) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 98%, `assist/brief.py` 99%, `assist/auditor.py` 97%, `assist/evidence.py` 100%.
 
 Related pages: [`gate.md`](gate.md) (escalations, the `BriefWriter` port), [`../MODELS.md`](../MODELS.md) (model IDs, prices, parameters).
 
@@ -16,7 +16,7 @@ Owns:
 | Brief context from the ledger, `Brief` schema, grounding checks, `BriefWriter` | `assist/brief.py` |
 | The brief prompt, versioned | `assist/prompts/approval_brief.md` |
 | Auditor Q&A: query, rows, answer, claim check, `assist.qa` | `assist/auditor.py`, `assist/prompts/auditor_query.md`, `assist/prompts/auditor_answer.md` |
-| Reading records and evidence from the ledger API | `assist/evidence.py` |
+| Reading the export from the ledger API | `assist/evidence.py` |
 
 Does not own:
 
@@ -57,12 +57,13 @@ sequenceDiagram
 
 ### Auditor Q&A (beat 3)
 
-1. Muse Spark turns the question into a `RecordQuery` (filters only).
-2. Code reads the stream's export and runs the query: each `gate.decision` joined with its `gate.verdict`, newest first, at most 50 rows.
-3. Muse Spark answers from those rows with claims (text, record ids, assertions). Ids outside the rows get one retry.
-4. `claims.checker` proves each claim against the latest final checkpoint (see [`claims.md`](claims.md)).
-5. The answer text uses only accepted claims; rejected ones are listed with reasons.
-6. The audit is appended as `assist.qa`, signed by `assist-1`.
+1. Code reads the stream's export and `claims.log.prove_log` verifies it up to the latest final checkpoint. If it does not verify, the question gets no answer (`audit.log_unproven`) and the model is never called.
+2. Muse Spark turns the question into a `RecordQuery` (filters only).
+3. `claims.query.run_query` runs it over the proven records: each `gate.decision` joined with its `gate.verdict`, newest first. The model sees at most 50 rows.
+4. Muse Spark answers from those rows with claims (text, record ids, assertions). Ids outside the rows get one retry.
+5. `claims.checker` checks each claim against the proven log, and the summary against the accepted claims (see [`claims.md`](claims.md)).
+6. The answer text is the summary only if it and every claim held; otherwise the accepted claims. `coverage()` states what the query searched: "The query ran in code over all 3 records under the final checkpoint (size 3, root …) and matched 1.", plus any rows the model did not see and any newer records not yet final.
+7. The audit is appended as `assist.qa`, signed by `assist-1`.
 
 `--inject-fault` (demo) makes the first assertion of the first claim false and marks it injected, so the video can show a wrong claim being caught on demand.
 
@@ -77,9 +78,9 @@ sequenceDiagram
 | `build_context(escalation, decision, history)` | escalation, the decision `Receipted`, raw stream records | `BriefContext(data, record_ids)` | |
 | `check_brief(brief, context)` | | list of problems | |
 | `BriefWriter(llm, history).write(escalation, decision)` | | `assist.brief` record body | `ModelOutputError` (Gate logs it and records no brief) |
-| `Auditor(llm, reader, trust, recorder, clock=, timezone=).ask(question, inject_fault=False)` | question (≤ 500 chars) | `AuditResult(query, rows, summary, results, injected, record)`, `.answer_text()` | `ModelOutputError` (model or ledger unavailable, invalid twice) |
-| `run_query(query, records, now)`, `build_rows(records)` | | rows | |
-| `HttpLedgerReader(base, http, stream, final=True)` | | `records()`, `final_size()`, `evidence(id, size)` | `audit.ledger_unavailable` |
+| `Auditor(llm, reader, trust, recorder, clock=, timezone=).ask(question, inject_fault=False)` | question (≤ 500 chars) | `AuditResult(question, query, log, matched, rows, summary, summary_problems, results, injected, record)`, `.answer_text()`, `.coverage()` | `VerificationError` `audit.log_unproven`; `ModelOutputError` (model or ledger unavailable, invalid twice) |
+| `RecordQuery.to_query()` | | `claims.query.Query` | |
+| `HttpLedgerReader(base, http, stream)` | | `export()` → `verify.bundle.Bundle` | `audit.ledger_unavailable` |
 | `LedgerRecorder(...).record(body)` | | receipted `assist.qa` | ledger errors |
 
 ## Data
@@ -95,7 +96,7 @@ sequenceDiagram
 
 The `escalation` table gains `brief_record_id`, which can be set once in any state; the guard trigger refuses a change after that. `gate.verdict` gains `brief_record_id`.
 
-`assist.qa` (signed by `assist-1`): `question`, `query`, `rows`, `model`, `prompt_versions`, `answer` (the shown text), `claims[{text, record_ids, accepted, reasons, injected}]`, `asked_at`.
+`assist.qa` (signed by `assist-1`): `question`, `query`, `log{size, root}` (the proven prefix), `matched` (every matching decision id), `rows` (how many the model saw), `coverage`, `model`, `prompt_versions`, `answer` (the shown text), `summary_problems`, `claims[{text, record_ids, accepted, reasons, injected}]`, `asked_at`. With the same checkpoint, anyone can rerun the query and compare `matched`.
 
 Files: `logs/model_calls.csv` (see [`../MODELS.md`](../MODELS.md)).
 
@@ -119,7 +120,7 @@ Files: `logs/model_calls.csv` (see [`../MODELS.md`](../MODELS.md)).
 What it does not protect against:
 
 - **Misleading wording with true facts.** The checks cover ids, numbers and verdict advice, not tone. The approver still sees the raw facts and policy ids beside the brief.
-- **History read from the database, not proofs.** `build_context` uses records as stored. A tampered row would show in the brief and be caught by `pl-verify`; briefs do not verify inclusion proofs (the claim checker will, for auditor answers).
+- **History read from the database, not proofs.** `build_context` uses records as stored. A tampered row would show in the brief and be caught by `pl-verify`; briefs do not verify the log (auditor answers do, D65).
 - **Number matching by value.** A number that happens to appear elsewhere in the context (an hour, a policy id digit) passes in any sentence.
 
 ## Formulas and formats
@@ -137,7 +138,7 @@ With `META_API_KEY` in `.env`, `make gate` starts with briefs on (its log says `
 
 ## Decisions
 
-[D56](../DECISIONS.md) the model entry point · [D57](../DECISIONS.md) briefs grounded in code-built context · [D58](../DECISIONS.md) briefs as ledger records, off the decision path · [D59](../DECISIONS.md) `litellm` version and hygiene · [D60](../DECISIONS.md) auditor Q&A built with `claims/` · [D63](../DECISIONS.md) query then answer · [D64](../DECISIONS.md) answer text, fault injection, `assist.qa`.
+[D56](../DECISIONS.md) the model entry point · [D57](../DECISIONS.md) briefs grounded in code-built context · [D58](../DECISIONS.md) briefs as ledger records, off the decision path · [D59](../DECISIONS.md) `litellm` version and hygiene · [D60](../DECISIONS.md) auditor Q&A built with `claims/` · [D63](../DECISIONS.md) query then answer · [D64](../DECISIONS.md) answer text, fault injection, `assist.qa` · [D65](../DECISIONS.md) the proven log · [D67](../DECISIONS.md) the summary checked.
 
 ## Known gaps
 

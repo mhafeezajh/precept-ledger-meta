@@ -154,7 +154,7 @@ Three flows share one ledger; each ends in a signed record before anything chang
 
 1. An auditor asks a question in plain English.
 2. Muse Spark calls read-only query tools (filter records by type, time, amount, approver) and returns an answer as claims, each with record IDs and field assertions.
-3. The claim checker fetches each cited record, verifies its inclusion proof against the latest final checkpoint, and checks each assertion against the record's fields.
+3. The claim checker fetches each cited record, verifies its inclusion proof against the latest final checkpoint, and checks each assertion against the record's fields. *(As built, D65: the whole export is verified up to the latest final checkpoint before the model is asked; the query runs in code over that proven prefix, and claims are checked against it. Names and numbers in claim text and in the summary must be asserted, D62, D66, D67.)*
 4. Claims that pass are shown with a check mark and a proof link; claims that fail are shown struck out with the reason.
 5. The question, the answer and the check results are appended, so the audit itself is audited.
 
@@ -362,3 +362,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Components | Model settings live in `common/config.py` (`MODEL_PROFILE`, `META_API_KEY`, ...) instead of `models.yaml`; Standard mode is enforced by refusing `-contributor` model IDs; model IDs and limits in `docs/MODELS.md` | D56, D59 |
 | 2026-10-28 | Build plan | Auditor Q&A is built with `claims/`, not `assist/` | D60 |
 | 2026-10-28 | Flow C | The model's read-only query tools are one structured `RecordQuery` run by code over the export; claims are checked by `claims/checker.py` (producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers in text); answers use only accepted claims; audits are `assist.qa` records signed by a new `assist-1` key | D61-D64 |
+| 2026-10-28 | Flow C, `claims/` | The export is verified up to the final checkpoint before any question is answered; the query moves to `claims/query.py` and runs over the proven prefix; names in claim text and the summary are checked; `claims/` also imports `verify.bundle` and `verify.checks` | D65-D67 |

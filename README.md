@@ -16,7 +16,7 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `gate/` (`pl-gate`) | Done for this step. Normalizer, Cedar allow / deny / escalate (`cedarpy`), signed decision, verdict and result records, write-before-effect, approval queue with expiry, agent and approver tokens, `@governed` wrapper that verifies receipts itself, demo beat 2 (`make demo-gate`); MCP proxy deferred, briefs with `assist/` | [`docs/modules/gate.md`](docs/modules/gate.md) |
 | `policy/` | Not started | |
 | `assist/` | Done for this step. `assist/llm.py`, the only model entry point (Muse Spark via LiteLLM, Standard mode only, structured output, one checked retry, call log); approval briefs recorded as `assist.brief`; auditor Q&A (beat 3, `make demo-audit`) recorded as `assist.qa`; not yet run against the live API (no key) | [`docs/modules/assist.md`](docs/modules/assist.md), [`docs/MODELS.md`](docs/MODELS.md) |
-| `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, exact assertions, numbers in text backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
+| `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, or the whole export proven up to the final checkpoint; the auditor's query run in code over that proven prefix; exact assertions; numbers and names in claims and the summary backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
 | `learn/` | Not started | |
 | `agent/` | Not started | |
 | `web/` | Not started | |
@@ -81,5 +81,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `assist/brief.py`, `assist/prompts/approval_brief.md`: approval briefs grounded in ledger history and checked; Gate's `BriefWriter` port and `assist.brief` records |
 | Oct 28 | `claims/checker.py`: the claim checker |
 | Oct 28 | `assist/auditor.py`, `assist/evidence.py`, auditor prompts, `scripts/demo_audit.py` (`make demo-audit`, demo beat 3), `assist-1` producer key in `scripts/dev_keys.py` |
+| Oct 28 | `claims/log.py` (whole export proven up to the final checkpoint), `claims/query.py` (the auditor's query, run over proven records), names and the summary checked in `claims/checker.py` |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

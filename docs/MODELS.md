@@ -41,8 +41,8 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | Prompt | Version | Model | Output schema | Checked by |
 | --- | --- | --- | --- | --- |
 | `assist/prompts/approval_brief.md` | `approval_brief/1` | `spark` | `assist.brief.Brief` | `check_brief`: cited ids in the context, a citation per point, no numbers outside the context, no verdict advice |
-| `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs the query |
-| `assist/prompts/auditor_answer.md` | `auditor_answer/1` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` proves every claim |
+| `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs it (`claims/query.py`) over the proven log |
+| `assist/prompts/auditor_answer.md` | `auditor_answer/2` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` checks every claim against the proven log, and the summary against the accepted claims |
 
 ## Call log
 
