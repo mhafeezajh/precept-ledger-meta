@@ -2,7 +2,7 @@
 
 Guarantees that every model call goes through one function, to a Meta model in Standard mode, and comes back as a validated schema or not at all. Approval briefs say only what code found in the ledger: every cited record and every number is checked against that context before Gate records the brief, and a brief never decides.
 
-Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Run live against the Meta Model API on 2026-10-28 (see [`../MODELS.md`](../MODELS.md), "Verified live"). · Last updated: 2026-10-28 · Tests: 50 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 9, `test_assist_evidence.py` 4) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 98%, `assist/brief.py` 99%, `assist/auditor.py` 97%, `assist/evidence.py` 100%.
+Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Run live against the Meta Model API on 2026-10-28 (see [`../MODELS.md`](../MODELS.md), "Verified live"). · Last updated: 2026-10-28 · Tests: 61 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 20, `test_assist_auditor.py` 9, `test_assist_evidence.py` 4, `test_assist_mock.py` 10) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 98%, `assist/brief.py` 99%, `assist/auditor.py` 100%, `assist/evidence.py` 100%, `assist/mock.py` 98%.
 
 Related pages: [`gate.md`](gate.md) (escalations, the `BriefWriter` port), [`../MODELS.md`](../MODELS.md) (model IDs, prices, parameters).
 
@@ -13,6 +13,7 @@ Owns:
 | Part | File |
 | --- | --- |
 | The only model entry point: routes, profiles, structured output, retries, redaction, call log | `assist/llm.py` |
+| The `mock` profile: scripted answers for development, labelled `mock/scripted` | `assist/mock.py` |
 | Brief context from the ledger, `Brief` schema, grounding checks, `BriefWriter` | `assist/brief.py` |
 | The brief prompt, versioned | `assist/prompts/approval_brief.md` |
 | Auditor Q&A: query, rows, answer, claim check, `assist.qa` | `assist/auditor.py`, `assist/prompts/auditor_query.md`, `assist/prompts/auditor_answer.md` |
@@ -71,7 +72,7 @@ sequenceDiagram
 
 | Function / class | Input | Output | Errors |
 | --- | --- | --- | --- |
-| `ModelConfig(profile, routes, timeout_seconds, call_log)` | profile `cloud` or `onprem`; role → `Route(model, api_base, api_key)` | validated config | `config.model_profile`, `config.contributor_mode`, `config.model_route` |
+| `ModelConfig(profile, routes, timeout_seconds, call_log)` | profile `cloud`, `onprem` or `mock`; role → `Route(model, api_base, api_key)` | validated config | `config.model_profile`, `config.contributor_mode`, `config.model_route` |
 | `LlmClient.complete_structured(model_role, schema, messages, *, prompt_version, check=None)` | role (`spark`, `wonder`), Pydantic model, messages | parsed `schema` instance | `model.bad_output` (twice invalid), `model.unavailable` (after 3 attempts), `model.refused` (any other provider error), `config.model_route`, `config.model_schema` |
 | `redact(text)` | text | 10+ digits (with optional single separators) or 8+ in a row → `[redacted]` | |
 | `strict_json_schema(model)` | Pydantic model | JSON schema in Meta's strict subset | `config.model_schema` |
@@ -105,6 +106,7 @@ Files: `logs/model_calls.csv` (see [`../MODELS.md`](../MODELS.md)).
 | Failure or attack | What happens | Test |
 | --- | --- | --- |
 | A Contributor-mode model ID anywhere in the config | Refused at startup | `test_contributor_mode_models_are_refused` |
+| Mock output mistaken for Muse output | Every record and log row names `mock/scripted`; the key is never sent | `test_a_mock_brief_passes_the_same_checks_and_names_the_mock`, `test_the_mock_profile_needs_no_key_and_ignores_one` |
 | A non-Meta model on the cloud profile | Refused at startup | `test_unknown_profiles_and_non_meta_cloud_routes_are_refused` |
 | Any other file imports `litellm`, `openai` or `anthropic` | Test fails | `test_litellm_is_imported_only_by_the_model_entry_point` |
 | Account or routing numbers in a message | Masked before sending | `test_digits_that_could_be_account_numbers_never_leave` |

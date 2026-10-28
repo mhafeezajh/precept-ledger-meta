@@ -48,6 +48,8 @@ make demo-gate          # demo beat 2: $48,000 to a new payee is held until j.or
 make demo-audit         # demo beat 3: examiner's question, each claim proven or rejected (needs
                         # META_API_KEY); ARGS="--inject-fault" shows a wrong claim caught
 uv run pytest -m live -s  # real Muse Spark brief and audit answer (needs META_API_KEY)
+# MODEL_PROFILE=mock in .env: briefs and audit answers come from assist/mock.py, offline and
+# free, labelled mock/scripted; MODEL_PROFILE=cloud for the live Meta Model API (D72)
 make ots-upgrade        # hours after submission: record the confirmed Bitcoin proof
 ```
 
@@ -83,5 +85,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `assist/auditor.py`, `assist/evidence.py`, auditor prompts, `scripts/demo_audit.py` (`make demo-audit`, demo beat 3), `assist-1` producer key in `scripts/dev_keys.py` |
 | Oct 28 | `claims/log.py` (whole export proven up to the final checkpoint), `claims/query.py` (the auditor's query, run over proven records), names and the summary checked in `claims/checker.py` |
 | Oct 28 | `policy/rules.py`, `policy/compiler.py`, `policy/checks.py`, `deploy/policies/harbor-federal.yaml`, `deploy/demo/payments_policy.txt` (policy step 1 of 3, demo beat 1) |
+| Oct 28 | First live Meta Model API runs (beats 2 and 3); brief history fix; `assist/mock.py`, the `mock` model profile for offline development |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

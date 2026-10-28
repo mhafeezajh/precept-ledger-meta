@@ -52,6 +52,18 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 
 `outcome` is `ok`, `invalid` (failed the schema or the check), `unavailable` or `refused`. Only a SHA-256 of the messages is logged, never the prompt. Spend is input × price + output × price from the table above.
 
+## Mock profile (development)
+
+`MODEL_PROFILE=mock` replaces the LiteLLM call with `assist/mock.py`'s `scripted_completion`: no network, no key, no cost, deterministic. It is not a model. Its route is `mock/scripted`, so every record it feeds (`assist.brief`, `assist.qa`) and every call-log row (0 tokens) names it, and it can never pass for Muse output. It answers from the same messages a model receives, and `LlmClient` puts every answer through the same schema validation, checks, retry and claim checking.
+
+| Schema | What the script does |
+| --- | --- |
+| `Brief` | Points from the context: payee history, amount against the largest cleared payment and median, after hours, matched policies |
+| `RecordQuery` | Keywords: payment or email, approved or rejected, "over $X", "under $X", "approved by a.b", "to payee-id", "outside business hours", "today", "this week", "last N days" |
+| `AuditorAnswer` | One claim per row (at most 12) with assertions on amount (first, so `--inject-fault` changes it), payee, decision, verdict and approver |
+
+Any other schema is refused (`model.refused`). Development runs on `mock`; switch to `cloud` for live runs and the video.
+
 ## On-prem profile (stretch)
 
 `MODEL_PROFILE=onprem` routes `spark` to `openai/<ONPREM_MODEL>` at `ONPREM_API_BASE`, any OpenAI-compatible server (for example Muse Glimmer or Muse Spark Open behind vLLM, Baseten or Modal). Not tried yet; no on-prem model IDs are recorded until one runs.
