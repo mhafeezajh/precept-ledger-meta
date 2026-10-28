@@ -37,6 +37,7 @@ One page per module, written when the module is finished and kept current with t
 | When an auditor answer is shown as true | [claims.md](claims.md), "How it works" |
 | What catches a wrong drafted policy rule | [policy.md](policy.md), "The checks" |
 | How to run demo beat 1 (policy PDF to approved rules) | [policy.md](policy.md), "How to run and test" |
+| Start order, the demo week, every beat, a clean stream for recording | [`../runbook.md`](../runbook.md) |
 
 ## Signing contexts in use
 

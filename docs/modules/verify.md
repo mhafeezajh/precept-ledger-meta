@@ -9,7 +9,7 @@ Status: done for this step (bundle v2, `pl-export`, `pl-verify`, tamper suite, d
 Owns:
 
 - The export bundle format (v2; v1 still readable): the writer is `ledger/export.py`, the reader is `verify/bundle.py`.
-- `pl-export` (`ledger/export_cli.py`): writes one stream's bundle from Postgres.
+- `pl-export` (`ledger/export_cli.py`): writes one stream's bundle from Postgres, with its cosignatures and anchors, byte for byte the bundle `GET /ledger/v1/export` serves (D77).
 - The trusted-keys file, the witness-keys file (`WitnessPolicy`) and signature checks (`verify/keys.py`).
 - Every verification check (`verify/checks.py`, anchor checks in `verify/anchors.py`) and the CLI (`verify/cli.py`, also `python -m verify`).
 
