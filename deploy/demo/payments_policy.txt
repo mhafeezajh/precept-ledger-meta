@@ -1,0 +1,39 @@
+HARBOR FEDERAL SAVINGS BANK (FICTIONAL, FOR DEMONSTRATION ONLY)
+Payments Operations Policy for Automated Agents
+Policy PO-7, version 3. Owner: Compliance.
+
+1. Scope
+
+1.1 This policy applies to every software agent that acts for Payments Operations, including
+the agent named payments-ops.
+
+1.2 An action that this policy does not permit is not allowed.
+
+2. Vendor information
+
+2.1 The payments-ops agent may look up vendor records without approval.
+
+3. Outgoing payments
+
+3.1 The payments-ops agent may pay a known payee up to $5,000 per payment without approval.
+
+3.2 Any payment over $5,000 requires approval by a payments supervisor before it is sent.
+
+3.3 Any payment to a payee that has not been paid before requires approval by a payments
+supervisor, whatever the amount.
+
+3.4 Payments must be made in U.S. dollars (USD). A payment in any other currency is not
+allowed.
+
+3.5 No single payment may exceed $250,000. Larger payments are made by staff, outside the
+agent.
+
+4. Email
+
+4.1 The payments-ops agent may send email to bank staff without approval.
+
+4.2 Any email to a recipient outside the bank requires approval by a payments supervisor.
+
+5. Business hours
+
+5.1 Business hours are 9:00 a.m. to 5:00 p.m., Monday to Friday, bank time (New York).

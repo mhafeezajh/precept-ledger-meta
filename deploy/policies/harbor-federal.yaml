@@ -1,0 +1,85 @@
+# Harbor Federal seed rules, written by hand from deploy/demo/payments_policy.txt (policy PO-7).
+# The same eight rules as harbor-federal.cedar; a test checks that both decide every probe the
+# same way. Amounts are in dollars here and compiled to integer cents (D50). Format: policy/rules.py.
+
+- id: vendor-lookup-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "2.1",
+            quote: "The payments-ops agent may look up vendor records without approval." }
+  agent: payments-ops
+  when: { action: data.read, data_class: vendor }
+  then: allow
+  tests:
+    - { data_class: vendor, expect: allow }
+    - { data_class: customer, expect: deny }
+
+- id: pay-known-payee-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "3.1",
+            quote: "The payments-ops agent may pay a known payee up to $5,000 per payment without approval." }
+  agent: payments-ops
+  when: { action: value.transfer, payee_new: false, amount: { lte: 5000 } }
+  then: allow
+  tests:
+    - { amount: 120, payee_new: false, expect: allow }
+    - { amount: 5000, payee_new: false, expect: allow }
+    - { amount: "5000.01", payee_new: false, expect: escalate }
+
+- id: pay-over-5k-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "3.2",
+            quote: "Any payment over $5,000 requires approval by a payments supervisor before it is sent." }
+  agent: payments-ops
+  when: { action: value.transfer, amount: { gt: 5000 } }
+  then: escalate
+  approver_role: payments-supervisor
+  tests:
+    - { amount: 48000, payee_new: false, expect: escalate }
+    - { amount: 4999, payee_new: false, expect: allow }
+
+- id: pay-new-payee-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "3.3",
+            quote: "Any payment to a payee that has not been paid before requires approval by a payments supervisor, whatever the amount." }
+  agent: payments-ops
+  when: { action: value.transfer, payee_new: true }
+  then: escalate
+  approver_role: payments-supervisor
+  tests:
+    - { amount: 50, payee_new: true, expect: escalate }
+    - { amount: 50, payee_new: false, expect: allow }
+
+- id: pay-usd-only-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "3.4",
+            quote: "Payments must be made in U.S. dollars (USD). A payment in any other currency is not allowed." }
+  when: { action: value.transfer, currency: { ne: USD } }
+  then: deny
+  tests:
+    - { amount: 100, currency: EUR, expect: deny }
+    - { amount: 100, currency: USD, agent: payments-ops, expect: allow }
+
+- id: pay-cap-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "3.5",
+            quote: "No single payment may exceed $250,000." }
+  when: { action: value.transfer, amount: { gt: 250000 } }
+  then: deny
+  tests:
+    - { amount: 300000, expect: deny }
+    - { amount: 250000, agent: payments-ops, expect: escalate }
+
+- id: email-internal-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "4.1",
+            quote: "The payments-ops agent may send email to bank staff without approval." }
+  agent: payments-ops
+  when: { action: comm.external, external_recipients: 0 }
+  then: allow
+  tests:
+    - { recipients: 3, external_recipients: 0, expect: allow }
+    - { recipients: 3, external_recipients: 1, expect: escalate }
+
+- id: email-external-01
+  source: { doc: payments_policy.pdf, page: 1, clause: "4.2",
+            quote: "Any email to a recipient outside the bank requires approval by a payments supervisor." }
+  agent: payments-ops
+  when: { action: comm.external, external_recipients: { gt: 0 } }
+  then: escalate
+  approver_role: payments-supervisor
+  tests:
+    - { recipients: 2, external_recipients: 2, expect: escalate }
+    - { recipients: 2, external_recipients: 0, expect: allow }

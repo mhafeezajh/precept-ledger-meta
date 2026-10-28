@@ -16,6 +16,7 @@ dependencies = [
     "psycopg[binary]==3.3.6",
     "pydantic==2.14.1",
     "pydantic-settings==2.16.1",
+    "pyyaml==6.0.3",
     "rfc8785==0.1.4",
     "uvicorn==0.54.0",
 ]
@@ -35,6 +36,7 @@ dev = [
     "pytest-asyncio==1.4.1",
     "pytest-cov==7.1.0",
     "ruff==0.17.3",
+    "types-pyyaml==6.0.12.20260906",
 ]
 
 [build-system]
@@ -58,10 +60,10 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "PT"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist"]
+packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist", "policy"]
 
 [[tool.mypy.overrides]]
-module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*"]
+module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*", "policy.*"]
 strict = true
 
 [tool.pytest.ini_options]
@@ -76,7 +78,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims"]
+source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims", "policy"]
 # Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [
