@@ -24,7 +24,9 @@ vectors:
 	uv run python scripts/make_vectors.py
 
 secrets:
+	@! git ls-files --error-unmatch .env >/dev/null 2>&1 || (echo ".env is tracked by git: remove it (git rm --cached .env)"; exit 1)
 	gitleaks dir . --no-banner --redact
+	gitleaks git . --no-banner --redact
 
 db-up:
 	docker compose up -d --wait postgres

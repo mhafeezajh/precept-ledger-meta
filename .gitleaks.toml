@@ -7,4 +7,6 @@ useDefault = true
 description = "Deterministic TEST ONLY key seeds used by unit tests and published test vectors"
 # .hypothesis/ is hypothesis's git-ignored local cache of string constants from our own source
 # (public hashes and key-name patterns); it is never committed.
-paths = ['''^tests/keys/''', '''^tests/vectors/''', '''^\.hypothesis/''']
+# .env holds the developer's real keys and is git-ignored; `make secrets` fails if it is ever
+# tracked, and `gitleaks git` scans every commit, so a committed key is still caught.
+paths = ['''^tests/keys/''', '''^tests/vectors/''', '''^\.hypothesis/''', '''^\.env$''']
