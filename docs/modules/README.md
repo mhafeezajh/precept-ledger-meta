@@ -11,6 +11,7 @@ One page per module, written when the module is finished and kept current with t
 | [verify.md](verify.md) | Export bundle, `pl-export`, the offline `pl-verify` CLI, every finding it can report, witness quorum, timestamps | Done for this step |
 | [witness.md](witness.md) | C2SP cosignatures, the witness service (`pl-witness`), its own state, 2-of-3 finality in the ledger, demo beat 5 | Done for this step: compose services later |
 | [anchor.md](anchor.md) | RFC 3161 timestamps (request, offline verification), OpenTimestamps (submit, upgrade, read), backdating checks, bundle v2 | Done for this step: confirmed Bitcoin vector after O5 |
+| [gate.md](gate.md) | Normalizer, Cedar allow / deny / escalate, decision, verdict and result records, write-before-effect, approval queue, tokens, `pl-gate`, `@governed`, demo beat 2 | Done for this step: MCP proxy deferred, briefs with `assist/` |
 
 ## Where to look for what
 
@@ -26,6 +27,8 @@ One page per module, written when the module is finished and kept current with t
 | What a witness checks, and what happens when witnesses are down or lie | [witness.md](witness.md), "How it works" and "Security and failure behaviour" |
 | How to run demo beat 5 (rogue operator) | [witness.md](witness.md), "How to run and test" |
 | How a TSA token is checked, and what stops backdating | [anchor.md](anchor.md), "Interfaces" and "Formulas and formats" |
+| Why a tool call was allowed, denied or held, and what proves it | [gate.md](gate.md), "How it works" and "Data" |
+| How to run demo beat 2 (payment held until approval) | [gate.md](gate.md), "How to run and test" |
 
 ## Signing contexts in use
 
@@ -40,3 +43,6 @@ One table for every hashed or signed byte string, so a new one never collides wi
 | Checkpoint | Log | Note text (C2SP signed-note); contains no NUL, so it never matches the two above | `ledger/checkpoint.py` |
 | RFC 3161 / OpenTimestamps digest | TSA / calendar | `SHA-256(checkpoint body)`; signed by the TSA inside CMS, not by any of our keys | `anchor/rfc3161.py` |
 | Cosignature | Witness | `"cosignature/v1\ntime " ‖ t ‖ "\n" ‖ checkpoint body` (C2SP tlog-cosignature); key type 0x04, so its key hash never equals a log key's (0x01) | `ledger/cosignature.py` |
+| Tool-call arguments | | `"sha256:" ‖ hex(SHA-256("PL-args-v1\x00" ‖ JCS(arguments)))`, in `gate.decision` | `gate/normalizer.py` |
+| Tool result | | `"sha256:" ‖ hex(SHA-256("PL-result-v1\x00" ‖ JCS(result)))`, in `gate.result` | `gate/records.py` |
+| Policy set | | `"sha256:" ‖ hex(SHA-256(policy text))`, in `gate.decision` | `gate/decide.py` |

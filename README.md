@@ -13,7 +13,7 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `verify/` (`pl-verify`) | Done for now. Export bundle v2, `pl-export`, offline `pl-verify` naming the first broken seq and record, witness quorum (`--witness-keys`, `--quorum`), RFC 3161 timestamps and backdating (`--tsa-roots`), OpenTimestamps claims | [`docs/modules/verify.md`](docs/modules/verify.md) |
 | `witness/` (`pl-witness`) | Done for this step. C2SP tlog-cosignature and tlog-witness, three witnesses with their own keys and state, 2-of-3 finality, demo beat 5 (`make demo-rogue`); compose services later | [`docs/modules/witness.md`](docs/modules/witness.md) |
 | `anchor/` | Done for this step. RFC 3161 timestamps from DigiCert and FreeTSA on every final checkpoint, verified offline; OpenTimestamps (Bitcoin) submit and upgrade; confirmed Bitcoin vector after O5 | [`docs/modules/anchor.md`](docs/modules/anchor.md) |
-| `gate/` | Not started | |
+| `gate/` (`pl-gate`) | Done for this step. Normalizer, Cedar allow / deny / escalate (`cedarpy`), signed decision, verdict and result records, write-before-effect, approval queue with expiry, agent and approver tokens, `@governed` wrapper that verifies receipts itself, demo beat 2 (`make demo-gate`); MCP proxy deferred, briefs with `assist/` | [`docs/modules/gate.md`](docs/modules/gate.md) |
 | `policy/` | Not started | |
 | `assist/` | Not started | |
 | `claims/` | Not started | |
@@ -27,19 +27,23 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 599 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 778 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
-make test-integration   # Postgres 16 via docker compose; 20 tests incl. demo beat 4 end to end
-                        # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors
+make test-integration   # Postgres 16 via docker compose; 26 tests incl. demo beat 4 end to end
+                        # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
+                        # Gate escalations
 make vectors            # regenerate tests/vectors/{ledger,checkpoint,cosignature}-v1.json
 make demo-rogue         # demo beat 5: operator rewrites history, witnesses refuse, pl-verify catches it
-make dev-keys           # keys in KEYS_DIR (outside the repo): producer, log, three witnesses
+make dev-keys           # keys in KEYS_DIR (outside the repo): producer, log, three witnesses,
+                        # Gate caller tokens (payments-ops, j.ortiz, m.lee)
 make witnesses          # three witnesses on 127.0.0.1:8091-8093 (own keys, own state)
 make serve              # ledger API on 127.0.0.1:8080, checkpoint every 10 s, cosigned by WITNESSES,
                         # timestamped by TSAS, OpenTimestamps hourly (see .env.example)
 uv run pl-export --out export.tar
 uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt" \
   --tsa-roots deploy/tsa/roots.pem
+make gate               # Gate on 127.0.0.1:8070 in front of the ledger (policies: deploy/policies/)
+make demo-gate          # demo beat 2: $48,000 to a new payee is held until j.ortiz approves
 make ots-upgrade        # hours after submission: record the confirmed Bitcoin proof
 ```
 
@@ -66,5 +70,8 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | `ledger/witnessing.py`, `ledger/witness_client.py`, `cosignature` table: collecting and verifying cosignatures, 2-of-3 finality, cosigned checkpoints in the API and export; `pl-verify --witness-keys --quorum`; `scripts/demo_rogue_operator.py` (demo beat 5) |
 | Oct 28 | `anchor/rfc3161.py`, `anchor/ots.py`, `anchor/clients.py`: RFC 3161 requests and offline token verification, OpenTimestamps proof reading and upgrading, TSA and calendar clients; real TSA tokens and calendar proofs as vectors (`tests/vectors/rfc3161-published.json`, `ots-published.json`) |
 | Oct 28 | `ledger/anchoring.py`, `anchor` table, export bundle v2, `verify/anchors.py`: anchoring final checkpoints, anchors in the API, `pl-verify --tsa-roots` with backdating checks; `deploy/tsa/` roots; `scripts/upgrade_ots_vectors.py` (`make ots-upgrade`) |
+| Oct 28 | `gate/normalizer.py`, `gate/decide.py`, `gate/schema.cedarschema`, `deploy/policies/harbor-federal.cedar`: tool calls to action classes and facts, Cedar decisions with `@escalate`, seed demo policies |
+| Oct 28 | `gate/core.py`, `gate/records.py`, `gate/escalations.py`, `gate/ledger_client.py`, `gate/governed.py`: write-before-effect decisions, verdicts, expiry and result records; the `@governed` wrapper |
+| Oct 28 | `gate/api.py`, `gate/auth.py`, `gate/client.py`, `gate/server.py` (`pl-gate`), `gate/pg_escalations.py`, `gate/schema.sql`, `deploy/demo/payees.json`, `scripts/demo_gate.py` (`make demo-gate`, demo beat 2); Gate tokens in `scripts/dev_keys.py` |
 
-Meta tooling used so far: none. Model calls start with Gate and the demo agent (day 4). Muse Code will be used for at least one slice and recorded here.
+Meta tooling used so far: none. Gate makes no model calls (R2); model calls start with approval briefs (`assist/`) and the demo agent. Muse Code will be used for at least one slice and recorded here.

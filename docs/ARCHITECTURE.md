@@ -98,7 +98,7 @@ The prefixes `PL-chain-v1`, `0x00` and `0x01` keep one kind of hash from ever be
   "ts": "2026-10-29T21:14:03.112Z",
   "type": "gate.decision",
   "producer": {"id": "gate-1", "alg": "ed25519", "key_id": "ed25519:9f2c...", "sig": "base64..."},
-  "body": {"agent": "payments-ops", "action": "value.transfer", "decision": "escalate", "resource": {"amount": 48000, "payee_new": true}, "policy_ids": ["pay-new-payee-01"]},
+  "body": {"agent": "payments-ops", "tool": "create_payment", "action": "value.transfer", "decision": "escalate", "reason": "policy.escalate", "resource": {"amount_cents": 4800000, "currency": "USD", "payee_id": "northwind-supply", "payee_new": true, "local_hour": 17, "local_weekday": 4}, "policy_ids": ["pay-new-payee-01", "pay-over-5k-01"], "policy_set": "sha256:...", "args_digest": "sha256:...", "escalation": {"id": "01M6...", "expires_at": "...", "approver_roles": ["payments-supervisor"]}},
   "prev_hash": "base64..."
 }
 ```
@@ -137,9 +137,9 @@ Three flows share one ledger; each ends in a signed record before anything chang
 1. The agent calls a tool through the MCP proxy or the `@governed` decorator.
 2. Gate maps the call to an action class and typed facts (amount, payee\_new, data class). Unmapped tools are denied.
 3. Cedar evaluates the active policy set: allow, deny or escalate.
-4. Gate signs the decision record and appends it. No receipt means deny.
+4. Gate signs the decision record and appends it. No receipt means deny. The agent-side wrapper checks Gate's signature, the receipt and the argument digest itself before the tool runs (D51).
 5. Allow: the tool runs, and a result record with the result's digest is appended.
-6. Escalate: an approval request opens and Muse Spark writes a brief from the decision's facts. The approver approves or rejects; the verdict is appended; on approval the tool runs. No verdict before the timeout means deny.
+6. Escalate: an approval request opens and Muse Spark writes a brief from the decision's facts. The approver approves or rejects; the verdict is appended, then the request closes; on approval the tool runs. No verdict before the timeout means deny, recorded as an `expire` verdict (D52).
 
 ### B. Policy authoring
 
@@ -205,7 +205,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | `cosignature` | stream, tree\_size, witness, line (the full C2SP signature line, which carries the time) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; verified before insert and before serving (D39) |
 | `anchor` | stream, tree\_size, kind (`rfc3161`, `ots`), source, status (`verified`, `pending`, `confirmed`), token, digest | Insert only; an upgraded OpenTimestamps proof is a new `confirmed` row (D47) |
 | `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept |
-| `escalation` | id, decision\_record\_id, state, approver, expires\_at | State guarded on `open` |
+| `escalation` | id, stream, decision\_record\_id, agent, tool, action, approver\_roles, opened\_at, expires\_at, state, approver, verdict\_record\_id, decided\_at | App state. Closes once from `open`; a trigger refuses other edits and deletes (D52) |
 | `learner_proposal` | id, direction (`tighten`, `loosen`), yaml, cited\_record\_ids, counts, replay\_result, state, approvers | State guarded; every transition also a ledger record |
 
 Witnesses keep their own state (last cosigned size and root) in their own storage, never in the ledger's database.
@@ -222,8 +222,11 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | GET | `/ledger/v1/export?from=M&to=N` | Bundle for offline verification |
 | POST | `/witness/v1/cosign` (also `/witness/v1/add-checkpoint`) | Witness endpoint, C2SP tlog-witness body: `old <size>`, proof hashes, checkpoint in; cosignature line out; `409` with the witness's size (D40) |
 | GET | `/witness/v1/latest` | The witness's last cosigned checkpoint, for auditors to hold |
-| POST | `/gate/v1/decide` | Decision for an SDK caller |
-| POST | `/gate/v1/escalations/{id}/verdict` | Approve or reject |
+| POST | `/gate/v1/decide` | Decision for an SDK caller (agent token); returns the signed record and receipt |
+| GET | `/gate/v1/escalations` | Open approval requests (approver token) |
+| GET | `/gate/v1/escalations/{id}?wait=S` | One request, long-polled, with its verdict record (owning agent or approver) |
+| POST | `/gate/v1/escalations/{id}/verdict` | Approve or reject (approver with the required role) |
+| POST | `/gate/v1/results` | Record that a cleared tool ran, with its result digest |
 | POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules |
 | POST | `/assist/v1/ask` | Auditor question; returns checked claims |
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
@@ -351,3 +354,6 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Data model | `anchor` table columns as built; insert-only instead of "insert, then status updates" | Every proof an auditor saw stays (D47) |
 | 2026-10-28 | Verification, API | Export bundle v2 adds `anchors/`; `pl-verify --tsa-roots [--max-timestamp-lag]` checks tokens and back-dating; `checkpoints/latest` lists re-verified anchors | D47, D48 |
 | 2026-10-28 | Open questions | O3 resolved: DigiCert and FreeTSA | D45 |
+| 2026-10-28 | Record envelope, Data model | Gate's decision body names facts `resource` with amounts in integer cents (`amount_cents`) instead of `amount: 48000`; adds `tool`, `reason`, `policy_set`, `args_digest` and `escalation`. New record types `gate.verdict` and `gate.result` | Exact thresholds and an I-JSON ledger; every decision cites its policy text and exact call (D50) |
+| 2026-10-28 | Components, Flow A | Escalate is a Cedar `permit` annotated `@escalate` + `@approver_role`; any Cedar error denies. Gate is a service holding the producer key, and the `@governed` wrapper verifies records before the tool runs. MCP proxy deferred | D49, D51, D55 |
+| 2026-10-28 | Data model, API | `escalation` columns as built, scoped by stream, guarded by trigger; added `GET /gate/v1/escalations`, `GET /gate/v1/escalations/{id}`, `POST /gate/v1/results`, `GET /gate/v1/health`; bearer tokens for agents and approvers | D52, D53, D54 |
