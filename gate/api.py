@@ -37,6 +37,10 @@ _STATUS_BY_CODE = {
     "gate.record_not_found": 404,
     "gate.escalation_closed": 409,
     "gate.not_cleared": 409,
+    "policy.not_clean": 409,
+    "policy.forbidden": 403,
+    "policy.no_drafter": 503,
+    "policy.pdf_too_large": 413,
     "format.too_large": 413,
     "gate.ledger_refused": 502,
     "gate.bad_receipt": 502,
@@ -48,7 +52,7 @@ _STATUS_BY_CODE = {
 def status_for(exc: PreceptError) -> int:
     if exc.code in _STATUS_BY_CODE:
         return _STATUS_BY_CODE[exc.code]
-    return 400 if exc.code.startswith("format.") else 500
+    return 400 if exc.code.startswith(("format.", "policy.")) else 500
 
 
 def _gate(request: Request) -> Gate:
@@ -164,6 +168,7 @@ async def health(request: Request) -> JSONResponse:
         "status": "stopped" if stopped else "ok",
         "policy_set": gate.policies.digest,
         "rules": len(gate.policies.rules),
+        "policy_record": gate.policy_record_id,  # None: the policy file Gate started with
         "open_escalations": len(await gate.escalations.list_open()),
         "briefs": gate.writes_briefs,
     }
@@ -186,8 +191,14 @@ async def _sweep(gate: Gate, interval: float) -> None:
 GateFactory = Callable[[], contextlib.AbstractAsyncContextManager[tuple[Gate, Callers]]]
 
 
-def create_gate_app(open_gate: GateFactory, *, sweep_interval: float | None) -> FastAPI:
-    """``open_gate`` builds Gate and its callers at startup and releases them at shutdown."""
+def create_gate_app(
+    open_gate: GateFactory,
+    *,
+    sweep_interval: float | None,
+    extend: Callable[[FastAPI], None] | None = None,
+) -> FastAPI:
+    """``open_gate`` builds Gate and its callers at startup and releases them at shutdown.
+    ``extend`` adds routes that use them (the policy API, ``policy.api``)."""
 
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -224,4 +235,6 @@ def create_gate_app(open_gate: GateFactory, *, sweep_interval: float | None) -> 
         return error_response(status, exc.code, message)
 
     install_common_handlers(app, logger)
+    if extend is not None:
+        extend(app)
     return app

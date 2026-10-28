@@ -86,6 +86,7 @@ class Gate:
         self._log_keys = log_keys
         self._normalizer = normalizer
         self.policies = policies
+        self.policy_record_id: str | None = None  # the policy.approve record, if activated
         self.escalations = escalations
         self._clock = clock
         self._timeout = approval_timeout
@@ -182,6 +183,20 @@ class Gate:
                 "the ledger's receipt does not verify", code="gate.bad_receipt"
             ) from exc
         return record
+
+    async def append_record(self, record_type: str, body: dict[str, Any]) -> Receipted:
+        """Sign ``body`` as Gate, append it and verify the receipt (for policy records)."""
+        return await self._append(record_type, body)
+
+    async def read_record(self, record_id: str, record_type: str) -> Receipted:
+        """A Gate record from the ledger, checked against Gate's key and its receipt."""
+        return await self._read(record_id, record_type)
+
+    def activate(self, policies: PolicySet, approval_record_id: str) -> None:
+        """Decide with ``policies`` from now on. Only an approved set is activated (D74)."""
+        self.policies, self.policy_record_id = policies, approval_record_id
+        log_event(logger, logging.INFO, "policy activated", policy_set=policies.digest,
+                  record_id=approval_record_id)  # fmt: skip
 
     def _verify(self, record: Receipted, record_type: str) -> None:
         verify_receipted(
