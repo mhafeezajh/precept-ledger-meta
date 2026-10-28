@@ -6,6 +6,7 @@ Gate-specific settings are ``GATE_*`` variables (see ``.env.example``); ``DATABA
 ``KEYS_DIR`` and ``LEDGER_STREAM`` are shared with the ledger.
 """
 
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import timedelta
@@ -17,22 +18,27 @@ import uvicorn
 from fastapi import FastAPI
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from assist.brief import BriefWriter
+from assist.llm import LlmClient, ModelConfig, Route
 from common.clock import SystemClock
 from common.config import Settings, load_settings
 from common.errors import ConfigError, PreceptError
-from common.logging import configure_logging
+from common.logging import configure_logging, log_event
 from gate.api import create_gate_app
 from gate.auth import Callers
+from gate.core import BriefWriter as BriefPort
 from gate.core import Gate
 from gate.decide import load_policy_set
 from gate.ledger_client import HttpLedgerClient
 from gate.normalizer import Normalizer, StaticPayees
 from gate.pg_escalations import PostgresEscalationStore
+from ledger.pg_store import PostgresStore
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing, Signer
 from verify.keys import TrustedKeys
 
 CALLERS_FILE = "gate-callers.txt"
+logger = logging.getLogger("pl.gate.server")
 
 
 class GateSettings(BaseSettings):
@@ -49,6 +55,7 @@ class GateSettings(BaseSettings):
     approval_timeout_seconds: float = 900.0
     sweep_interval_seconds: float = 5.0
     ledger_timeout_seconds: float = 5.0
+    briefs: bool = True  # approval briefs from Muse Spark, when a model is configured
     host: str = "127.0.0.1"
     port: int = 8070
 
@@ -77,6 +84,25 @@ def _timezone(name: str) -> ZoneInfo:
         raise ConfigError(f"unknown timezone {name!r}", code="config.timezone") from exc
 
 
+def model_config(settings: Settings) -> ModelConfig | None:
+    """The model routes for both profiles, or None when the active one has no credentials."""
+    key = settings.meta_api_key.get_secret_value() if settings.meta_api_key else None
+    onprem = Route(f"openai/{settings.onprem_model}", settings.onprem_api_base or None, None)
+    routes = {
+        "cloud": {
+            "spark": Route("meta/muse-spark-1.3", settings.meta_api_base, key),
+            "wonder": Route("meta/muse-wonder-1.0", settings.meta_api_base, key),
+        },
+        "onprem": {"spark": onprem},
+    }
+    active = key if settings.model_profile == "cloud" else settings.onprem_api_base
+    if not active:
+        return None
+    return ModelConfig(
+        settings.model_profile, routes, settings.model_timeout_seconds, settings.model_call_log
+    )
+
+
 @asynccontextmanager
 async def gate_from_settings(
     settings: Settings, gate: GateSettings
@@ -90,7 +116,12 @@ async def gate_from_settings(
         timezone=_timezone(gate.timezone),
     )
     store = await PostgresEscalationStore.open_pool(settings.database_url, settings.ledger_stream)
+    history = await PostgresStore.open(settings.database_url, max_size=2)
     http = httpx.AsyncClient(timeout=gate.ledger_timeout_seconds)
+    config = model_config(settings) if gate.briefs else None
+    briefs: BriefPort | None = None if config is None else BriefWriter(LlmClient(config), history)
+    log_event(logger, logging.INFO, "gate starting", briefs=config is not None,
+              profile=settings.model_profile)  # fmt: skip
     try:
         yield (
             Gate(
@@ -104,11 +135,13 @@ async def gate_from_settings(
                 escalations=store,
                 clock=clock,
                 approval_timeout=timedelta(seconds=gate.approval_timeout_seconds),
+                briefs=briefs,
             ),
             callers,
         )
     finally:
         await http.aclose()
+        await history.close()
         await store.close_pool()
 
 

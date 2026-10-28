@@ -252,6 +252,7 @@ async def test_the_sweeper_expires_overdue_escalations_and_health_reports() -> N
         )
         health = (await s.call("GET", "/gate/v1/health", None)).json()
         assert (health["status"], health["open_escalations"], health["rules"]) == ("ok", 1, 8)
+        assert health["briefs"] is False
         s.rig.clock.current = s.rig.clock.current.replace(year=2027)
         for _ in range(200):
             if not await s.rig.store.list_open():

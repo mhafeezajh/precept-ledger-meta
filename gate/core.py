@@ -13,7 +13,7 @@ import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Protocol
 
 from common.clock import Clock, format_ts
 from common.errors import GateError, PreceptError
@@ -43,6 +43,19 @@ class GateDecision:
     escalation: Escalation | None = None
 
 
+class BriefWriter(Protocol):
+    """Writes the body of an ``assist.brief`` record for an escalation (``assist.brief``).
+
+    Gate only calls it after the decision is recorded and the escalation is open, and only
+    records what it returns. A brief never changes a decision or a verdict (R2).
+    """
+
+    async def write(self, escalation: Escalation, decision: Receipted) -> dict[str, Any]: ...
+
+
+BRIEF = "assist.brief"
+
+
 @dataclass(frozen=True)
 class Approver:
     name: str
@@ -63,6 +76,7 @@ class Gate:
         escalations: EscalationStore,
         clock: Clock,
         approval_timeout: timedelta,
+        briefs: BriefWriter | None = None,
     ) -> None:
         self.producer_id = producer_id
         self._signer = signer
@@ -77,6 +91,8 @@ class Gate:
         self._timeout = approval_timeout
         self._lock = asyncio.Lock()  # one closer at a time: verdicts and expiry
         self._closed: dict[str, asyncio.Event] = {}
+        self._briefs = briefs
+        self._brief_tasks: set[asyncio.Task[None]] = set()
 
     # --- decisions -----------------------------------------------------------------------
 
@@ -111,6 +127,10 @@ class Gate:
                 evaluation.approver_roles, now, expires_at,
             )  # fmt: skip
             await self._open(escalation)
+            if self._briefs is not None:  # in the background: the decision never waits on a model
+                task = asyncio.create_task(self._write_brief(self._briefs, escalation, record))
+                self._brief_tasks.add(task)
+                task.add_done_callback(self._brief_tasks.discard)
         log_event(
             logger, logging.INFO, "decision", record_id=record.record_id, agent=agent,
             tool=tool, outcome=evaluation.outcome.value, reason=evaluation.reason,
@@ -169,6 +189,47 @@ class Gate:
             log_keys=self._log_keys, record_type=record_type,
         )  # fmt: skip
 
+    async def _write_brief(
+        self, writer: BriefWriter, escalation: Escalation, decision: Receipted
+    ) -> None:
+        """Record a brief for the approver, or none. Never raises: a brief is advice only."""
+        try:
+            body = await writer.write(escalation, decision)
+            if (body.get("escalation_id"), body.get("decision_record_id")) != (
+                escalation.id,
+                decision.record_id,
+            ):
+                raise GateError("brief is for another escalation", code="gate.bad_brief")
+            record = await self._append(BRIEF, body)
+            await self.escalations.attach_brief(escalation.id, record.record_id)
+        except Exception as exc:  # noqa: BLE001  # logged; the approver decides without a brief
+            code = getattr(exc, "code", type(exc).__name__)
+            log_event(
+                logger, logging.WARNING, "brief unavailable", escalation_id=escalation.id, code=code
+            )
+            return
+        log_event(
+            logger,
+            logging.INFO,
+            "brief recorded",
+            escalation_id=escalation.id,
+            record_id=record.record_id,
+        )
+
+    @property
+    def writes_briefs(self) -> bool:
+        return self._briefs is not None
+
+    async def drain_briefs(self) -> None:
+        """Wait for briefs still being written (tests, shutdown)."""
+        if self._brief_tasks:
+            await asyncio.gather(*self._brief_tasks)
+
+    async def brief_record(self, escalation: Escalation) -> Receipted | None:
+        if escalation.brief_record_id is None:
+            return None
+        return await self._read(escalation.brief_record_id, BRIEF)
+
     # --- escalations ---------------------------------------------------------------------
 
     async def verdict(self, escalation_id: str, approver: Approver, verdict: str) -> Receipted:
@@ -212,6 +273,7 @@ class Gate:
             "agent": escalation.agent,
             "tool": escalation.tool,
             "action": escalation.action,
+            "brief_record_id": escalation.brief_record_id,  # what the approver could see
         }
 
     async def _expire(self, escalation: Escalation, now: datetime) -> None:

@@ -21,18 +21,18 @@ CREATE TABLE IF NOT EXISTS escalation (
     CHECK (state <> 'approved' OR (approver IS NOT NULL AND verdict_record_id IS NOT NULL))
 );
 
+-- The assist.brief record shown to approvers; attached once, at any state (it may arrive late).
+ALTER TABLE escalation ADD COLUMN IF NOT EXISTS brief_record_id text;
+
 CREATE INDEX IF NOT EXISTS escalation_open_by_expiry ON escalation (stream, expires_at) WHERE state = 'open';
 
--- The app may close an open escalation and nothing else: no reopening, no edits to what was
--- asked, no deletes. The demo admin connection is not exempt.
+-- The app may close an open escalation and attach one brief, nothing else: no reopening, no
+-- edits to what was asked, no deletes. The demo admin connection is not exempt.
 CREATE OR REPLACE FUNCTION pl_escalation_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'escalation rows are never deleted';
-    END IF;
-    IF OLD.state <> 'open' THEN
-        RAISE EXCEPTION 'escalation % is already %', OLD.id, OLD.state;
     END IF;
     IF (NEW.id, NEW.stream, NEW.decision_record_id, NEW.agent, NEW.tool, NEW.action,
         NEW.approver_roles, NEW.opened_at, NEW.expires_at)
@@ -40,6 +40,15 @@ BEGIN
        (OLD.id, OLD.stream, OLD.decision_record_id, OLD.agent, OLD.tool, OLD.action,
         OLD.approver_roles, OLD.opened_at, OLD.expires_at) THEN
         RAISE EXCEPTION 'only the outcome of escalation % may change', OLD.id;
+    END IF;
+    IF OLD.brief_record_id IS NOT NULL
+       AND NEW.brief_record_id IS DISTINCT FROM OLD.brief_record_id THEN
+        RAISE EXCEPTION 'escalation % already has a brief', OLD.id;
+    END IF;
+    IF OLD.state <> 'open'
+       AND (NEW.state, NEW.approver, NEW.verdict_record_id, NEW.decided_at)
+           IS DISTINCT FROM (OLD.state, OLD.approver, OLD.verdict_record_id, OLD.decided_at) THEN
+        RAISE EXCEPTION 'escalation % is already %', OLD.id, OLD.state;
     END IF;
     RETURN NEW;
 END;

@@ -92,9 +92,15 @@ async def decide(request: Request) -> JSONResponse:
     )
 
 
+async def _with_brief(gate: Gate, escalation: Escalation) -> dict[str, Any]:
+    brief = await gate.brief_record(escalation)
+    return {**escalation.to_json(), "brief": None if brief is None else brief.body}
+
+
 async def list_escalations(request: Request) -> dict[str, Any]:
     _caller(request, APPROVER)
-    return {"escalations": [e.to_json() for e in await _gate(request).escalations.list_open()]}
+    gate = _gate(request)
+    return {"escalations": [await _with_brief(gate, e) for e in await gate.escalations.list_open()]}
 
 
 def _check_visible(escalation: Escalation, caller: Caller) -> None:
@@ -111,9 +117,11 @@ async def get_escalation(
     _check_visible(await gate.status(escalation_id), caller)
     escalation = await gate.wait(escalation_id, wait)
     verdict = await gate.verdict_record(escalation)
+    brief = await gate.brief_record(escalation)
     return {
         "escalation": escalation.to_json(),
         "verdict": None if verdict is None else verdict.to_json(),
+        "brief": None if brief is None else brief.to_json(),
     }
 
 
@@ -157,6 +165,7 @@ async def health(request: Request) -> JSONResponse:
         "policy_set": gate.policies.digest,
         "rules": len(gate.policies.rules),
         "open_escalations": len(await gate.escalations.list_open()),
+        "briefs": gate.writes_briefs,
     }
     return JSONResponse(body, status_code=503 if stopped else 200)
 

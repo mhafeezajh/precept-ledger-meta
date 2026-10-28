@@ -17,7 +17,7 @@ from gate.escalations import OPEN, Escalation
 
 _COLUMNS = (
     "id, decision_record_id, agent, tool, action, approver_roles, opened_at, expires_at,"
-    " state, approver, verdict_record_id, decided_at"
+    " state, approver, verdict_record_id, decided_at, brief_record_id"
 )
 # S608: only the constant column list is interpolated; every value is a bound parameter.
 _SELECT = f"SELECT {_COLUMNS} FROM escalation"  # noqa: S608
@@ -59,7 +59,7 @@ class PostgresEscalationStore:
         e = escalation
         values = (
             self._stream, e.id, e.decision_record_id, e.agent, e.tool, e.action,
-            list(e.approver_roles), e.opened_at, e.expires_at, OPEN, None, None, None,
+            list(e.approver_roles), e.opened_at, e.expires_at, OPEN, None, None, None, None,
         )  # fmt: skip
         placeholders = ", ".join(["%s"] * len(values))
         await self._execute(
@@ -85,6 +85,14 @@ class PostgresEscalationStore:
             "UPDATE escalation SET state = %s, approver = %s, verdict_record_id = %s,"
             " decided_at = %s WHERE stream = %s AND id = %s AND state = 'open'",
             (state, approver, verdict_record_id, decided_at, self._stream, escalation_id),
+        )
+        return bool(rows[0]["rowcount"] == 1)
+
+    async def attach_brief(self, escalation_id: str, record_id: str) -> bool:
+        rows = await self._execute(
+            "UPDATE escalation SET brief_record_id = %s"
+            " WHERE stream = %s AND id = %s AND brief_record_id IS NULL",
+            (record_id, self._stream, escalation_id),
         )
         return bool(rows[0]["rowcount"] == 1)
 

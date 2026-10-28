@@ -38,6 +38,17 @@ async def create_payment(**arguments: Any) -> dict[str, str]:
     return {"payment_id": "pay-demo-0001", "status": "sent"}
 
 
+def show_brief(brief: dict[str, Any] | None) -> None:
+    if brief is None:
+        print("  (no brief: Gate has no model configured, or the brief was rejected)")
+        return
+    print(f"  brief ({brief['model']}, {brief['prompt_version']}): {brief['headline']}")
+    for point in brief["unusual"]:
+        print(f"    - {point['text']}  [{', '.join(point['record_ids'])}]")
+    for check in brief["approver_checks"]:
+        print(f"    check: {check}")
+
+
 async def approve_ours(http: httpx.AsyncClient, keys_dir: Path, since: str) -> None:
     """Approve, as j.ortiz, the payment escalation this run opened (none older)."""
     headers = {"authorization": f"Bearer {token(keys_dir, 'j.ortiz')}"}
@@ -49,7 +60,14 @@ async def approve_ours(http: httpx.AsyncClient, keys_dir: Path, since: str) -> N
         await asyncio.sleep(0.2)
     escalation = ours[0]
     print(f"  approval queue: escalation {escalation['id']}, needs {escalation['approver_roles']}")
-    await asyncio.sleep(1.0)  # the payment is visibly held before anyone approves
+    briefs = (await http.get(f"{GATE_URL}/gate/v1/health")).json()["briefs"]
+    for _ in range(75 if briefs else 0):  # up to 15 s for Muse Spark's brief
+        if escalation["brief"] is not None:
+            break
+        await asyncio.sleep(0.2)
+        queue = (await http.get(f"{GATE_URL}/gate/v1/escalations", headers=headers)).json()
+        escalation = next(e for e in queue["escalations"] if e["id"] == escalation["id"])
+    show_brief(escalation["brief"])
     response = await http.post(
         f"{GATE_URL}/gate/v1/escalations/{escalation['id']}/verdict",
         headers=headers,

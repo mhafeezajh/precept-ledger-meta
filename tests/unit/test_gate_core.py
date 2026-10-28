@@ -132,6 +132,7 @@ async def test_a_supervisor_approves_and_the_verdict_is_a_ledger_record() -> Non
         "agent": AGENT,
         "tool": "create_payment",
         "action": "value.transfer",
+        "brief_record_id": None,
     }
     closed = await r.gate.status(escalation.id)
     assert (closed.state, closed.approver, closed.verdict_record_id) == (

@@ -32,6 +32,7 @@ class Escalation:
     approver: str | None = None
     verdict_record_id: str | None = None
     decided_at: datetime | None = None
+    brief_record_id: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -47,6 +48,7 @@ class Escalation:
             "approver": self.approver,
             "verdict_record_id": self.verdict_record_id,
             "decided_at": None if self.decided_at is None else format_ts(self.decided_at),
+            "brief_record_id": self.brief_record_id,
         }
 
 
@@ -64,6 +66,10 @@ class EscalationStore(Protocol):
         decided_at: datetime,
     ) -> bool:
         """Move an open escalation to ``state``. False if it was not open."""
+        ...
+
+    async def attach_brief(self, escalation_id: str, record_id: str) -> bool:
+        """Link the ``assist.brief`` record, once. False if one is already attached."""
         ...
 
     async def list_open(self) -> list[Escalation]: ...
@@ -103,6 +109,13 @@ class MemoryEscalationStore:
             verdict_record_id=verdict_record_id,
             decided_at=decided_at,
         )
+        return True
+
+    async def attach_brief(self, escalation_id: str, record_id: str) -> bool:
+        current = self.stored.get(escalation_id)
+        if current is None or current.brief_record_id is not None:
+            return False
+        self.stored[escalation_id] = replace(current, brief_record_id=record_id)
         return True
 
     async def list_open(self) -> list[Escalation]:

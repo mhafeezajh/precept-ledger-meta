@@ -168,6 +168,27 @@ async def test_the_guard_trigger_forbids_reopening_editing_and_deleting(gate: Ga
             await conn.execute("TRUNCATE escalation")
 
 
+async def test_a_brief_attaches_once_even_after_the_verdict(
+    gate: Gate, escalations: PostgresEscalationStore
+) -> None:
+    decision = await gate.decide(AGENT, "create_payment", DEMO_PAYMENT)
+    assert decision.escalation is not None
+    escalation_id = decision.escalation.id
+    await gate.verdict(escalation_id, SUPERVISOR, "approve")
+    assert await escalations.attach_brief(escalation_id, "01JB6X7Q2M9ZK3T8V4N5R6S7W0")
+    assert not await escalations.attach_brief(escalation_id, "01JB6X7Q2M9ZK3T8V4N5R6S7W1")
+    stored = await escalations.get(escalation_id)
+    assert stored is not None
+    assert (stored.state, stored.brief_record_id) == (APPROVED, "01JB6X7Q2M9ZK3T8V4N5R6S7W0")
+    async with await psycopg.AsyncConnection.connect(
+        env("ADMIN_DATABASE_URL"), autocommit=True
+    ) as conn:
+        with pytest.raises(psycopg.errors.RaiseException, match="already has a brief"):
+            await conn.execute(
+                "UPDATE escalation SET brief_record_id = NULL WHERE id = %s", (escalation_id,)
+            )
+
+
 async def test_an_unreachable_database_is_a_store_error() -> None:
     store = await PostgresEscalationStore.open_pool("postgresql://nobody@127.0.0.1:1/none", "s")
     try:
