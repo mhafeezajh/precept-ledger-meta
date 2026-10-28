@@ -2,7 +2,7 @@
 
 Guarantees that every model call goes through one function, to a Meta model in Standard mode, and comes back as a validated schema or not at all. Approval briefs say only what code found in the ledger: every cited record and every number is checked against that context before Gate records the brief, and a brief never decides.
 
-Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Not yet run against the real Meta Model API: no key was set (see [`../MODELS.md`](../MODELS.md)). · Last updated: 2026-10-28 · Tests: 50 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 9, `test_assist_evidence.py` 4) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 98%, `assist/brief.py` 99%, `assist/auditor.py` 97%, `assist/evidence.py` 100%.
+Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Run live against the Meta Model API on 2026-10-28 (see [`../MODELS.md`](../MODELS.md), "Verified live"). · Last updated: 2026-10-28 · Tests: 50 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 9, `test_assist_evidence.py` 4) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 98%, `assist/brief.py` 99%, `assist/auditor.py` 97%, `assist/evidence.py` 100%.
 
 Related pages: [`gate.md`](gate.md) (escalations, the `BriefWriter` port), [`../MODELS.md`](../MODELS.md) (model IDs, prices, parameters).
 
@@ -90,7 +90,7 @@ sequenceDiagram
 | Field | Meaning |
 | --- | --- |
 | `escalation_id`, `decision_record_id` | What it is about; Gate refuses a body for another escalation |
-| `model`, `prompt_version` | e.g. `meta/muse-spark-1.3`, `approval_brief/1` |
+| `model`, `prompt_version` | e.g. `meta/muse-spark-1.3`, `approval_brief/2` |
 | `headline`, `unusual[{text, record_ids}]`, `approver_checks[]` | The model's text, after `check_brief` |
 | `context_record_ids` | Every record id the context offered, so an auditor can see what the model had |
 
@@ -142,7 +142,7 @@ With `META_API_KEY` in `.env`, `make gate` starts with briefs on (its log says `
 
 ## Known gaps
 
-- No live run yet (no key). The parameters come from Meta's docs and LiteLLM's model table.
+- Live calls take 9–29 s and return 1,700–5,800 output tokens for small JSON answers; reasoning settings are not tuned yet.
 - On-prem profile configured but never run.
 - History is the whole stream read on each brief, which is fine at demo scale. A query by agent and payee is needed before production.
 - No spend cap: the call log shows spend, nothing stops it.

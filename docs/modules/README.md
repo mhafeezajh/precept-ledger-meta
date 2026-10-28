@@ -12,7 +12,7 @@ One page per module, written when the module is finished and kept current with t
 | [witness.md](witness.md) | C2SP cosignatures, the witness service (`pl-witness`), its own state, 2-of-3 finality in the ledger, demo beat 5 | Done for this step: compose services later |
 | [anchor.md](anchor.md) | RFC 3161 timestamps (request, offline verification), OpenTimestamps (submit, upgrade, read), backdating checks, bundle v2 | Done for this step: confirmed Bitcoin vector after O5 |
 | [gate.md](gate.md) | Normalizer, Cedar allow / deny / escalate, decision, verdict and result records, write-before-effect, approval queue, tokens, `pl-gate`, `@governed`, demo beat 2 | Done for this step: MCP proxy deferred |
-| [assist.md](assist.md) | `assist/llm.py` (the only model entry point), Muse Spark approval briefs, auditor Q&A (beat 3) | Done for this step: no live model run yet |
+| [assist.md](assist.md) | `assist/llm.py` (the only model entry point), Muse Spark approval briefs, auditor Q&A (beat 3) | Done for this step: run live on Oct 28 |
 | [claims.md](claims.md) | The claim checker: producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers and names in text and summary; the whole export proven before an auditor query runs | Done for this step |
 | [policy.md](policy.md) | Rule YAML citing its clause, compiler to Cedar, checks before review (schema, fixtures, allows everything, clause numbers) | Partial: step 1 of 3 |
 

@@ -30,7 +30,7 @@ Meta selects the mode by model ID: `muse-spark-1.3` is Standard, `muse-spark-1.3
 | --- | --- | --- |
 | `response_format` | `{"type": "json_schema", "json_schema": {"name": <schema>, "strict": true, "schema": <Pydantic schema>}}` | Meta structured output ([guide](https://dev.meta.ai/docs/structured-output.md)); `strict` makes the server check the schema against its strict subset |
 | `temperature` | `0` | Briefs should be repeatable for the same context |
-| `timeout` | `MODEL_TIMEOUT_SECONDS` (30) | |
+| `timeout` | `MODEL_TIMEOUT_SECONDS` (60) | The first live brief took 23 s |
 | Retries | 3 attempts on 429, 500, 502, 503, connection errors and timeouts: 0.5 s, then 1 s, each plus up to the same again in jitter | Meta's 429 guidance |
 | Validation | Pydantic parse, then the caller's `check`; one retry with the problems fed back, then `ModelOutputError` | Skill §5 |
 
@@ -40,7 +40,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 
 | Prompt | Version | Model | Output schema | Checked by |
 | --- | --- | --- | --- | --- |
-| `assist/prompts/approval_brief.md` | `approval_brief/1` | `spark` | `assist.brief.Brief` | `check_brief`: cited ids in the context, a citation per point, no numbers outside the context, no verdict advice |
+| `assist/prompts/approval_brief.md` | `approval_brief/2` | `spark` | `assist.brief.Brief` | `check_brief`: cited ids in the context, a citation per point, no numbers outside the context, no verdict advice |
 | `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs it (`claims/query.py`) over the proven log |
 | `assist/prompts/auditor_answer.md` | `auditor_answer/2` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` checks every claim against the proven log, and the summary against the accepted claims |
 
@@ -56,6 +56,14 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 
 `MODEL_PROFILE=onprem` routes `spark` to `openai/<ONPREM_MODEL>` at `ONPREM_API_BASE`, any OpenAI-compatible server (for example Muse Glimmer or Muse Spark Open behind vLLM, Baseten or Modal). Not tried yet; no on-prem model IDs are recorded until one runs.
 
-## Not yet verified live
+## Verified live (2026-10-28)
 
-No `META_API_KEY` was set when this module was built, so every test fakes the model. The real calls are `test_a_real_brief_from_muse_spark` and `test_a_real_audit_answer_from_muse_spark`, marked `live`: `META_API_KEY=... uv run pytest -m live -s`.
+First runs against the Meta Model API with `muse-spark-1.3` in Standard mode. All structured outputs parsed and passed their checks on the first attempt. The two `live` tests passed (`META_API_KEY=... uv run pytest -m live -s`), then `make demo-gate` and `make demo-audit` ran against the real services, from `logs/model_calls.csv`:
+
+| Call | Input tokens | Output tokens | Latency |
+| --- | --- | --- | --- |
+| `approval_brief` | 1,035; 1,097 | 5,169; 5,780 | 23.3 s; 28.6 s |
+| `auditor_query/1` | 625; 625 | 3,312; 1,707 | 15.9 s; 8.7 s |
+| `auditor_answer/2` | 1,149; 1,149 | 5,040; 5,079 | 18.9 s; 18.6 s |
+
+At the prices above, those six calls cost about $0.12 in total; output tokens are most of it. Output counts far exceed the size of the JSON returned, so they likely include the model's reasoning; this is not yet confirmed or tuned. Because one brief took 28.6 s, `MODEL_TIMEOUT_SECONDS` now defaults to 60, and `make demo-gate` waits up to 60 s for the brief.
