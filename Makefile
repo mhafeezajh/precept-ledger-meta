@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-audit demo-policy policy-pdf demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-audit demo-policy policy-pdf seed-week demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -73,6 +73,11 @@ demo-audit:
 # PDF drafted into rules, a bad rule caught, fixed and approved. ARGS="--no-fault" skips the fault.
 demo-policy:
 	uv run python scripts/demo_policy.py $(ARGS)
+
+# One simulated week of decisions into make serve's stream, through the real Gate code
+# (scripts/seed_week.py). ARGS="--dry-run" prints the plan only.
+seed-week:
+	uv run python scripts/seed_week.py $(ARGS)
 
 # Rebuild deploy/demo/payments_policy.pdf after editing payments_policy.txt.
 policy-pdf:
