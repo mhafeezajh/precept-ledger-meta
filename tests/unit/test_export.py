@@ -23,10 +23,10 @@ async def test_bundle_layout_and_manifest(tmp_path: Path) -> None:
     manifest = parse_canonical(files["manifest.json"])
     assert manifest == {
         "format": "precept-ledger-export",
-        "v": 1,
+        "v": 2,
         "stream": STREAM,
         "origin": ORIGIN,
-        "counts": {"records": 5, "receipts": 5, "checkpoints": 2},
+        "counts": {"records": 5, "receipts": 5, "checkpoints": 2, "anchors": 0},
     }
 
 
@@ -75,4 +75,5 @@ async def test_empty_stream_exports(tmp_path: Path) -> None:
         "records": 0,
         "receipts": 0,
         "checkpoints": 0,
+        "anchors": 0,
     }

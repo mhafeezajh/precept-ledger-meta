@@ -97,3 +97,36 @@ def test_load_witness_set_checks_names_and_quorum(tmp_path: Path) -> None:
         load_witness_set(tmp_path, ["witness-1"], 4, store)
     with pytest.raises(ConfigError):
         load_witness_set(tmp_path / "missing", ["witness-1"], 2, store)
+
+
+def test_anchor_view_from_settings(tmp_path: Path) -> None:
+    import httpx
+
+    from common.config import Settings
+    from ledger.anchoring import MemoryAnchorStore
+    from ledger.server import anchor_view, parse_urls
+
+    def settings(**values: object) -> Settings:
+        return Settings(database_url="postgresql://x", keys_dir=tmp_path, **values)  # type: ignore[arg-type]
+
+    http, store = httpx.AsyncClient(), MemoryAnchorStore()
+    assert anchor_view(settings(), store, http) is None
+    view = anchor_view(
+        settings(tsas="digicert=http://timestamp.digicert.com",
+                 ots_calendars="https://a.pool.opentimestamps.org"),
+        store,
+        http,
+    )  # fmt: skip
+    assert view is not None
+    assert view.anchorer.requires_timestamp
+    assert len(view.tsa_roots) == 2  # deploy/tsa/roots.pem
+    with pytest.raises(ConfigError):
+        anchor_view(
+            settings(tsas="digicert=http://x", tsa_roots_file=tmp_path / "none"), store, http
+        )
+    (tmp_path / "empty.pem").write_text("")
+    with pytest.raises(ConfigError):
+        anchor_view(settings(tsas="d=http://x", tsa_roots_file=tmp_path / "empty.pem"), store, http)
+    with pytest.raises(ConfigError):
+        parse_urls("http://plain.example", "OTS_CALENDARS")
+    assert parse_urls(" https://a.example/ ,", "X") == ["https://a.example"]

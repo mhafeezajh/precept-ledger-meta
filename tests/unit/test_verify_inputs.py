@@ -86,7 +86,8 @@ async def test_required_members(tmp_path: Path, missing: str) -> None:
     "change",
     [
         {"format": "something-else"},
-        {"v": 2},
+        {"v": 3},
+        {"v": 1},  # v1 manifests have no anchors count
         {"stream": "Not A Stream"},
         {"origin": "precept-ledger.local/another/stream"},
         {"counts": {"records": 4, "receipts": 5, "checkpoints": 2}},

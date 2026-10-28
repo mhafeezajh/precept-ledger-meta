@@ -7,7 +7,9 @@ Members, in this order:
 - ``receipts.jsonl``: every receipt as stored, same encoding.
 - ``checkpoints/<20-digit size>.note``: every signed checkpoint, with the witness
   cosignature lines stored for it appended (D39). Readers that do not know the witness keys
-  ignore those lines (signed-note), so the bundle is still v1.
+  ignore those lines (signed-note).
+- ``anchors/<20-digit size>-<rfc3161|ots>-<nn>.<tsr|ots>``: every stored anchor of that
+  checkpoint: a DER RFC 3161 token, or an OpenTimestamps timestamp (D47). New in v2.
 
 No keys travel in the bundle: the verifier gets trusted keys from the auditor, never from the
 party being audited. The tar is deterministic (fixed order, zero times and owners).
@@ -17,6 +19,7 @@ import io
 import tarfile
 from typing import Any
 
+from ledger.anchoring import AnchorStore
 from ledger.checkpoint import peek_checkpoint
 from ledger.checkpointer import CheckpointSink
 from ledger.cosignature import add_cosignatures
@@ -25,7 +28,7 @@ from ledger.store import Store
 from ledger.witnessing import CosignatureStore
 
 EXPORT_FORMAT = "precept-ledger-export"
-EXPORT_VERSION = 1
+EXPORT_VERSION = 2
 
 
 def _jsonl(rows: list[dict[str, Any]]) -> bytes:
@@ -58,6 +61,7 @@ async def export_bundle(
     stream: str,
     origin: str,
     cosignatures: CosignatureStore | None = None,
+    anchors: AnchorStore | None = None,
 ) -> bytes:
     records = await store.read_raw(stream)
     receipts = await store.read_receipts(stream)
@@ -66,6 +70,10 @@ async def export_bundle(
         full = await _with_cosignatures(note, cosignatures)
         name = f"checkpoints/{peek_checkpoint(note).size:020d}.note"
         checkpoints.append((name, full.encode("utf-8")))
+    anchor_files = []
+    for n, row in enumerate([] if anchors is None else await anchors.rows()):
+        extension = "tsr" if row.kind == "rfc3161" else "ots"
+        anchor_files.append((f"anchors/{row.size:020d}-{row.kind}-{n:02d}.{extension}", row.token))
     manifest = {
         "format": EXPORT_FORMAT,
         "v": EXPORT_VERSION,
@@ -75,6 +83,7 @@ async def export_bundle(
             "records": len(records),
             "receipts": len(receipts),
             "checkpoints": len(checkpoints),
+            "anchors": len(anchor_files),
         },
     }
     return _tar(
@@ -83,5 +92,6 @@ async def export_bundle(
             ("records.jsonl", _jsonl(records)),
             ("receipts.jsonl", _jsonl(receipts)),
             *checkpoints,
+            *anchor_files,
         ]
     )

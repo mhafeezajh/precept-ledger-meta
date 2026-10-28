@@ -26,6 +26,7 @@ from common.errors import (
     StoreError,
 )
 from common.http import error_response, install_common_handlers, read_limited
+from ledger.anchoring import AnchoredPublisher, AnchorView
 from ledger.checkpoint import Checkpoint, NoteKey, NoteSigner, open_checkpoint, peek_checkpoint
 from ledger.checkpoint_loop import CheckpointLoop, Publisher
 from ledger.checkpointer import Checkpointer, CheckpointSink
@@ -51,6 +52,7 @@ class StreamLog:
     checkpointer: Checkpointer
     key: NoteKey
     witnessing: Witnessing | None = None
+    anchoring: AnchorView | None = None
 
     @classmethod
     def create(
@@ -64,6 +66,7 @@ class StreamLog:
         witnesses: WitnessSet | None = None,
         clients: Sequence[WitnessClient] = (),
         witness_timeout_seconds: float = 5.0,
+        anchoring: AnchorView | None = None,
     ) -> "StreamLog":
         tree = LogTree(tree_store)
         checkpointer = Checkpointer(tree, signer, origin, sinks)
@@ -73,7 +76,7 @@ class StreamLog:
                 tree, witnesses, clients, timeout_seconds=witness_timeout_seconds
             )
         key = NoteKey(origin, signer.public_key_raw)
-        return cls(stream, origin, tree, sinks[0], checkpointer, key, witnessing)
+        return cls(stream, origin, tree, sinks[0], checkpointer, key, witnessing, anchoring)
 
     @property
     def witnesses(self) -> WitnessSet | None:
@@ -81,9 +84,13 @@ class StreamLog:
 
     @property
     def publisher(self) -> Publisher:
-        if self.witnessing is None:
-            return self.checkpointer
-        return WitnessedPublisher(self.checkpointer, self.witnessing)
+        """Sign; then witness, if configured; then anchor final checkpoints, if configured."""
+        publisher: Publisher = self.checkpointer
+        if self.witnessing is not None:
+            publisher = WitnessedPublisher(self.checkpointer, self.witnessing)
+        if self.anchoring is not None:
+            publisher = AnchoredPublisher(publisher, self.anchoring.anchorer)
+        return publisher
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,7 @@ _STATUS_BY_CODE = {
     "checkpoint.conflict": 503,
     "checkpoint.unverifiable": 503,
     "cosignature.unverifiable": 503,
+    "anchor.unverifiable": 503,
 }
 
 
@@ -259,7 +267,7 @@ async def latest_checkpoint(
         ],
         "quorum": None if witnesses is None else witnesses.quorum,
         "final": served.final,
-        "anchors": [],  # anchor/ (day 4)
+        "anchors": [] if log.anchoring is None else await log.anchoring.summary(served.checkpoint),
     }
 
 
@@ -293,7 +301,10 @@ async def export(
     log = _stream_log(services, stream)
     witnesses = log.witnesses
     cosignatures = None if witnesses is None else witnesses.store
-    bundle = await export_bundle(services.store, log.sink, log.stream, log.origin, cosignatures)
+    anchors = None if log.anchoring is None else log.anchoring.anchorer.store
+    bundle = await export_bundle(
+        services.store, log.sink, log.stream, log.origin, cosignatures, anchors
+    )
     filename = log.stream.replace("/", "_") + ".tar"
     return Response(
         bundle,

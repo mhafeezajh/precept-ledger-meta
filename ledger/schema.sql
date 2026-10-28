@@ -60,6 +60,21 @@ CREATE TABLE IF NOT EXISTS cosignature (
     FOREIGN KEY (stream, tree_size) REFERENCES checkpoint (stream, tree_size)
 );
 
+-- External anchors (D47): RFC 3161 tokens and OpenTimestamps proofs of each final checkpoint.
+-- Insert-only: an upgraded OpenTimestamps proof is a new 'confirmed' row beside the 'pending'
+-- one. digest is SHA-256 of the checkpoint body, kept so pending proofs can be upgraded.
+CREATE TABLE IF NOT EXISTS anchor (
+    stream     text   NOT NULL,
+    tree_size  bigint NOT NULL,
+    kind       text   NOT NULL CHECK (kind IN ('rfc3161', 'ots')),
+    source     text   NOT NULL,
+    status     text   NOT NULL CHECK (status IN ('verified', 'pending', 'confirmed')),
+    token      bytea  NOT NULL,
+    digest     bytea  NOT NULL CHECK (length(digest) = 32),
+    PRIMARY KEY (stream, tree_size, kind, source, status),
+    FOREIGN KEY (stream, tree_size) REFERENCES checkpoint (stream, tree_size)
+);
+
 CREATE OR REPLACE FUNCTION pl_reject_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -94,12 +109,19 @@ CREATE OR REPLACE TRIGGER cosignature_no_truncate
     BEFORE TRUNCATE ON cosignature
     FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
 
-REVOKE ALL ON ledger_record, receipt, checkpoint, cosignature FROM PUBLIC;
+CREATE OR REPLACE TRIGGER anchor_append_only
+    BEFORE UPDATE OR DELETE ON anchor
+    FOR EACH ROW EXECUTE FUNCTION pl_reject_change();
+CREATE OR REPLACE TRIGGER anchor_no_truncate
+    BEFORE TRUNCATE ON anchor
+    FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
+
+REVOKE ALL ON ledger_record, receipt, checkpoint, cosignature, anchor FROM PUBLIC;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pl_app') THEN
-        GRANT SELECT, INSERT ON ledger_record, receipt, checkpoint, cosignature TO pl_app;
+        GRANT SELECT, INSERT ON ledger_record, receipt, checkpoint, cosignature, anchor TO pl_app;
     END IF;
 END;
 $$;

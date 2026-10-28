@@ -11,22 +11,18 @@ edited record from more than one direction.
 
 import hmac
 from dataclasses import dataclass, field
+from datetime import datetime
 
+from common.clock import parse_ts
 from common.errors import LedgerError, VerificationError
 from ledger.checkpoint import Checkpoint, open_checkpoint
 from ledger.cosignature import open_cosignatures
 from ledger.format import GENESIS_HASH, Receipt, Record, chain_hash, leaf_hash, parse_canonical
 from merkle.proofs import root_hash
+from verify.anchors import AnchorPolicy, AnchorReport, check_anchors
 from verify.bundle import Bundle
+from verify.findings import Finding as Finding  # re-exported: callers import it from here
 from verify.keys import TrustedKeys, WitnessPolicy
-
-
-@dataclass(frozen=True)
-class Finding:
-    check: str
-    detail: str
-    seq: int | None = None  # None when the problem cannot be pinned to one record
-    record_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +39,7 @@ class Report:
     quorum: int | None = None  # set when witness keys were given
     final: Checkpoint | None = None  # latest matching checkpoint with a witness quorum
     final_cosigners: tuple[str, ...] = ()
+    anchors: AnchorReport | None = None
 
     @property
     def unwitnessed(self) -> int | None:
@@ -70,6 +67,7 @@ class _Walk:
     leaves: list[bytes] = field(default_factory=list)
     chain: list[bytes] = field(default_factory=list)  # chain hashes of the verified prefix
     record_ids: list[str | None] = field(default_factory=list)
+    record_times: list[datetime | None] = field(default_factory=list)  # each record's own ts
     findings: list[Finding] = field(default_factory=list)
 
 
@@ -93,6 +91,13 @@ def _record_problem(
     return None if problem is None else ("bad_producer_signature", problem)
 
 
+def _record_time(record: Record) -> datetime | None:
+    try:
+        return parse_ts(record.submission.ts)
+    except LedgerError:
+        return None
+
+
 def _check_records(bundle: Bundle, keys: TrustedKeys) -> _Walk:
     walk, prev, seen, broken = _Walk(), GENESIS_HASH, set[str](), False
     for seq, line in enumerate(bundle.records, start=1):
@@ -101,12 +106,14 @@ def _check_records(bundle: Bundle, keys: TrustedKeys) -> _Walk:
             record = Record.from_json(parse_canonical(line))
         except LedgerError as exc:
             walk.record_ids.append(None)
+            walk.record_times.append(None)
             if not broken:
                 walk.findings.append(Finding("malformed", str(exc), seq))
             broken = True
             continue
         record_id = record.submission.record_id
         walk.record_ids.append(record_id)
+        walk.record_times.append(_record_time(record))
         if broken:
             continue
         problem = _record_problem(record, seq, prev, bundle.stream, seen, keys)
@@ -262,9 +269,10 @@ def verify_bundle(
     *,
     trusted_checkpoint: str | None = None,
     witnesses: WitnessPolicy | None = None,
+    anchors: AnchorPolicy | None = None,
 ) -> Report:
-    """Check records, receipts and checkpoints; optionally a checkpoint the auditor held and
-    the witness quorum."""
+    """Check records, receipts and checkpoints; optionally a checkpoint the auditor held, the
+    witness quorum and RFC 3161 timestamps. OpenTimestamps proofs are always read."""
     walk = _check_records(bundle, keys)
     findings = [*walk.findings, *_check_receipts(bundle, keys, walk)]
     matching, checkpoint_findings = _check_checkpoints(bundle, keys, walk.leaves)
@@ -275,6 +283,11 @@ def verify_bundle(
     if witnesses is not None:
         quorum = _check_quorum(matching, witnesses, len(walk.leaves))
         findings += quorum.findings
+    by_size = {cp.size: cp for cp, _ in matching}
+    anchor_report = check_anchors(
+        bundle.anchors, by_size, walk.record_times, walk.record_ids, anchors
+    )
+    findings += anchor_report.findings
     latest = max((cp for cp, _ in matching), key=lambda cp: cp.size, default=None)
     return Report(
         stream=bundle.stream,
@@ -289,4 +302,5 @@ def verify_bundle(
         quorum=None if witnesses is None else witnesses.quorum,
         final=None if quorum is None else quorum.final,
         final_cosigners=() if quorum is None else quorum.cosigners,
+        anchors=anchor_report,
     )

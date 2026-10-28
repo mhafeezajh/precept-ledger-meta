@@ -1,4 +1,4 @@
-"""Read an export bundle (v1, see ``ledger/export.py``) as hostile input.
+"""Read an export bundle (v1 or v2, see ``ledger/export.py``) as hostile input.
 
 Nothing is extracted to disk. Only regular files with expected names are read, each at most
 ``MAX_MEMBER_BYTES``; links, directories, duplicates and compression are refused. Structure is
@@ -14,13 +14,23 @@ from common.errors import FormatError, VerificationError
 from ledger.format import parse_json_strict
 
 BUNDLE_FORMAT = "precept-ledger-export"  # must match ledger.export (round-trip tested)
-BUNDLE_VERSION = 1
+BUNDLE_VERSIONS = (1, 2)  # v2 adds anchors/ (D47); v1 bundles stay readable
 MAX_BUNDLE_BYTES = 256 * 1024 * 1024
 MAX_MEMBER_BYTES = 128 * 1024 * 1024
 MAX_MEMBERS = 100_000
 REQUIRED = ("manifest.json", "records.jsonl", "receipts.jsonl")
 _CHECKPOINT_NAME = re.compile(r"^checkpoints/[A-Za-z0-9._-]+\.note$")
-_COUNT_KEYS = {"records", "receipts", "checkpoints"}
+_ANCHOR_NAME = re.compile(r"^anchors/([0-9]{20})-(rfc3161|ots)-([0-9]{2,6})\.(tsr|ots)$")
+_COUNT_KEYS = {1: {"records", "receipts", "checkpoints"},
+               2: {"records", "receipts", "checkpoints", "anchors"}}  # fmt: skip
+MAX_ANCHOR_BYTES = 64 * 1024
+
+
+@dataclass(frozen=True)
+class BundleAnchor:
+    size: int  # from the member name: a label the verifier checks against the token
+    kind: str  # rfc3161 | ots
+    data: bytes
 
 
 @dataclass(frozen=True)
@@ -30,6 +40,7 @@ class Bundle:
     records: tuple[bytes, ...]  # one canonical JSON record per entry, newline removed
     receipts: tuple[bytes, ...]
     checkpoints: tuple[str, ...]  # signed notes, ordered by member name
+    anchors: tuple[BundleAnchor, ...] = ()
 
 
 def _error(detail: str, code: str) -> VerificationError:
@@ -46,7 +57,8 @@ def _read_tar(data: bytes) -> dict[str, bytes]:
                 name = info.name
                 if count > MAX_MEMBERS:
                     raise _error("too many members", "too_large")
-                if not info.isfile() or not (name in REQUIRED or _CHECKPOINT_NAME.match(name)):
+                known = name in REQUIRED or _CHECKPOINT_NAME.match(name) or _ANCHOR_NAME.match(name)
+                if not info.isfile() or not known:
                     raise _error(f"unexpected member {name!r}", "bad_member")
                 if name in files:
                     raise _error(f"member {name!r} appears twice", "duplicate")
@@ -67,7 +79,7 @@ def _lines(data: bytes, name: str) -> tuple[bytes, ...]:
     return tuple(data[:-1].split(b"\n"))
 
 
-def _manifest(data: bytes) -> tuple[str, str, dict[str, int]]:
+def _manifest(data: bytes) -> tuple[int, str, str, dict[str, int]]:
     try:
         value = parse_json_strict(data)
     except FormatError as exc:
@@ -75,19 +87,34 @@ def _manifest(data: bytes) -> tuple[str, str, dict[str, int]]:
     if not isinstance(value, dict) or set(value) != {"format", "v", "stream", "origin", "counts"}:
         raise _error("manifest fields are wrong", "bad_manifest")
     stream, origin, counts = value["stream"], value["origin"], value["counts"]
+    version = value["v"]
     valid = (
         value["format"] == BUNDLE_FORMAT
-        and value["v"] == BUNDLE_VERSION
+        and version in BUNDLE_VERSIONS
         and isinstance(stream, str)
         and isinstance(origin, str)
         and origin.endswith("/" + stream)  # one tree per stream (D28)
         and isinstance(counts, dict)
-        and set(counts) == _COUNT_KEYS
+        and set(counts) == _COUNT_KEYS[version]
         and all(isinstance(n, int) and n >= 0 for n in counts.values())
     )
     if not valid:
-        raise _error("manifest is not a v1 export manifest", "bad_manifest")
-    return stream, origin, counts
+        raise _error("manifest is not a v1 or v2 export manifest", "bad_manifest")
+    return version, stream, origin, counts
+
+
+def _anchors(files: dict[str, bytes], version: int) -> tuple[BundleAnchor, ...]:
+    anchors = []
+    for name in sorted(files):
+        match = _ANCHOR_NAME.match(name)
+        if match is None:
+            continue
+        if version < 2:
+            raise _error("v1 bundles carry no anchors", "bad_member")
+        if (match[2] == "rfc3161") != (match[4] == "tsr") or len(files[name]) > MAX_ANCHOR_BYTES:
+            raise _error(f"anchor member {name!r} is malformed", "bad_member")
+        anchors.append(BundleAnchor(int(match[1]), match[2], files[name]))
+    return tuple(anchors)
 
 
 def read_bundle(data: bytes) -> Bundle:
@@ -95,7 +122,8 @@ def read_bundle(data: bytes) -> Bundle:
     for name in REQUIRED:
         if name not in files:
             raise _error(f"{name} is missing", "missing")
-    stream, origin, counts = _manifest(files["manifest.json"])
+    version, stream, origin, counts = _manifest(files["manifest.json"])
+    anchors = _anchors(files, version)
     try:
         checkpoints = tuple(
             files[name].decode("utf-8") for name in sorted(files) if name.startswith("checkpoints/")
@@ -108,12 +136,15 @@ def read_bundle(data: bytes) -> Bundle:
         _lines(files["records.jsonl"], "records.jsonl"),
         _lines(files["receipts.jsonl"], "receipts.jsonl"),
         checkpoints,
+        anchors,
     )
     found = {
         "records": len(bundle.records),
         "receipts": len(bundle.receipts),
         "checkpoints": len(checkpoints),
     }
+    if version >= 2:
+        found["anchors"] = len(anchors)
     if found != counts:
         raise _error(f"manifest counts {counts} but bundle has {found}", "count_mismatch")
     return bundle

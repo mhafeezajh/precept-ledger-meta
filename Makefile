@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses demo-rogue
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -59,3 +59,7 @@ demo-rogue:
 
 db-down:
 	docker compose down -v
+
+# O5: upgrade the pending OpenTimestamps vectors once Bitcoin has confirmed them (hours later).
+ots-upgrade:
+	uv run python scripts/upgrade_ots_vectors.py

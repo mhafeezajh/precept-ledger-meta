@@ -1,5 +1,6 @@
 """``pl-verify BUNDLE --keys KEYS.json [--trusted-checkpoint NOTE]
-[--witness-keys WITNESSES.txt [--quorum N]] [--json]``
+[--witness-keys WITNESSES.txt [--quorum N]] [--tsa-roots ROOTS.pem [--max-timestamp-lag S]]
+[--json]``
 
 Exit codes: 0 verified, 1 verification failed (findings printed), 2 could not verify (bad
 input or usage). Offline: this package imports no networking code (import test), and a test
@@ -12,8 +13,10 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from common.errors import VerificationError
+from anchor.rfc3161 import load_roots
+from common.errors import AnchorError, VerificationError
 from ledger.format import b64encode
+from verify.anchors import AnchorPolicy, AnchorReport
 from verify.bundle import MAX_BUNDLE_BYTES, read_bundle
 from verify.checks import Finding, Report, verify_bundle
 from verify.keys import TrustedKeys, WitnessPolicy
@@ -35,6 +38,32 @@ def _finding_line(finding: Finding) -> str:
     where = f"seq {finding.seq}" if finding.seq is not None else "-"
     record = f"  record {finding.record_id}" if finding.record_id else ""
     return f"  {where:<9} {finding.check}{record}: {finding.detail}"
+
+
+def _anchor_lines(anchors: AnchorReport, records: int) -> list[str]:
+    lines = []
+    latest = anchors.latest
+    if not anchors.checked:
+        lines.append(
+            f"timestamps   {anchors.tokens:>6}  RFC 3161 tokens, not checked (no --tsa-roots)"
+        )
+    elif latest is None:
+        lines.append(f"timestamped  {records:>6}  records with no trusted timestamp")
+    else:
+        lines.append(
+            f"timestamped  {records - latest.size:>6}  records after the latest timestamped "
+            f"checkpoint; latest: size {latest.size} at {latest.gen_time.isoformat()}"
+            f" by {latest.tsa}"
+        )
+    for claim in anchors.bitcoin:
+        if claim.status == "bitcoin":
+            lines.append(
+                f"bitcoin           size {claim.size}: block {claim.height}, merkle root "
+                f"{claim.commitment[::-1].hex()} (check against a Bitcoin node)"
+            )
+        else:
+            lines.append(f"bitcoin           size {claim.size}: {claim.status} at {claim.calendar}")
+    return lines
 
 
 def render_text(report: Report) -> str:
@@ -59,6 +88,8 @@ def render_text(report: Report) -> str:
                 else f"no checkpoint has {report.quorum} witness cosignatures"
             )
         )
+    if report.anchors is not None:
+        lines.extend(_anchor_lines(report.anchors, report.records))
     first = report.first_break
     if first is None:
         lines.append("RESULT  OK")
@@ -69,6 +100,27 @@ def render_text(report: Report) -> str:
     ordered = sorted(report.findings, key=lambda f: (f.seq is None, f.seq or 0))
     lines.extend(_finding_line(f) for f in ordered)
     return "\n".join(lines)
+
+
+def _anchors_json(anchors: AnchorReport) -> dict[str, object]:
+    return {
+        "checked": anchors.checked,
+        "tokens": anchors.tokens,
+        "timestamps": [
+            {"size": t.size, "gen_time": t.gen_time.isoformat(), "tsa": t.tsa}
+            for t in anchors.timestamps
+        ],
+        "bitcoin": [
+            {
+                "size": c.size,
+                "status": c.status,
+                "height": c.height,
+                "calendar": c.calendar,
+                "merkle_root": c.commitment[::-1].hex() if c.status == "bitcoin" else None,
+            }
+            for c in anchors.bitcoin
+        ],
+    }
 
 
 def render_json(report: Report) -> str:
@@ -98,6 +150,7 @@ def render_json(report: Report) -> str:
                 "cosigners": list(report.final_cosigners),
             },
             "unwitnessed": report.unwitnessed,
+            "anchors": None if report.anchors is None else _anchors_json(report.anchors),
             "first_break": finding(report.first_break),
             "findings": [finding(f) for f in report.findings],
         },
@@ -120,6 +173,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--quorum", type=int, help="witness cosignatures a checkpoint needs (default 2)"
     )
+    parser.add_argument("--tsa-roots", type=Path, help="PEM roots of trusted timestamp authorities")
+    parser.add_argument(
+        "--max-timestamp-lag",
+        type=int,
+        default=3600,
+        help="seconds a record's ts may precede its first trusted timestamp (default 3600)",
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
     if args.quorum is not None and args.witness_keys is None:
@@ -137,8 +197,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             witnesses = WitnessPolicy.from_text(
                 _read(args.witness_keys, MAX_SMALL_FILE_BYTES), quorum
             )
-        report = verify_bundle(bundle, keys, trusted_checkpoint=trusted, witnesses=witnesses)
-    except (VerificationError, OSError, UnicodeDecodeError) as exc:
+        anchors = None
+        if args.tsa_roots is not None:
+            roots = load_roots(_read(args.tsa_roots, MAX_SMALL_FILE_BYTES))
+            anchors = AnchorPolicy(tuple(roots), max_lag_seconds=args.max_timestamp_lag)
+        report = verify_bundle(
+            bundle, keys, trusted_checkpoint=trusted, witnesses=witnesses, anchors=anchors
+        )
+    except (VerificationError, AnchorError, OSError, UnicodeDecodeError) as exc:
         # Could not verify is never reported as verified (R4): its own exit code.
         print(f"pl-verify: cannot verify: {exc}", file=sys.stderr)
         return 2

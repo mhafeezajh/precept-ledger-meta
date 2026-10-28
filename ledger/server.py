@@ -6,6 +6,7 @@ creates both for local runs. The service refuses to start if they disagree (R4).
 
 With ``WITNESSES`` set, every checkpoint is sent to those witnesses and their cosignatures
 are checked against ``KEYS_DIR/witnesses.txt`` (the ``pl-verify --witness-keys`` file).
+With ``TSAS`` and ``OTS_CALENDARS`` set, final checkpoints are anchored (``ledger.anchoring``).
 """
 
 from collections.abc import AsyncIterator, Sequence
@@ -16,10 +17,13 @@ import httpx
 import uvicorn
 from fastapi import FastAPI
 
+from anchor.clients import HttpCalendar, HttpTimestampAuthority
+from anchor.rfc3161 import load_roots
 from common.clock import SystemClock
 from common.config import Settings, load_settings
 from common.errors import ConfigError, PreceptError
 from common.logging import configure_logging
+from ledger.anchoring import Anchorer, AnchorStore, AnchorView
 from ledger.api import Services, StreamLog, create_app
 from ledger.checkpointer import CheckpointSink, DirectorySink, origin_for
 from ledger.pg_store import PostgresStore
@@ -48,17 +52,56 @@ def load_keys(keys_dir: Path) -> tuple[Signer, KeyRing]:
     return log, KeyRing(trusted.producers.values())
 
 
-def parse_witnesses(value: str) -> list[tuple[str, str]]:
-    """``"witness-1=http://host:8091,witness-2=..."`` -> ``[(name, url), ...]``."""
+def parse_named_urls(value: str, setting: str) -> list[tuple[str, str]]:
+    """``"name-1=http://host:8091,name-2=..."`` -> ``[(name, url), ...]``."""
+    code = f"config.{setting.lower()}"
     pairs = []
     for item in filter(None, (part.strip() for part in value.split(","))):
         name, sep, url = item.partition("=")
         if not sep or not name or not url.startswith(("http://", "https://")):
-            raise ConfigError(f"WITNESSES entry {item!r} is not name=url", code="config.witnesses")
+            raise ConfigError(f"{setting} entry {item!r} is not name=url", code=code)
         pairs.append((name, url))
     if len({name for name, _ in pairs}) != len(pairs):
-        raise ConfigError("WITNESSES names a witness twice", code="config.witnesses")
+        raise ConfigError(f"{setting} names one entry twice", code=code)
     return pairs
+
+
+def parse_witnesses(value: str) -> list[tuple[str, str]]:
+    return parse_named_urls(value, "WITNESSES")
+
+
+def parse_urls(value: str, setting: str) -> list[str]:
+    urls = [part.strip().rstrip("/") for part in value.split(",") if part.strip()]
+    for url in urls:
+        if not url.startswith("https://"):
+            raise ConfigError(f"{setting}: {url!r} must be https", code="config.anchors")
+    return urls
+
+
+def anchor_view(
+    settings: Settings, store: AnchorStore, http: httpx.AsyncClient
+) -> AnchorView | None:
+    """The anchorer from TSAS / OTS_CALENDARS, or ``None`` if neither is set."""
+    tsas = parse_named_urls(settings.tsas, "TSAS")
+    calendars = parse_urls(settings.ots_calendars, "OTS_CALENDARS")
+    if not tsas and not calendars:
+        return None
+    try:
+        roots = load_roots(settings.tsa_roots_file.read_bytes()) if tsas else []
+    except (OSError, PreceptError) as exc:
+        raise ConfigError(f"cannot read TSA roots: {exc}", code="config.anchors") from exc
+    if tsas and not roots:
+        raise ConfigError("TSA_ROOTS_FILE lists no certificates", code="config.anchors")
+    upgrades = parse_urls(settings.ots_upgrade_calendars, "OTS_UPGRADE_CALENDARS")
+    anchorer = Anchorer(
+        store,
+        [HttpTimestampAuthority(name, url, http, roots) for name, url in tsas],
+        [HttpCalendar(url, http) for url in calendars],
+        {url: HttpCalendar(url, http) for url in upgrades},
+        clock=SystemClock(),
+        ots_interval_seconds=settings.ots_interval_seconds,
+    )
+    return AnchorView(anchorer, tuple(roots))
 
 
 def load_witness_set(
@@ -82,6 +125,7 @@ async def postgres_services(settings: Settings) -> AsyncIterator[Services]:
     stream = settings.ledger_stream
     store = await PostgresStore.open(settings.database_url)
     http = httpx.AsyncClient(timeout=settings.witness_timeout_seconds)
+    anchor_http = httpx.AsyncClient(timeout=settings.anchor_timeout_seconds)
     try:
         witness_set = None
         if pairs:
@@ -106,11 +150,13 @@ async def postgres_services(settings: Settings) -> AsyncIterator[Services]:
             witnesses=witness_set,
             clients=clients,
             witness_timeout_seconds=settings.witness_timeout_seconds,
+            anchoring=anchor_view(settings, store.anchors(stream), anchor_http),
         )
         ledger = Ledger(store, producers, log_signer, SystemClock())
         yield Services(ledger=ledger, store=store, logs={stream: log})
     finally:
         await http.aclose()
+        await anchor_http.aclose()
         await store.close()
 
 

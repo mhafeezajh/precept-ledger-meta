@@ -10,6 +10,7 @@ import psycopg
 from psycopg_pool import AsyncConnectionPool, PoolTimeout
 
 from common.errors import LedgerError, StoreError
+from ledger.anchoring import AnchorRow
 from ledger.checkpointer import SignedCheckpoint
 from ledger.format import HASH_SIZE, b64decode, b64encode
 
@@ -118,3 +119,34 @@ class PostgresCosignatureStore:
             (self._stream, size),
         )
         return {str(row[0]): str(row[1]) for row in rows}
+
+
+class PostgresAnchorStore:
+    """``anchor`` rows of one stream; first row per (size, kind, source, status) wins."""
+
+    def __init__(self, pool: AsyncConnectionPool, stream: str) -> None:
+        self._pool, self._stream = pool, stream
+
+    async def add(self, row: AnchorRow) -> None:
+        try:
+            async with self._pool.connection() as conn:
+                await conn.execute(
+                    "INSERT INTO anchor (stream, tree_size, kind, source, status, token, digest)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    (self._stream, row.size, row.kind, row.source, row.status, row.token,
+                     row.digest),
+                )  # fmt: skip
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise StoreError(f"anchor write failed: {type(exc).__name__}") from exc
+
+    async def rows(self) -> list[AnchorRow]:
+        found = await _query(
+            self._pool,
+            "SELECT tree_size, kind, source, status, token, digest FROM anchor"
+            " WHERE stream = %s ORDER BY tree_size, kind, source, status",
+            (self._stream,),
+        )
+        return [
+            AnchorRow(int(r[0]), str(r[1]), str(r[2]), str(r[3]), bytes(r[4]), bytes(r[5]))
+            for r in found
+        ]

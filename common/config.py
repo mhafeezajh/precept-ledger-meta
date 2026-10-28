@@ -23,6 +23,16 @@ class Settings(BaseSettings):
     witnesses: str = ""
     witness_quorum: int = 2  # D5: 2 of 3
     witness_timeout_seconds: float = 5.0
+    # Anchors: RFC 3161 TSAs as "name=url" pairs, comma-separated; empty means no timestamps.
+    tsas: str = ""
+    tsa_roots_file: Path = Path("deploy/tsa/roots.pem")
+    # OpenTimestamps: calendars to submit to, and the calendars proofs may be upgraded from.
+    ots_calendars: str = ""
+    ots_upgrade_calendars: str = (
+        "https://alice.btc.calendar.opentimestamps.org,https://bob.btc.calendar.opentimestamps.org"
+    )
+    ots_interval_seconds: float = 3600.0
+    anchor_timeout_seconds: float = 10.0
     log_level: str = "INFO"
     demo_mode: bool = False
 

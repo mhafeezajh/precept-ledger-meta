@@ -92,6 +92,8 @@ def rewrite(bundle: bytes, edit: Callable[[dict[str, bytes]], None]) -> bytes:
         "receipts": len(lines(files["receipts.jsonl"])),
         "checkpoints": sum(name.startswith("checkpoints/") for name in files),
     }
+    if manifest["v"] >= 2:
+        manifest["counts"]["anchors"] = sum(name.startswith("anchors/") for name in files)
     files["manifest.json"] = canonical(manifest)
     return pack(files)
 
