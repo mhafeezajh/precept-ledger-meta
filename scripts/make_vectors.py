@@ -1,5 +1,5 @@
-"""Generate tests/vectors/ledger-v1.json and checkpoint-v1.json from fixed inputs and the
-TEST ONLY keys.
+"""Generate tests/vectors/ledger-v1.json, checkpoint-v1.json and cosignature-v1.json from
+fixed inputs and the TEST ONLY keys.
 
 Run with ``make vectors``. Output is deterministic (Ed25519 signatures are deterministic), so a
 diff after running it means the format changed, which needs a DECISIONS.md entry (skill §4).
@@ -16,6 +16,12 @@ sys.path.insert(0, str(ROOT))
 
 from ledger.chain import GENESIS, link  # noqa: E402  # path set up above for a plain script
 from ledger.checkpoint import Checkpoint, NoteKey, sign_checkpoint  # noqa: E402
+from ledger.cosignature import (  # noqa: E402
+    CosignerKey,
+    add_cosignatures,
+    cosign,
+    cosignature_message,
+)
 from ledger.format import b64encode, canonical_bytes  # noqa: E402
 from ledger.receipts import issue_receipt  # noqa: E402
 from ledger.signing import Signer, sign_submission  # noqa: E402
@@ -23,6 +29,8 @@ from merkle.proofs import root_hash  # noqa: E402
 
 OUT = ROOT / "tests" / "vectors" / "ledger-v1.json"
 CHECKPOINT_OUT = ROOT / "tests" / "vectors" / "checkpoint-v1.json"
+COSIGNATURE_OUT = ROOT / "tests" / "vectors" / "cosignature-v1.json"
+COSIGN_TIME = 1793300000  # 2026-10-28T19:33:20Z, fixed so the vectors are deterministic
 STREAM = "harbor-federal/decisions"
 ORIGIN = f"precept-ledger.local/{STREAM}"
 
@@ -141,6 +149,32 @@ def build_checkpoint() -> dict[str, Any]:
     }
 
 
+def build_cosignature() -> dict[str, Any]:
+    """Two witnesses cosign the checkpoint in checkpoint-v1.json. Keys are TEST ONLY."""
+    note = build_checkpoint()["checkpoint"]["note"]
+    leaves = [base64.b64decode(r["leaf_hash"]) for r in build()["records"]]
+    checkpoint = Checkpoint(ORIGIN, len(leaves), root_hash(leaves))
+    witnesses = []
+    for offset, name in enumerate(("witness-1", "witness-2")):
+        signer = seed(name)
+        timestamp = COSIGN_TIME + offset
+        witnesses.append(
+            {
+                "name": name,
+                "verifier_key": CosignerKey(name, signer.public_key_raw).verifier(),
+                "timestamp": timestamp,
+                "message": cosignature_message(checkpoint, timestamp).decode(),
+                "line": cosign(checkpoint, signer, name, timestamp),
+            }
+        )
+    return {
+        "description": "C2SP cosignature/v1 lines over checkpoint-v1. Keys are TEST ONLY.",
+        "checkpoint_note": note,
+        "witnesses": witnesses,
+        "cosigned_note": add_cosignatures(note, [w["line"] for w in witnesses]),
+    }
+
+
 def write(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrote {path.relative_to(ROOT)}")
@@ -149,3 +183,4 @@ def write(path: Path, data: dict[str, Any]) -> None:
 if __name__ == "__main__":
     write(OUT, build())
     write(CHECKPOINT_OUT, build_checkpoint())
+    write(COSIGNATURE_OUT, build_cosignature())

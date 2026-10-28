@@ -61,3 +61,17 @@ class PolicyError(PreceptError):
 
 class ModelOutputError(PreceptError):
     code = "model.bad_output"
+
+
+class WitnessError(PreceptError):
+    """A witness refused a checkpoint, or could not be asked. Never counts as a cosignature.
+
+    ``latest_size`` is set on ``witness.conflict``: the size the witness last cosigned, so the
+    caller can retry with a consistency proof from there (C2SP tlog-witness, 409).
+    """
+
+    code = "witness.error"
+
+    def __init__(self, message: str, *, code: str | None = None, latest_size: int | None = None):
+        super().__init__(message, code=code)
+        self.latest_size = latest_size

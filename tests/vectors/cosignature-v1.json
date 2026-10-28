@@ -1,0 +1,21 @@
+{
+  "description": "C2SP cosignature/v1 lines over checkpoint-v1. Keys are TEST ONLY.",
+  "checkpoint_note": "precept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n\n— precept-ledger.local/harbor-federal/decisions QkQNiu7O5t50ohHXJQ313xp2fHXgSDLMnDItQ6iF67SmRCD/8CFlJw4plGV3RYi4+Cu5gx+wSqw8CnUVkIF0VMBG+Ao=\n",
+  "witnesses": [
+    {
+      "name": "witness-1",
+      "verifier_key": "witness-1+a5000ff1+BJiyucOEeLXLfz80IB13SD9CbOsq3tZ5GQRC50oeCSNw",
+      "timestamp": 1793300000,
+      "message": "cosignature/v1\ntime 1793300000\nprecept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n",
+      "line": "— witness-1 pQAP8QAAAABq45Yg/xUVHeUNVEwhFsWnUthaqMEsQgg7EOyMmkjYcBY0b6xhnCvZbkHxIU4oUuP0561VMBErPVL4X55vn5sd3Sm8Ag==\n"
+    },
+    {
+      "name": "witness-2",
+      "verifier_key": "witness-2+c7afc0d6+BPS2wiVz0amw/WccF50xTAojM6HYRM7D9UQJaXFbgCUM",
+      "timestamp": 1793300001,
+      "message": "cosignature/v1\ntime 1793300001\nprecept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n",
+      "line": "— witness-2 x6/A1gAAAABq45YhUqBbQb33z+HPajFjVr99+4lfljwVWrUJt+CGV9lWmO52TxW3Clsbaguwbrvckw4rIQcbTfIjN9lK1p0R2YOPBQ==\n"
+    }
+  ],
+  "cosigned_note": "precept-ledger.local/harbor-federal/decisions\n3\nXId9QnIn93Thb1lnOkqdn7CEMh2Ue7bbju3LcNFwOgs=\n\n— precept-ledger.local/harbor-federal/decisions QkQNiu7O5t50ohHXJQ313xp2fHXgSDLMnDItQ6iF67SmRCD/8CFlJw4plGV3RYi4+Cu5gx+wSqw8CnUVkIF0VMBG+Ao=\n— witness-1 pQAP8QAAAABq45Yg/xUVHeUNVEwhFsWnUthaqMEsQgg7EOyMmkjYcBY0b6xhnCvZbkHxIU4oUuP0561VMBErPVL4X55vn5sd3Sm8Ag==\n— witness-2 x6/A1gAAAABq45YhUqBbQb33z+HPajFjVr99+4lfljwVWrUJt+CGV9lWmO52TxW3Clsbaguwbrvckw4rIQcbTfIjN9lK1p0R2YOPBQ==\n"
+}

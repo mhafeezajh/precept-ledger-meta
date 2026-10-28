@@ -14,6 +14,7 @@ VERIFY_ALLOWED_INTERNAL = {
     "ledger.format",
     "ledger.canonical",
     "ledger.checkpoint",
+    "ledger.cosignature",
     "merkle",
     "merkle.hashing",
     "merkle.proofs",
@@ -44,7 +45,7 @@ def test_ledger_does_not_import_upper_layers_or_models(path: Path) -> None:
     assert not {top(m) for m in imports_of(path)} & LEDGER_FORBIDDEN
 
 
-@pytest.mark.parametrize("module", ["format", "canonical", "checkpoint"])
+@pytest.mark.parametrize("module", ["format", "canonical", "checkpoint", "cosignature"])
 def test_verifier_facing_ledger_modules_are_pure(module: str) -> None:
     # verify/ and witness/ import these; they must pull in no I/O or network code (D28).
     names = imports_of(ROOT / "ledger" / f"{module}.py")

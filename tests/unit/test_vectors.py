@@ -91,3 +91,37 @@ def test_checkpoint_vector_independently() -> None:
     raw = base64.b64decode(sig_b64)
     assert raw[:4].hex() == key_hash
     Ed25519PublicKey.from_public_bytes(key[1:]).verify(raw[4:], (text + "\n").encode())
+
+
+COSIGNATURE_VECTORS = json.loads(
+    (Path(__file__).parents[1] / "vectors" / "cosignature-v1.json").read_text("utf-8")
+)
+
+
+def test_cosignature_vectors_match_generator() -> None:
+    from scripts.make_vectors import build_cosignature
+
+    assert build_cosignature() == COSIGNATURE_VECTORS
+
+
+def test_cosignature_vectors_independently() -> None:
+    # cosignature/v1: Ed25519 over "cosignature/v1\ntime T\n" + checkpoint body; line value is
+    # key hash (type 0x04) ‖ 8-byte big-endian T ‖ signature (C2SP tlog-cosignature).
+    body = CHECKPOINT_VECTORS["checkpoint"]["body"]
+    assert COSIGNATURE_VECTORS["checkpoint_note"] == CHECKPOINT_VECTORS["checkpoint"]["note"]
+    cosigned = COSIGNATURE_VECTORS["cosigned_note"]
+    for vec in COSIGNATURE_VECTORS["witnesses"]:
+        name, key_hash, key_b64 = vec["verifier_key"].split("+", 2)
+        key = base64.b64decode(key_b64)
+        assert key[0] == 4
+        assert hashlib.sha256(name.encode() + b"\n" + key).digest()[:4].hex() == key_hash
+        message = f"cosignature/v1\ntime {vec['timestamp']}\n{body}"
+        assert vec["message"] == message
+        dash, line_name, value = vec["line"].rstrip("\n").split(" ")
+        assert (dash, line_name) == ("—", name)
+        raw = base64.b64decode(value)
+        assert raw[:4].hex() == key_hash
+        assert int.from_bytes(raw[4:12], "big") == vec["timestamp"]
+        Ed25519PublicKey.from_public_bytes(key[1:]).verify(raw[12:], message.encode())
+        assert vec["line"] in cosigned
+    assert cosigned.startswith(COSIGNATURE_VECTORS["checkpoint_note"])

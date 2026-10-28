@@ -126,7 +126,9 @@ def sign_note(text: str, signer: NoteSigner, name: str) -> str:
     return f"{text}\n— {name} {_b64(key.key_hash + signature)}\n"
 
 
-def _split_note(note: str) -> tuple[str, list[tuple[str, bytes]]]:
+def split_note(note: str) -> tuple[str, list[tuple[str, bytes]]]:
+    """Note text and its ``(key name, key hash ‖ signature)`` lines, checked for shape only.
+    Nothing here is verified; ``open_note`` and ``open_cosignatures`` do that."""
     if len(note.encode("utf-8", "surrogatepass")) > MAX_NOTE_BYTES:
         raise FormatError("note is too large", code="note.malformed")
     cut = note.rfind("\n\n")
@@ -154,7 +156,7 @@ def open_note(note: str, keys: Iterable[NoteKey]) -> tuple[str, frozenset[str]]:
     Signatures from unknown keys are ignored (signed-note). A bad signature from a trusted key
     rejects the whole note, and so does a note no trusted key signed (R4).
     """
-    text, signatures = _split_note(note)
+    text, signatures = split_note(note)
     trusted = {(key.name, key.key_hash): key for key in keys}
     verified: set[str] = set()
     for name, raw in signatures:
@@ -213,7 +215,7 @@ def parse_checkpoint(body: str) -> Checkpoint:
 def peek_checkpoint(note: str) -> Checkpoint:
     """Parse a checkpoint note WITHOUT verifying it. Only for naming and sorting files;
     anything that trusts the result must use ``open_checkpoint``."""
-    text, _ = _split_note(note)
+    text, _ = split_note(note)
     return parse_checkpoint(text)
 
 
