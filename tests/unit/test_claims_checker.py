@@ -13,7 +13,17 @@ from typing import Any
 import httpx
 import pytest
 
-from claims.checker import Assertion, Claim, Evidence, Trust, check_claims, resolve
+from claims.checker import (
+    Assertion,
+    Claim,
+    ClaimResult,
+    Evidence,
+    Trust,
+    check_claims,
+    check_summary,
+    resolve,
+    unbacked_names,
+)
 from gate.ledger_client import HttpLedgerClient
 from tests.bundles import ORIGIN, trusted_keys_json
 from tests.gate_helpers import AGENT, DEMO_PAYMENT, SMALL_PAYMENT, SUPERVISOR, rig
@@ -232,3 +242,38 @@ def test_field_paths_resolve_only_inside_the_record() -> None:
     assert resolve(record, "body.missing") == (False, None)
     assert resolve(record, "body.ids.0") == (False, None)  # no list indexing
     assert resolve(record, "__class__") == (False, None)
+
+
+async def test_a_name_or_id_in_the_text_must_be_asserted(world: World) -> None:
+    evidence = await world.evidence(world.decision_id, world.verdict_id)
+    invented = demo_claim(world, text="$48,000.00 to northwind-supply was approved by m.lee.")
+    unasserted = demo_claim(
+        world,
+        text="$48,000.00 was paid to northwind-supply by payments-agent-7.",
+        assertions=demo_claim(world).assertions[:2],
+    )
+    results = check_claims([invented, unasserted], evidence, TRUST)
+    assert [r.accepted for r in results] == [False, False]
+    assert any("m.lee" in r and "names" in r for r in results[0].reasons), results[0].reasons
+    assert any("payments-agent-7" in r for r in results[1].reasons), results[1].reasons
+
+
+def test_plain_words_are_not_names() -> None:
+    assert unbacked_names("Approved after hours, outside business hours.", ()) == []
+    assertion = Assertion("x", "body.approver", "eq", "j.ortiz")
+    assert unbacked_names("Approved by j.ortiz.", (assertion,)) == []
+    assert unbacked_names("Approved by J.Ortiz and k.wu.", (assertion,)) == ["k.wu"]
+
+
+def test_the_summary_may_use_only_what_accepted_claims_establish() -> None:
+    amount = Assertion("x", "body.resource.amount_cents", "eq", 4_800_000)
+    approver = Assertion("y", "body.approver", "eq", "j.ortiz")
+    claim = Claim("t", ("x", "y"), (amount, approver))
+    held = ClaimResult(claim, True)
+    assert check_summary("One payment: $48,000.00, approved by j.ortiz.", [held]) == []
+    assert check_summary("2 payments matched.", [held], numbers={2}) == []
+    problems = check_summary("$84,000.00 approved by m.lee.", [held])
+    assert any("84000" in p for p in problems)
+    assert any("m.lee" in p for p in problems)
+    rejected = ClaimResult(claim, False, ("wrong",))
+    assert check_summary("$48,000.00 approved by j.ortiz.", [rejected]) != []

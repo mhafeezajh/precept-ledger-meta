@@ -8,15 +8,19 @@ cites, the evidence must show, all checked here:
 2. a checkpoint signed by a trusted log key, cosigned by the witness quorum (final);
 3. a Merkle inclusion proof from the record's leaf hash to that checkpoint's root.
 
-Then every assertion is checked against the record's fields, and every number in the claim's
-text must be one an assertion establishes. A claim with any failure is rejected, with reasons.
+Then every assertion is checked against the record's fields, and every number and every
+name-like token (``j.ortiz``, ``northwind-supply``) in the claim's text must be one an
+assertion establishes. A claim with any failure is rejected, with reasons.
+
+``check_claims_in_log`` does the same against a ``claims.log.ProvenLog``, where the whole
+export was verified and a record's presence under the final root is its proof.
 """
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from common.errors import PreceptError
 from ledger.checkpoint import open_checkpoint
@@ -25,10 +29,16 @@ from ledger.format import HASH_SIZE, Record, b64decode, leaf_hash
 from merkle.proofs import verify_inclusion
 from verify.keys import TrustedKeys, WitnessPolicy
 
+if TYPE_CHECKING:
+    from claims.log import ProvenLog
+
 OPS = frozenset({"eq", "ne", "gt", "gte", "lt", "lte"})
 _FIELD = re.compile(r"^(body|producer|type|ts|record_id|seq|stream)(\.[a-z_][a-z0-9_]{0,63}){0,6}$")
 _NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
 _ULID = re.compile(r"\b[0-7][0-9A-HJKMNP-TV-Z]{25}\b")
+# Ids and names as the ledger writes them: letters and digits joined by . _ or - (j.ortiz,
+# northwind-supply, create_payment). A word like this in a claim must be asserted (D66).
+_NAME = re.compile(r"(?<![\w.-])[a-z][a-z0-9]*(?:[._-][a-z0-9]+)+(?![\w-]|\.\w)", re.IGNORECASE)
 Value = str | int | bool | None
 
 
@@ -168,6 +178,10 @@ def _numbers(text: str) -> set[Decimal]:
     return {Decimal(t.replace(",", "")) for t in _NUMBER.findall(_ULID.sub(" ", text))}
 
 
+def _names(text: str) -> set[str]:
+    return {t.lower() for t in _NAME.findall(text)}
+
+
 def _backed_numbers(assertions: Sequence[Assertion]) -> set[Decimal]:
     """Numbers the assertions establish: values, cents as dollars, digits inside strings."""
     backed: set[Decimal] = set()
@@ -181,12 +195,38 @@ def _backed_numbers(assertions: Sequence[Assertion]) -> set[Decimal]:
     return backed
 
 
-def _check_assertion(a: Assertion, claim: Claim, records: Mapping[str, Evidence]) -> str | None:
+def _backed_names(assertions: Iterable[Assertion]) -> set[str]:
+    values = [a.value for a in assertions if isinstance(a.value, str)]
+    return {v.lower() for v in values} | {n for v in values for n in _names(v)}
+
+
+def unbacked_names(text: str, assertions: Iterable[Assertion]) -> list[str]:
+    """Name-like tokens in ``text`` that no assertion's string value establishes."""
+    return sorted(_names(text) - _backed_names(assertions))
+
+
+def _text_problems(
+    text: str, assertions: Sequence[Assertion], numbers: Iterable[int] = ()
+) -> list[str]:
+    problems = []
+    unbacked = sorted(_numbers(text) - _backed_numbers(assertions) - {Decimal(n) for n in numbers})
+    if unbacked:
+        problems.append(
+            f"numbers in the text that no assertion establishes: {[str(n) for n in unbacked]}"
+        )
+    if names := unbacked_names(text, assertions):
+        problems.append(f"names in the text that no assertion establishes: {names}")
+    return problems
+
+
+def _check_assertion(
+    a: Assertion, claim: Claim, record_of: Callable[[str], Mapping[str, Any]]
+) -> str | None:
     if a.record_id not in claim.record_ids:
         return f"{a.record_id}: asserted on but not cited by the claim"
     if a.op not in OPS:
         return f"unknown operator {a.op!r}"
-    found, actual = resolve(records[a.record_id].record, a.field)
+    found, actual = resolve(record_of(a.record_id), a.field)
     if not found:
         return f"{a.record_id}: field not found: {a.field}"
     outcome = _compare(actual, a.op, a.value)
@@ -195,24 +235,17 @@ def _check_assertion(a: Assertion, claim: Claim, records: Mapping[str, Evidence]
     return None if outcome else f"{a.record_id}: {a.describe()} is false (record has {actual!r})"
 
 
-def check_claim(
-    claim: Claim, evidence: Mapping[str, Evidence], trust: Trust, cache: dict[str, str | None]
+def _judge(
+    claim: Claim,
+    unproven: Callable[[str], str | None],
+    record_of: Callable[[str], Mapping[str, Any]],
 ) -> ClaimResult:
     if not claim.record_ids or not claim.assertions:
         return ClaimResult(claim, False, ("claim cites no record or makes no assertion",))
-    reasons = []
-    for record_id in claim.record_ids:
-        if record_id not in cache:
-            cache[record_id] = check_record(record_id, evidence.get(record_id), trust)
-        if cache[record_id] is not None:
-            reasons.append(str(cache[record_id]))
+    reasons = [r for record_id in claim.record_ids if (r := unproven(record_id))]
     if not reasons:  # fields are only read from records whose proofs held
-        reasons += [r for a in claim.assertions if (r := _check_assertion(a, claim, evidence))]
-    unbacked = sorted(_numbers(claim.text) - _backed_numbers(claim.assertions))
-    if unbacked:
-        reasons.append(
-            f"numbers in the text that no assertion establishes: {[str(n) for n in unbacked]}"
-        )
+        reasons += [r for a in claim.assertions if (r := _check_assertion(a, claim, record_of))]
+    reasons += _text_problems(claim.text, claim.assertions)
     return ClaimResult(claim, not reasons, tuple(reasons))
 
 
@@ -221,4 +254,33 @@ def check_claims(
 ) -> list[ClaimResult]:
     """One result per claim, in order. Each record's proof is checked once."""
     cache: dict[str, str | None] = {}
-    return [check_claim(claim, evidence, trust, cache) for claim in claims]
+
+    def unproven(record_id: str) -> str | None:
+        if record_id not in cache:
+            cache[record_id] = check_record(record_id, evidence.get(record_id), trust)
+        return cache[record_id]
+
+    return [_judge(c, unproven, lambda i: evidence[i].record) for c in claims]
+
+
+def check_claims_in_log(claims: Sequence[Claim], log: "ProvenLog") -> list[ClaimResult]:
+    """One result per claim, against records proven by verifying the whole export."""
+
+    def unproven(record_id: str) -> str | None:
+        if log.get(record_id) is None:
+            return f"{record_id}: not in the proven log (records 1..{log.size})"
+        return None
+
+    def record_of(record_id: str) -> Mapping[str, Any]:
+        return log.get(record_id) or {}
+
+    return [_judge(c, unproven, record_of) for c in claims]
+
+
+def check_summary(
+    summary: str, results: Sequence[ClaimResult], *, numbers: Iterable[int] = ()
+) -> list[str]:
+    """Problems with a summary: it may state only numbers and names that accepted claims
+    assert, plus ``numbers`` code computed (a row count, a log size)."""
+    held = [a for r in results if r.accepted for a in r.claim.assertions]
+    return _text_problems(summary, held, numbers)
