@@ -5,8 +5,9 @@
   cosigner verifier keys (read by ``pl-ledger`` and ``pl-verify --witness-keys``);
 - ``log-verifiers.txt``: the log's signed-note verifier key for the stream's origin, which
   the witnesses trust (``WITNESS_LOGS_FILE``);
-- ``tokens/<name>.token``, one bearer token per Gate caller (the demo agent and two
-  supervisors), and ``gate-callers.txt``, their hashes and roles, read by ``pl-gate``.
+- ``tokens/<name>.token``, one bearer token per Gate caller (the demo agent, two
+  supervisors and a compliance officer), and ``gate-callers.txt``, their hashes and roles,
+  read by ``pl-gate``.
 
 Refuses to write inside the repository, never overwrites an existing key, writes private keys
 with mode 0600 and prints only key ids. These are development keys, not production keys.
@@ -36,6 +37,7 @@ GATE_CALLERS = (
     ("agent", "payments-ops", "-"),
     ("approver", "j.ortiz", "payments-supervisor"),
     ("approver", "m.lee", "payments-supervisor"),
+    ("approver", "a.chen", "compliance-officer"),  # reviews and approves policy rules
 )
 
 
@@ -86,11 +88,19 @@ def _ensure_token(path: Path) -> str:
 
 def ensure_gate_callers(keys_dir: Path) -> None:
     (keys_dir / "tokens").mkdir(mode=0o700, exist_ok=True)
-    lines = ["# kind name roles sha256(token); tokens are in tokens/<name>.token\n"]
+    path = keys_dir / "gate-callers.txt"
+    # Add callers missing from an existing file; never change or remove a line already there.
+    text = (
+        path.read_text()
+        if path.exists()
+        else ("# kind name roles sha256(token); tokens are in tokens/<name>.token\n")
+    )
+    listed = {line.split()[1] for line in text.splitlines() if line and not line.startswith("#")}
     for kind, name, roles in GATE_CALLERS:
         token = _ensure_token(keys_dir / "tokens" / f"{name}.token")
-        lines.append(f"{kind} {name} {roles} {token_hash(token)}\n")
-    _write_public(keys_dir / "gate-callers.txt", "".join(lines))
+        if name not in listed:
+            text += f"{kind} {name} {roles} {token_hash(token)}\n"
+    path.write_text(text)
 
 
 def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:

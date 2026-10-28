@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-audit demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-audit demo-policy policy-pdf demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -68,6 +68,15 @@ demo-gate:
 # META_API_KEY). ARGS="--inject-fault" shows a wrong claim rejected.
 demo-audit:
 	uv run python scripts/demo_audit.py $(ARGS)
+
+# Demo beat 1 against make serve + make gate (DEMO_MODE=true for the planted fault): the policy
+# PDF drafted into rules, a bad rule caught, fixed and approved. ARGS="--no-fault" skips the fault.
+demo-policy:
+	uv run python scripts/demo_policy.py $(ARGS)
+
+# Rebuild deploy/demo/payments_policy.pdf after editing payments_policy.txt.
+policy-pdf:
+	uv run python scripts/make_policy_pdf.py
 
 # Demo beat 5 in one process: the rogue operator rewrites history and is caught.
 demo-rogue:

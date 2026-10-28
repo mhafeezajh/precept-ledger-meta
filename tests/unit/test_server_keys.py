@@ -9,7 +9,7 @@ import pytest
 from common.errors import ConfigError
 from ledger.server import load_keys, load_witness_set, parse_witnesses
 from ledger.witnessing import MemoryCosignatureStore
-from scripts.dev_keys import ROOT, ensure_keys
+from scripts.dev_keys import ROOT, ensure_gate_callers, ensure_keys
 from scripts.dev_keys import main as dev_keys_main
 from verify.keys import WitnessPolicy
 
@@ -27,6 +27,17 @@ def test_dev_keys_never_overwrite(tmp_path: Path) -> None:
     first = ensure_keys(tmp_path)
     second = ensure_keys(tmp_path)
     assert {n: s.key_id for n, s in first.items()} == {n: s.key_id for n, s in second.items()}
+
+
+def test_dev_keys_add_missing_callers_and_keep_listed_ones(tmp_path: Path) -> None:
+    ensure_gate_callers(tmp_path)
+    path = tmp_path / "gate-callers.txt"
+    lines = path.read_text().splitlines()
+    older = "\n".join(line for line in lines if " a.chen " not in line) + "\n"
+    path.write_text(older)  # a file from before the compliance officer existed
+    ensure_gate_callers(tmp_path)
+    assert path.read_text().startswith(older)
+    assert path.read_text().splitlines() == lines
 
 
 def test_dev_keys_refuse_the_repository() -> None:
