@@ -5,4 +5,6 @@ useDefault = true
 
 [allowlist]
 description = "Deterministic TEST ONLY key seeds used by unit tests and published test vectors"
-paths = ['''^tests/keys/''', '''^tests/vectors/''']
+# .hypothesis/ is hypothesis's git-ignored local cache of string constants from our own source
+# (public hashes and key-name patterns); it is never committed.
+paths = ['''^tests/keys/''', '''^tests/vectors/''', '''^\.hypothesis/''']
