@@ -11,6 +11,7 @@ dependencies = [
     "cryptography==50.0.2",
     "fastapi==0.162.0",
     "httpx==0.28.1",
+    "litellm==1.105.0",
     "psycopg-pool==3.3.3",
     "psycopg[binary]==3.3.6",
     "pydantic==2.14.1",
@@ -57,7 +58,7 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "PT"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor"]
+packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist"]
 
 [[tool.mypy.overrides]]
 module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*"]
@@ -75,7 +76,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate"]
+source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist"]
 # Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [

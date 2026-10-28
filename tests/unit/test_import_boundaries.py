@@ -89,6 +89,22 @@ GATE_FORBIDDEN = {"litellm", "openai", "assist", "agent", "web", "learn"}
 
 @pytest.mark.parametrize("path", sorted((ROOT / "gate").rglob("*.py")), ids=lambda p: p.name)
 def test_gate_decides_without_models(path: Path) -> None:
-    # R2: allow, deny and escalate come from Cedar and code. Briefs live in assist/ and are
-    # handed to Gate; Gate never calls a model or imports the layers that do.
-    assert not {top(m) for m in imports_of(path)} & GATE_FORBIDDEN
+    # R2: allow, deny and escalate come from Cedar and code. Briefs live in assist/ and reach
+    # Gate through its BriefWriter port; only the composition root (pl-gate) wires one in.
+    forbidden = GATE_FORBIDDEN - {"assist"} if path.name == "server.py" else GATE_FORBIDDEN
+    assert not {top(m) for m in imports_of(path)} & forbidden
+
+
+SOURCE_PACKAGES = ("common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist",
+                   "policy", "claims", "learn", "agent", "web", "scripts")  # fmt: skip
+
+
+def test_litellm_is_imported_only_by_the_model_entry_point() -> None:
+    # R6 and skill §5: every model call goes through assist/llm.py.
+    importers = {
+        str(path.relative_to(ROOT))
+        for package in SOURCE_PACKAGES
+        for path in (ROOT / package).rglob("*.py")
+        if {top(m) for m in imports_of(path)} & {"litellm", "openai", "anthropic"}
+    }
+    assert importers == {"assist/llm.py"}
