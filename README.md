@@ -8,10 +8,10 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 
 | Module | Status | Docs |
 | --- | --- | --- |
-| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores, C2SP signed checkpoints, the Postgres tree adapter, the HTTP API (`pl-ledger`) and the 10 s checkpoint loop done. Batch append and read auth later | [`docs/modules/ledger.md`](docs/modules/ledger.md), [`docs/modules/checkpoints.md`](docs/modules/checkpoints.md), [`docs/modules/api.md`](docs/modules/api.md) |
+| `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores, C2SP signed checkpoints, the Postgres tree adapter, the HTTP API (`pl-ledger`), the 10 s checkpoint loop and witness collection with 2-of-3 finality done. Batch append and read auth later | [`docs/modules/ledger.md`](docs/modules/ledger.md), [`docs/modules/checkpoints.md`](docs/modules/checkpoints.md), [`docs/modules/api.md`](docs/modules/api.md) |
 | `merkle/` | Done for now. RFC 9162 core, inclusion and consistency proofs, `TreeStore` port, memory adapter | [`docs/modules/merkle.md`](docs/modules/merkle.md) |
-| `verify/` (`pl-verify`) | Done for now. Export bundle v1, `pl-export`, offline `pl-verify` naming the first broken seq and record; witness quorum later | [`docs/modules/verify.md`](docs/modules/verify.md) |
-| `witness/` | Not started | |
+| `verify/` (`pl-verify`) | Done for now. Export bundle v1, `pl-export`, offline `pl-verify` naming the first broken seq and record, witness quorum (`--witness-keys`, `--quorum`); timestamp tokens with `anchor/` | [`docs/modules/verify.md`](docs/modules/verify.md) |
+| `witness/` (`pl-witness`) | Done for this step. C2SP tlog-cosignature and tlog-witness, three witnesses with their own keys and state, 2-of-3 finality, demo beat 5 (`make demo-rogue`); compose services later | [`docs/modules/witness.md`](docs/modules/witness.md) |
 | `anchor/` | Not started | |
 | `gate/` | Not started | |
 | `policy/` | Not started | |
@@ -27,14 +27,17 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 402 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 507 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
-make test-integration   # Postgres 16 via docker compose; 18 tests incl. demo beat 4 end to end
-                        # (edit a row, export, pl-verify names the record)
-make vectors            # regenerate tests/vectors/ledger-v1.json and checkpoint-v1.json
-make dev-keys           # keys in KEYS_DIR (outside the repo), incl. trusted.json for pl-verify
-make serve              # ledger API on 127.0.0.1:8080, checkpoint every 10 s
-uv run pl-export --out export.tar && uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json"
+make test-integration   # Postgres 16 via docker compose; 19 tests incl. demo beat 4 end to end
+                        # (edit a row, export, pl-verify names the record) and 2-of-3 witnessing
+make vectors            # regenerate tests/vectors/{ledger,checkpoint,cosignature}-v1.json
+make demo-rogue         # demo beat 5: operator rewrites history, witnesses refuse, pl-verify catches it
+make dev-keys           # keys in KEYS_DIR (outside the repo): producer, log, three witnesses
+make witnesses          # three witnesses on 127.0.0.1:8091-8093 (own keys, own state)
+make serve              # ledger API on 127.0.0.1:8080, checkpoint every 10 s, cosigned by WITNESSES
+uv run pl-export --out export.tar
+uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt"
 ```
 
 ## Built during the hackathon (Oct 27 – Nov 4)
@@ -55,5 +58,8 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | `docs/modules/README.md`: knowledge-base index and table of every signing context |
 | Oct 27 | `ledger/export.py`, `ledger/export_cli.py` (`pl-export`), `verify/` (`pl-verify`): export bundle v1, hostile-input bundle reader, trusted keys, independent chain/receipt/checkpoint checks, CLI; tamper suite, differential test against `ledger.chain`, network-forbidden subprocess test |
 | Oct 27 | `ledger/api.py`, `ledger/checkpoint_loop.py`, `ledger/server.py` (`pl-ledger`), `common/logging.py`, `scripts/dev_keys.py`: ledger HTTP API, 10 s checkpoint loop, JSON logs with trace ids, dev keys |
+| Oct 27 | `ledger/cosignature.py`: C2SP `cosignature/v1` cosignatures and the tlog-witness request format; vectors in `tests/vectors/cosignature-v1.json` |
+| Oct 27 | `witness/` (`pl-witness`): witness core, own file state with refusal evidence, key loading, HTTP API; `common/http.py` shared by both APIs |
+| Oct 27 | `ledger/witnessing.py`, `ledger/witness_client.py`, `cosignature` table: collecting and verifying cosignatures, 2-of-3 finality, cosigned checkpoints in the API and export; `pl-verify --witness-keys --quorum`; `scripts/demo_rogue_operator.py` (demo beat 5) |
 
 Meta tooling used so far: none. Model calls start with Gate and the demo agent (day 4). Muse Code will be used for at least one slice and recorded here.

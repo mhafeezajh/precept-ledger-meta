@@ -2,7 +2,7 @@
 
 Guarantees that producers can append signed records over HTTP and get a signed receipt or a clear error, never anything in between. Checkpoints are signed every 10 seconds, and anyone can fetch records, inclusion and consistency proofs, the latest checkpoint and an export bundle.
 
-Status: done for this step (6 ledger endpoints plus health, checkpoint loop, JSON logs with `trace_id`, `pl-ledger`, dev keys). Batch append, range export, authentication for reads, and cosignatures and anchors in `checkpoints/latest` are not built. · Last updated: 2026-10-27 · Tests: 42 unit (`api.py`, `checkpoint_loop.py`, `common/logging.py` 100%), 2 integration over Postgres, plus a live smoke run (below)
+Status: done for this step (6 ledger endpoints plus health, checkpoint loop, JSON logs with `trace_id`, `pl-ledger`, dev keys). Batch append, range export, authentication for reads and anchors in `checkpoints/latest` are not built. Witness cosignatures and finality are served; see [`witness.md`](witness.md). · Last updated: 2026-10-27 · Tests: 42 unit (`api.py`, `checkpoint_loop.py`, `common/logging.py` 100%), 2 integration over Postgres, plus a live smoke run (below)
 
 Part of `ledger/`. Records and receipts: [`ledger.md`](ledger.md). Checkpoints: [`checkpoints.md`](checkpoints.md). Bundle and verifier: [`verify.md`](verify.md).
 
@@ -19,7 +19,7 @@ Owns:
 Does not own:
 
 - Any ledger logic. Every route calls `Ledger`, `LogTree`, the checkpoint sinks or `export_bundle`.
-- Witness and Gate endpoints (`/witness/v1/…`, `/gate/v1/…`), which belong to their own modules.
+- Witness and Gate endpoints (`/witness/v1/…`, `/gate/v1/…`), which belong to their own modules. Shared HTTP plumbing (error bodies, size-limited reads, request logs) lives in `common/http.py` (D43).
 
 ## How it works
 
@@ -48,11 +48,11 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `POST /ledger/v1/streams/{stream}/records` | One signed record (submission) as JSON, at most 64 KiB, `content-type: application/json` | `201` receipt | `400 format.*`, `ledger.stream_mismatch`; `403 signature.*`; `404 ledger.unknown_stream`; `409 ledger.duplicate_record`; `413 format.too_large`; `415 request.media_type`; `503 store.unavailable` |
 | `GET /ledger/v1/records/{id}` | | `{record, receipt}` | `404 ledger.not_found` |
-| `GET /ledger/v1/records/{id}/proof?size=N` | `N` must be a checkpoint size; default is the latest checkpoint | `{record_id, seq, leaf_index, tree_size, leaf_hash, hashes, checkpoint}`. `checkpoint` is the signed note, so the proof can be checked without trusting the API | `404 checkpoint.not_found`; `409 proof.not_checkpointed`; `422 request.invalid`; `503 checkpoint.inconsistent`, `checkpoint.unverifiable` |
-| `GET /ledger/v1/checkpoints/latest?stream=` | | `{stream, size, root, note, cosignatures: [], anchors: []}` | `404 checkpoint.not_found`; `503 checkpoint.unverifiable` |
+| `GET /ledger/v1/records/{id}/proof?size=N` | `N` must be a checkpoint size; default is the latest checkpoint | `{record_id, seq, leaf_index, tree_size, leaf_hash, hashes, checkpoint, final}`. `checkpoint` is the signed note with its verified cosignatures, so the proof can be checked without trusting the API | `404 checkpoint.not_found`; `409 proof.not_checkpointed`; `422 request.invalid`; `503 checkpoint.inconsistent`, `checkpoint.unverifiable`, `cosignature.unverifiable` |
+| `GET /ledger/v1/checkpoints/latest?stream=&final=` | `final=true`: the latest checkpoint with a witness quorum | `{stream, size, root, note, cosignatures: [{witness, timestamp}], quorum, final, anchors: []}`. `note` carries the verified cosignature lines | `404 checkpoint.not_found`; `503 checkpoint.unverifiable`, `cosignature.unverifiable` |
 | `GET /ledger/v1/consistency?from=M&to=N&stream=` | `0 ≤ M ≤ N ≤ tree size` | `{stream, from, to, hashes}` | `400 merkle.bad_size`; `422 request.invalid` |
 | `GET /ledger/v1/export?stream=` | `from`/`to` refused for now | `application/x-tar` bundle v1 | `400 export.range_unsupported` |
-| `GET /ledger/v1/health` | | `{status, checkpoint_loop: disabled\|running\|stopped, streams, checkpoint_errors}` | `503` when the loop has stopped |
+| `GET /ledger/v1/health` | | `{status, checkpoint_loop: disabled\|running\|stopped, streams, witnesses: {stream: {count, quorum} \| null}, checkpoint_errors}`; `witness.no_quorum` appears here while a checkpoint lacks a quorum | `503` when the loop has stopped |
 
 `stream` may be left out when the server serves exactly one stream; otherwise it is required (`400 request.stream_required`). Every response carries `x-trace-id`. A caller's 32-hex `x-trace-id` is kept, and anything else is replaced with a new id.
 
@@ -71,6 +71,7 @@ Reads and writes only what the ledger and checkpoint modules already own. Config
 | `CHECKPOINT_DIR` | `var/checkpoints` | Write-once directory; files go under `<dir>/<stream>/` |
 | `CHECKPOINT_INTERVAL_SECONDS` | `10` | Loop interval |
 | `API_HOST`, `API_PORT` | `127.0.0.1`, `8080` | Bind address; localhost because reads are unauthenticated |
+| `WITNESSES`, `WITNESS_QUORUM`, `WITNESS_TIMEOUT_SECONDS` | empty, `2`, `5` | Witnesses to ask after each checkpoint (`name=url,…`); keys from `KEYS_DIR/witnesses.txt`. See [`witness.md`](witness.md) |
 | `LOG_LEVEL` | `INFO` | |
 
 A log line looks like this, taken from the live run below:
@@ -131,13 +132,13 @@ RESULT  OK                     # pl-verify on GET /ledger/v1/export
 
 ## Decisions
 
-D23 (async store), D30 (checkpointer), D31 (bundle), D34, D35, D36, D37 in [`docs/DECISIONS.md`](../DECISIONS.md).
+D23 (async store), D30 (checkpointer), D31 (bundle), D34, D35, D36, D37, D41, D43 in [`docs/DECISIONS.md`](../DECISIONS.md).
 
 ## Known gaps
 
 - `POST` takes one record per request. ARCHITECTURE says "record(s)". Batch append needs a decision on partial failure.
 - No range export, and so no `from`/`to` (see `verify.md`).
-- `checkpoints/latest` returns empty `cosignatures` and `anchors` until `witness/` and `anchor/` exist.
+- `checkpoints/latest` returns empty `anchors` until `anchor/` exists.
 - No read authentication and no rate limiting, so the server binds to localhost.
 - `pl-ledger` serves one stream (`LEDGER_STREAM`). `create_app` already supports several.
 - No docker compose service for the API yet. It joins the full stack with the witnesses.

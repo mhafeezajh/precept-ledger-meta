@@ -83,7 +83,7 @@ The ledger is a transparency log, the design behind Certificate Transparency and
 | Checkpoint | Text note: log origin, tree size, base64 root hash, signed by the log key as a signed note |
 | Producer signature | `Ed25519(producer_key, "PL-record-v1\x00" ‖ JCS(record − {seq, prev_hash, producer.sig}))` (D9, D18) |
 | Receipt | Ledger signs `"PL-receipt-v1\x00" ‖ JCS({v, alg, stream, record_id, seq, leaf_hash, chain_hash, received_at, key_id})` immediately (D11, D18); the inclusion proof follows at the next checkpoint, at most 10 seconds later in the demo |
-| Cosignature | Witness signs `{checkpoint, timestamp}` after verifying a consistency proof from its last cosigned size |
+| Cosignature | Witness signs `"cosignature/v1\ntime " ‖ t ‖ "\n" ‖ checkpoint body` (C2SP tlog-cosignature, Ed25519, key type 0x04) after verifying a consistency proof from its last cosigned size; the line `key hash ‖ uint64_be(t) ‖ sig` is appended to the checkpoint note (D38) |
 
 The prefixes `PL-chain-v1`, `0x00` and `0x01` keep one kind of hash from ever being mistaken for another.
 
@@ -202,7 +202,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | `ledger_record` | stream, seq, record\_id, v, ts, type, producer\_id, producer\_alg, producer\_key\_id, producer\_sig, body (jsonb), prev\_hash, chain\_hash, leaf\_hash | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger. The record is rebuilt from these columns for verification (D21) |
 | `receipt` | record\_id, v, alg, stream, seq, leaf\_hash, chain\_hash, received\_at, key\_id, sig | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger |
 | `checkpoint` | stream, tree\_size, root\_hash, note (the full signed note, signature included) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; also written to a write-once directory, one file per tree size (D30) |
-| `cosignature` | checkpoint\_id, witness\_id, signature, ts | Insert only |
+| `cosignature` | stream, tree\_size, witness, line (the full C2SP signature line, which carries the time) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; verified before insert and before serving (D39) |
 | `anchor` | checkpoint\_id, kind (`rfc3161`, `ots`), token, status | Insert, then status updates |
 | `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept |
 | `escalation` | id, decision\_record\_id, state, approver, expires\_at | State guarded on `open` |
@@ -217,10 +217,11 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | POST | `/ledger/v1/streams/{stream}/records` | Append signed record(s); returns receipts |
 | GET | `/ledger/v1/records/{id}` | Record + receipt |
 | GET | `/ledger/v1/records/{id}/proof?size=N` | Inclusion proof against checkpoint N |
-| GET | `/ledger/v1/checkpoints/latest` | Latest checkpoint with cosignatures and anchors |
+| GET | `/ledger/v1/checkpoints/latest[?final=true]` | Latest checkpoint (or latest final one) as a cosigned note, with cosignatures, quorum, `final` and anchors |
 | GET | `/ledger/v1/consistency?from=M&to=N` | Consistency proof |
 | GET | `/ledger/v1/export?from=M&to=N` | Bundle for offline verification |
-| POST | `/witness/v1/cosign` | Witness endpoint: checkpoint + proof in, cosignature out |
+| POST | `/witness/v1/cosign` (also `/witness/v1/add-checkpoint`) | Witness endpoint, C2SP tlog-witness body: `old <size>`, proof hashes, checkpoint in; cosignature line out; `409` with the witness's size (D40) |
+| GET | `/witness/v1/latest` | The witness's last cosigned checkpoint, for auditors to hold |
 | POST | `/gate/v1/decide` | Decision for an SDK caller |
 | POST | `/gate/v1/escalations/{id}/verdict` | Approve or reject |
 | POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules |
@@ -228,7 +229,7 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
 | POST | `/learn/v1/proposals/{id}/approve` | Approve a proposal (two distinct approvers for loosening) |
 
-The offline CLI: `pl-verify export.tar --witness-keys keys/ --quorum 2` checks the chain, every producer signature, every receipt, every checkpoint signature, consistency between checkpoints, the witness quorum, and the timestamp tokens, with no network access.
+The offline CLI: `pl-verify export.tar --keys keys.json --witness-keys witnesses.txt --quorum 2` checks the chain, every producer signature, every receipt, every checkpoint signature, consistency between checkpoints, the witness quorum, and the timestamp tokens, with no network access.
 
 ## Threat model
 
@@ -342,3 +343,7 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-27 | Components | `pl-verify` reimplements the chain and receipt checks on top of `ledger.format` instead of importing `ledger.chain`; a differential test keeps the two in agreement | Skill §2 import rule (D32) |
 | 2026-10-27 | API | `POST …/records` takes one record per request. `proof?size=N` needs `N` to be a checkpoint size and returns the signed checkpoint. `checkpoints/latest`, `consistency` and `export` take a `stream` query parameter. Added `GET /ledger/v1/health`. `export` refuses `from`/`to` until range exports exist | "2xx means receipt" stays exact; proofs only against signed sizes; the loop must be observable (D35, D36) |
 | 2026-10-27 | Components | `ledger.format` split: canonical JSON, encodings and hashes now in `ledger.canonical` (re-exported by `ledger.format`); the verifier side may import it. No byte changed: vectors regenerate identically | Skill §3 module size limit |
+| 2026-10-27 | Exact formulas | Cosignature is C2SP `cosignature/v1`: Ed25519 over `"cosignature/v1\ntime <t>\n"` ‖ checkpoint body, key type 0x04, appended to the note as a signature line | The spec form of "signs {checkpoint, timestamp}"; interoperable and domain-separated (D38) |
+| 2026-10-27 | Data model | `cosignature` table is `(stream, tree_size, witness, line)` instead of `checkpoint_id, witness_id, signature, ts`; insert-only by trigger | The signature line carries signature and time; one authoritative column (D39) |
+| 2026-10-27 | API | `/witness/v1/cosign` uses the C2SP tlog-witness text body and statuses, also served at `/witness/v1/add-checkpoint`; added `GET /witness/v1/latest` and `/witness/v1/health`. `checkpoints/latest` returns the cosigned note plus `quorum` and `final`, and takes `final=true`; proofs return the cosigned note | Interoperability; auditors need a witness-held checkpoint for `--trusted-checkpoint` (D40, D41) |
+| 2026-10-27 | Verification | `--witness-keys` is a file of C2SP cosigner verifier keys, not a directory; the quorum (default 2) is required on the latest checkpoint | D42 |

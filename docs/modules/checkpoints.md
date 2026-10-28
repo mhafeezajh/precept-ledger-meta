@@ -2,7 +2,7 @@
 
 Guarantees that each stream's Merkle tree head (size and root) is published as a C2SP checkpoint signed by the log key, stored write-once, and never signed for a history that does not extend the previous checkpoint.
 
-Status: done for this step (format, signing, checkpointer, directory and Postgres sinks, Postgres tree adapter). The 10-second background loop, witness cosignatures and the HTTP endpoint are not built yet. · Last updated: 2026-10-27 · Tests: 66 unit + property (`checkpoint.py` and `checkpointer.py` 100% lines and branches) plus 2 vector checks and import-boundary checks that keep `checkpoint.py` pure; 7 integration (`pg_tree.py` 100%)
+Status: done for this step (format, signing, checkpointer, directory and Postgres sinks, Postgres tree adapter). The 10-second loop and the HTTP endpoint are in [`api.md`](api.md); cosignatures and finality are in [`witness.md`](witness.md). · Last updated: 2026-10-27 · Tests: 66 unit + property (`checkpoint.py` and `checkpointer.py` 100% lines and branches) plus 2 vector checks and import-boundary checks that keep `checkpoint.py` pure; 7 integration (`pg_tree.py` 100%)
 
 Part of `ledger/`; see [`ledger.md`](ledger.md) for records and receipts and [`merkle.md`](merkle.md) for the tree.
 
@@ -18,7 +18,7 @@ Owns:
 Does not own:
 
 - Merkle hashing and proofs (`merkle/`).
-- Cosignatures and the 2-of-3 quorum (`witness/`, day 3). A checkpoint here is signed by the log only, so it is not yet final in the ARCHITECTURE sense.
+- Cosignatures and the 2-of-3 quorum. See [`witness.md`](witness.md). A checkpoint here is signed by the log only; it becomes final when two witnesses cosign it.
 - Scheduling. `Checkpointer.publish()` is one call; the background task that calls it every 10 seconds comes with the API.
 
 ## How it works
@@ -42,7 +42,7 @@ flowchart LR
         C -->|5 write| S1[PostgresCheckpointSink<br/>checkpoint table]
         C -->|5 write| S2[DirectorySink<br/>var/checkpoints/*.note]
     end
-    V["verify/ · witness/ (next)"] --> CP
+    V["verify/ · witness/"] --> CP
 ```
 
 ## Interfaces
@@ -91,7 +91,7 @@ Settings: `LEDGER_ORIGIN` (default `precept-ledger.local`) and `CHECKPOINT_DIR`,
 | Database or a sink down | `StoreError`; the publish fails, and the next publish rewrites every sink | `test_sink_failure_fails_the_publish_and_the_next_publish_heals`, `test_unreachable_database_fails_closed` |
 | Oversized or malformed notes | Rejected: more than 64 KiB, more than 32 signature lines, blank lines, control characters, non-canonical base64 | `test_open_rejects_malformed_notes`, `test_limits_and_encoding_edge_cases` |
 
-What it does not protect against: an operator who holds the log key and runs their own signing code. They can sign any tree. The consistency self-check only stops the honest process from signing a rewritten table. Witnesses (day 3) are the check that holds against a rogue operator (demo beat 5).
+What it does not protect against: an operator who holds the log key and runs their own signing code. They can sign any tree. The consistency self-check only stops the honest process from signing a rewritten table. Witnesses are the check that holds against a rogue operator (demo beat 5, [`witness.md`](witness.md)).
 
 ## Formulas and formats
 
@@ -142,8 +142,6 @@ D4 (C2SP formats), D16 (leaf index = seq − 1), D19 (canonical base64), D25 (me
 
 ## Known gaps
 
-- No background loop yet. The API step will add the 10-second task and `GET /ledger/v1/checkpoints/latest`.
-- Checkpoints are signed by the log only. Cosignatures, the 2-of-3 quorum and "final" status come with `witness/` (day 3).
 - The checkpointer takes its previous checkpoint from the first sink only. If the sinks disagree, the other sinks report it only when a write conflicts.
 - `LogTree` reads every leaf on each publish (O(n)), which is fine at demo scale (see `merkle.md`).
 - One log key signs receipts and checkpoints for every stream. The key hash differs per stream because the key name is the origin.

@@ -19,7 +19,7 @@ Does not own:
 
 - Deciding anything. That is Gate's job; the ledger records decisions.
 - Merkle hashing and proofs: the `merkle/` package (D25). Checkpoints live in `ledger/` but have their own page, [`checkpoints.md`](checkpoints.md).
-- Witnesses and anchors (day 3).
+- Witnesses ([`witness.md`](witness.md)) and anchors (day 4).
 - Key storage in production (KMS/HSM). Keys are loaded from files under `KEYS_DIR`.
 
 ## How it works
@@ -107,7 +107,7 @@ Postgres tables (`ledger/schema.sql`): `ledger_record` has the record split into
 
 What it does not protect against yet:
 
-- An operator who rewrites history while no producer kept its receipts. Signed checkpoints now make the rewrite visible to anyone holding an older checkpoint; witnesses (day 3) close it.
+- An operator who rewrites history while no producer kept its receipts. Signed checkpoints now make the rewrite visible to anyone holding an older checkpoint; witnesses close it ([`witness.md`](witness.md)).
 - A stolen producer key. Forged records would verify.
 - Edits to the stored `chain_hash` column alone. Verification recomputes hashes and never reads that column, so the edit changes no verified data and is not reported at its row. The column is used only to find the head: the next append chains from the edited value and is reported as `prev_hash_mismatch` at that new `seq`.
 

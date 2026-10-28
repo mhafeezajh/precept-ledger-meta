@@ -17,7 +17,7 @@ Does not own:
 
 - Ledger records. Callers hand it 32-byte leaf hashes. For the ledger, leaf `i` is the `leaf_hash` of the record with `seq = i + 1` (D16).
 - Writing leaves. The port is read-only; whoever owns the data appends it.
-- Signed checkpoints (`ledger/checkpoint.py`, [`checkpoints.md`](checkpoints.md)) and cosignatures (`witness/`, day 3).
+- Signed checkpoints (`ledger/checkpoint.py`, [`checkpoints.md`](checkpoints.md)) and cosignatures ([`witness.md`](witness.md)).
 - Storage adapters for real systems. Each lives with the system it reads: the Postgres adapter is `ledger.pg_tree.PostgresTreeStore`, because it reads `ledger_record.leaf_hash`.
 
 ## How it works
@@ -72,7 +72,7 @@ No tables or files. Inputs and outputs are raw 32-byte SHA-256 hashes; encoding 
 | Adapter returns too few or too many leaves | `MerkleError merkle.bad_store`; no head or proof is produced | `test_adapter_returning_wrong_count_fails_closed` |
 | Malformed input reaching verification | `False`, never an exception, so an error path cannot skip a check | negative tests above |
 
-What it does not protect against on its own: a tree head nobody signed or witnessed. Consistency proofs only help when someone kept an earlier root. That is what signed checkpoints ([`checkpoints.md`](checkpoints.md)) and witnesses (day 3) are for.
+What it does not protect against on its own: a tree head nobody signed or witnessed. Consistency proofs only help when someone kept an earlier root. That is what signed checkpoints ([`checkpoints.md`](checkpoints.md)) and witnesses ([`witness.md`](witness.md)) are for.
 
 ## Formulas and formats
 
