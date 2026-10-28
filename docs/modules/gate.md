@@ -2,7 +2,7 @@
 
 Guarantees that an agent's tool call runs only after a signed decision record for that exact call has a verified ledger receipt, and, for a risky call, only after a person with the required role has approved it in another signed record. Cedar decides; no model is involved. Every error, timeout and unreachable dependency is a deny.
 
-Status: done for this step. Covers the normalizer, Cedar decisions with escalate, decision, verdict and result records, write-before-effect, the approval queue with expiry, token auth, the `/gate/v1` API (`pl-gate`), the `@governed` wrapper and demo beat 2 (`make demo-gate`). Not yet built: the MCP proxy (first on the cut list, D55), approval briefs (`assist/`, next), and loading the active policy set from approved `policy_rule` rows (`policy/`). · Last updated: 2026-10-28 · Tests: 163 unit across `tests/unit/test_gate_*.py`, plus 6 integration over Postgres, 4 dev-key tests and 1 import-boundary test. Coverage: `gate/decide.py`, `normalizer.py`, `auth.py`, `records.py` and `ledger_client.py` 100%; `core.py` 97%; `client.py` 97%; `api.py` 96%; `governed.py` 95%; `escalations.py` 92%. `server.py` and `pg_escalations.py` are covered by the integration tests and the live run.
+Status: done for this step. Covers the normalizer, Cedar decisions with escalate, decision, verdict and result records, write-before-effect, the approval queue with expiry, token auth, the `/gate/v1` API (`pl-gate`), the `@governed` wrapper and demo beat 2 (`make demo-gate`). Approval briefs from `assist/` are recorded as `assist.brief` (see [`assist.md`](assist.md)). Not yet built: the MCP proxy (first on the cut list, D55), and loading the active policy set from approved `policy_rule` rows (`policy/`). · Last updated: 2026-10-28 · Tests: 163 unit across `tests/unit/test_gate_*.py`, plus 6 integration over Postgres, 4 dev-key tests and 1 import-boundary test. Coverage: `gate/decide.py`, `normalizer.py`, `auth.py`, `records.py` and `ledger_client.py` 100%; `core.py` 97%; `client.py` 97%; `api.py` 96%; `governed.py` 95%; `escalations.py` 92%. `server.py` and `pg_escalations.py` are covered by the integration tests and the live run.
 
 Related pages: [`ledger.md`](ledger.md) (records, producer signatures, receipts), [`api.md`](api.md) (the ledger API Gate appends to), [`verify.md`](verify.md) (offline checks of the records Gate writes).
 
@@ -113,7 +113,7 @@ All routes need `Authorization: Bearer <token>` except health.
 | `GET /gate/v1/escalations/{id}?wait=0..25` | the owning agent, or an approver | | `200 {"escalation", "verdict": {record, receipt} \| null}` |
 | `POST /gate/v1/escalations/{id}/verdict` | approver | `{"verdict": "approve" \| "reject"}` | `201 {record, receipt}` |
 | `POST /gate/v1/results` | agent | `{"decision_record_id", "outcome": "ok" \| "error", "result_digest"?, "error"?}` | `201 {record, receipt}` |
-| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, open_escalations}`; `503` if the sweep stopped |
+| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, open_escalations, briefs}`; `503` if the sweep stopped |
 
 | Status | Codes |
 | --- | --- |
@@ -162,7 +162,9 @@ A deny is not an HTTP error: `POST /decide` returns `200` with `decision: "deny"
 | `args_digest` | Binds the record to one exact call (formula below); `null` when the arguments are not I-JSON |
 | `escalation` | Only on `escalate`: its id, expiry and required roles |
 
-`gate.verdict`: `{decision_record_id, escalation_id, verdict: "approve" | "reject" | "expire", approver (null on expire), agent, tool, action}`.
+`gate.verdict`: `{decision_record_id, escalation_id, verdict: "approve" | "reject" | "expire", approver (null on expire), agent, tool, action, brief_record_id}`. `brief_record_id` is the brief the approver could see, or `null`.
+
+`assist.brief`: written by `assist/`, recorded by Gate; see [`assist.md`](assist.md).
 
 `gate.result`: `{decision_record_id, verdict_record_id (null for an allow), agent, tool, outcome: "ok" | "error", result_digest, error}`. `error` is the exception's class name, never its message.
 
@@ -289,7 +291,6 @@ Environment variables (`GATE_*`, see `.env.example`): `GATE_LEDGER_URL`, `GATE_P
 ## Known gaps
 
 - **MCP proxy** not built (D55). Only the decorator exists.
-- **Approval briefs** come with `assist/` (next). The queue shows the facts and the policy ids for now.
 - **Policies are one file read at start.** Activating rules approved in `policy/` (with their hash recorded) and reloading without a restart come with that module.
 - **No compose service** for `pl-gate` yet, same as the ledger and witnesses.
 - **No token rotation or expiry**, and no approver UI. `web/` adds the approver queue.

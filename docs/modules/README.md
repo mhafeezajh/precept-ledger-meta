@@ -11,7 +11,8 @@ One page per module, written when the module is finished and kept current with t
 | [verify.md](verify.md) | Export bundle, `pl-export`, the offline `pl-verify` CLI, every finding it can report, witness quorum, timestamps | Done for this step |
 | [witness.md](witness.md) | C2SP cosignatures, the witness service (`pl-witness`), its own state, 2-of-3 finality in the ledger, demo beat 5 | Done for this step: compose services later |
 | [anchor.md](anchor.md) | RFC 3161 timestamps (request, offline verification), OpenTimestamps (submit, upgrade, read), backdating checks, bundle v2 | Done for this step: confirmed Bitcoin vector after O5 |
-| [gate.md](gate.md) | Normalizer, Cedar allow / deny / escalate, decision, verdict and result records, write-before-effect, approval queue, tokens, `pl-gate`, `@governed`, demo beat 2 | Done for this step: MCP proxy deferred, briefs with `assist/` |
+| [gate.md](gate.md) | Normalizer, Cedar allow / deny / escalate, decision, verdict and result records, write-before-effect, approval queue, tokens, `pl-gate`, `@governed`, demo beat 2 | Done for this step: MCP proxy deferred |
+| [assist.md](assist.md) | `assist/llm.py` (the only model entry point), Muse Spark approval briefs and their grounding checks | Partial: auditor Q&A with `claims/`; no live model run yet |
 
 ## Where to look for what
 
@@ -29,6 +30,8 @@ One page per module, written when the module is finished and kept current with t
 | How a TSA token is checked, and what stops backdating | [anchor.md](anchor.md), "Interfaces" and "Formulas and formats" |
 | Why a tool call was allowed, denied or held, and what proves it | [gate.md](gate.md), "How it works" and "Data" |
 | How to run demo beat 2 (payment held until approval) | [gate.md](gate.md), "How to run and test" |
+| Which model, mode, price and parameters each call uses | [`../MODELS.md`](../MODELS.md) |
+| What stops a brief from inventing facts or advising a verdict | [assist.md](assist.md), "Security and failure behaviour" |
 
 ## Signing contexts in use
 
