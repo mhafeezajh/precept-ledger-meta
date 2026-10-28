@@ -34,7 +34,8 @@ class Settings(BaseSettings):
     ots_interval_seconds: float = 3600.0
     anchor_timeout_seconds: float = 10.0
     # Models (assist/llm.py, docs/MODELS.md). One setting switches every model call's profile.
-    model_profile: str = "cloud"  # cloud = Meta Model API; onprem = an OpenAI-compatible endpoint
+    # cloud = Meta Model API; onprem = an OpenAI-compatible endpoint; mock = scripted (D72)
+    model_profile: str = "cloud"
     meta_api_key: SecretStr | None = None  # Standard mode only: never a -contributor model ID
     meta_api_base: str = "https://api.meta.ai/v1"
     onprem_api_base: str = ""

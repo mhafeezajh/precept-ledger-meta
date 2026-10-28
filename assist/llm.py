@@ -1,7 +1,8 @@
 """The only model entry point (skill §5, R6): ``LlmClient.complete_structured``.
 
 Every call goes through LiteLLM to a route of the active profile (``cloud``: the Meta Model API;
-``onprem``: an OpenAI-compatible endpoint), asks for JSON matching a Pydantic schema with
+``onprem``: an OpenAI-compatible endpoint; ``mock``: ``assist.mock``'s scripted answers, no
+network, for development), asks for JSON matching a Pydantic schema with
 Meta's ``json_schema`` structured output, and parses the answer into that schema. A schema or
 check failure gets one retry with the problems fed back; a second failure raises
 ``ModelOutputError`` (fail closed). Rate limits and outages are retried with backoff (Meta's
@@ -33,6 +34,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm  # the environment variable above must be set first
 from pydantic import BaseModel, ValidationError
 
+from assist.mock import MOCK_MODEL, scripted_completion
 from common.config import Settings
 from common.errors import ConfigError, ModelOutputError
 
@@ -41,7 +43,7 @@ litellm.drop_params = False  # an unsupported parameter is an error, never silen
 
 M = TypeVar("M", bound=BaseModel)
 Check = Callable[[Any], list[str]]
-PROFILES = ("cloud", "onprem")
+PROFILES = ("cloud", "onprem", "mock")
 CALL_LOG_FIELDS = (
     "ts", "profile", "model", "prompt_version", "prompt_sha256", "input_tokens",
     "output_tokens", "latency_ms", "outcome",
@@ -134,10 +136,12 @@ class LlmClient:
         self,
         config: ModelConfig,
         *,
-        completion: Callable[..., Awaitable[Any]] = litellm.acompletion,
+        completion: Callable[..., Awaitable[Any]] | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self.config = config
+        if completion is None:
+            completion = scripted_completion if config.profile == "mock" else litellm.acompletion
         self._completion = completion
         self._sleep = sleep
 
@@ -268,7 +272,13 @@ def _parse[P: BaseModel](
 
 
 def model_config(settings: Settings) -> ModelConfig | None:
-    """The model routes for both profiles, or None when the active one has no credentials."""
+    """The model routes for the profiles, or None when the active one has no credentials."""
+    if settings.model_profile == "mock":  # D72: no route, no key, nothing leaves the machine
+        mock = Route(MOCK_MODEL, None, None)
+        return ModelConfig(
+            "mock", {"mock": {"spark": mock, "wonder": mock}},
+            settings.model_timeout_seconds, settings.model_call_log,
+        )  # fmt: skip
     key = settings.meta_api_key.get_secret_value() if settings.meta_api_key else None
     onprem = Route(f"openai/{settings.onprem_model}", settings.onprem_api_base or None, None)
     routes = {

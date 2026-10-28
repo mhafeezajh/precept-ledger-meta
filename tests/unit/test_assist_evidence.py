@@ -34,8 +34,10 @@ async def test_the_export_fails_closed(r: HttpLedgerReader) -> None:
 
 
 def settings(tmp_path: Path, **values: object) -> Settings:
-    # Never the developer's .env or environment: with a real key there, "no key" would not be.
+    # Never the developer's .env or environment (the Makefile exports .env): with a real key or
+    # MODEL_PROFILE=mock there, "no key" would not be.
     values.setdefault("meta_api_key", None)
+    values.setdefault("model_profile", "cloud")
     return Settings(  # type: ignore[call-arg]
         _env_file=None, database_url="postgresql://x", keys_dir=tmp_path, **values
     )
