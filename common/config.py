@@ -39,7 +39,7 @@ class Settings(BaseSettings):
     meta_api_base: str = "https://api.meta.ai/v1"
     onprem_api_base: str = ""
     onprem_model: str = ""
-    model_timeout_seconds: float = 30.0
+    model_timeout_seconds: float = 60.0  # a live brief took 23 s (docs/MODELS.md)
     model_call_log: Path = Path("logs/model_calls.csv")
     log_level: str = "INFO"
     demo_mode: bool = False

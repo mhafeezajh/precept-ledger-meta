@@ -61,7 +61,7 @@ async def approve_ours(http: httpx.AsyncClient, keys_dir: Path, since: str) -> N
     escalation = ours[0]
     print(f"  approval queue: escalation {escalation['id']}, needs {escalation['approver_roles']}")
     briefs = (await http.get(f"{GATE_URL}/gate/v1/health")).json()["briefs"]
-    for _ in range(75 if briefs else 0):  # up to 15 s for Muse Spark's brief
+    for _ in range(300 if briefs else 0):  # up to 60 s: a live brief took 23 s on Oct 28
         if escalation["brief"] is not None:
             break
         await asyncio.sleep(0.2)

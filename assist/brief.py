@@ -112,6 +112,10 @@ def build_context(
         if r.get("type") == VERDICT and r["body"].get("verdict") == "approve"
     }
     payee_approvals = [approved[r["record_id"]] for r in to_payee if r["record_id"] in approved]
+    # Only payments cleared to run are payments: denied, rejected and pending requests never ran.
+    cleared = [
+        r for r in payments if r["body"].get("decision") == "allow" or r["record_id"] in approved
+    ]
     hour, weekday = facts.get("local_hour"), facts.get("local_weekday")
     data: dict[str, Any] = {
         "decision": {
@@ -128,7 +132,7 @@ def build_context(
     }
     if "amount_cents" in facts:
         data["facts"]["amount"] = dollars(facts["amount_cents"])
-        amounts = [(r["body"]["resource"]["amount_cents"], r["record_id"]) for r in payments]
+        amounts = [(r["body"]["resource"]["amount_cents"], r["record_id"]) for r in cleared]
         largest = max(amounts, default=None)
         data["agent_payments_last_30_days"] = {
             "count": len(amounts),
@@ -138,6 +142,7 @@ def build_context(
             "largest_amount": dollars(largest[0]) if largest else None,
             "largest_record_id": largest[1] if largest else None,
             "record_ids": [r for _, r in sorted(amounts, reverse=True)[:MAX_CITED]],
+            "requests_not_cleared": len(payments) - len(cleared),
         }
         data["payee_history"] = {
             "earlier_decisions": len(to_payee),

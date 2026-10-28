@@ -34,7 +34,11 @@ async def test_the_export_fails_closed(r: HttpLedgerReader) -> None:
 
 
 def settings(tmp_path: Path, **values: object) -> Settings:
-    return Settings(database_url="postgresql://x", keys_dir=tmp_path, **values)  # type: ignore[arg-type]
+    # Never the developer's .env or environment: with a real key there, "no key" would not be.
+    values.setdefault("meta_api_key", None)
+    return Settings(  # type: ignore[call-arg]
+        _env_file=None, database_url="postgresql://x", keys_dir=tmp_path, **values
+    )
 
 
 def test_model_config_needs_credentials_for_the_active_profile(tmp_path: Path) -> None:

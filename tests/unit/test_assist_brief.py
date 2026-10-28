@@ -76,6 +76,25 @@ async def test_a_known_payee_shows_its_approvals() -> None:
     assert len(payee["record_ids"]) == 5
 
 
+async def test_only_payments_cleared_to_run_count_as_payments() -> None:
+    # Found in the first live run (Oct 28): a denied $300,000 request was called the agent's
+    # largest payment. Denied, rejected and pending requests never ran.
+    r, _, _ = await seeded()
+    await r.gate.decide(AGENT, "create_payment", {**DEMO_PAYMENT, "amount": "300000.00"})
+    await r.gate.decide(AGENT, "create_payment", {**SMALL_PAYMENT, "amount": "20000.00"})
+    rejected = await r.gate.decide(AGENT, "create_payment", {**SMALL_PAYMENT, "amount": "30000.00"})
+    assert rejected.escalation is not None
+    await r.gate.verdict(rejected.escalation.id, SUPERVISOR, "reject")
+    demo = await r.gate.decide(AGENT, "create_payment", DEMO_PAYMENT)
+    assert demo.escalation is not None
+    history = (await context_for(r, demo.record, demo.escalation)).data[
+        "agent_payments_last_30_days"
+    ]
+    assert (history["count"], history["largest_amount"], history["requests_not_cleared"]) == (
+        4, "$9,000.00", 4
+    )  # fmt: skip
+
+
 def good_brief(context: Any) -> Brief:
     decision_id = context.data["decision"]["record_id"]
     largest_id = context.data["agent_payments_last_30_days"]["largest_record_id"]
@@ -145,7 +164,7 @@ async def test_the_writer_sends_only_the_context_and_returns_a_record_body(tmp_p
         escalation.id,
         decision.record_id,
     )
-    assert (body["model"], body["prompt_version"]) == ("meta/muse-spark-1.3", "approval_brief/1")
+    assert (body["model"], body["prompt_version"]) == ("meta/muse-spark-1.3", "approval_brief/2")
     assert set(body["context_record_ids"]) == set(context.record_ids)
     sent = fake.calls[0]["messages"]
     assert sent[0]["role"] == "system"
@@ -232,7 +251,7 @@ async def test_a_brief_is_attached_once(tmp_path: Path) -> None:
 
 def test_the_prompt_file_has_a_versioned_header() -> None:
     version, instructions = load_prompt()
-    assert version == "approval_brief/1"
+    assert version == "approval_brief/2"
     assert instructions.startswith("You write approval briefs")
 
 
