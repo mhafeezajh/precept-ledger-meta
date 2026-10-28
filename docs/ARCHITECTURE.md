@@ -123,6 +123,7 @@ The one property not matched, refusal to write, does not hurt here: under write-
 | Key | Holder | Demo | Production |
 | --- | --- | --- | --- |
 | Gate producer key | Gate | Local file | KMS or HSM |
+| Assist producer key (`assist-1`, signs `assist.qa`) | Auditor service | Local file | KMS or HSM |
 | Log key (receipts, checkpoints) | Ledger | Local file | KMS or HSM |
 | Witness keys, one per witness | Each witness | Separate containers, one optionally on a separate cloud host | Separate organizations |
 
@@ -360,3 +361,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Flow A, Meta model usage | Approval briefs are `assist.brief` ledger records written in the background after the escalation opens, grounded in a context code builds from the ledger and checked for cited ids, numbers and verdict advice; the verdict names the brief shown | The brief never sits on the decision path, and auditors can see what the approver saw (D57, D58) |
 | 2026-10-28 | Components | Model settings live in `common/config.py` (`MODEL_PROFILE`, `META_API_KEY`, ...) instead of `models.yaml`; Standard mode is enforced by refusing `-contributor` model IDs; model IDs and limits in `docs/MODELS.md` | D56, D59 |
 | 2026-10-28 | Build plan | Auditor Q&A is built with `claims/`, not `assist/` | D60 |
+| 2026-10-28 | Flow C | The model's read-only query tools are one structured `RecordQuery` run by code over the export; claims are checked by `claims/checker.py` (producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers in text); answers use only accepted claims; audits are `assist.qa` records signed by a new `assist-1` key | D61-D64 |

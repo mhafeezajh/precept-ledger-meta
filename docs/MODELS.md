@@ -41,6 +41,8 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | Prompt | Version | Model | Output schema | Checked by |
 | --- | --- | --- | --- | --- |
 | `assist/prompts/approval_brief.md` | `approval_brief/1` | `spark` | `assist.brief.Brief` | `check_brief`: cited ids in the context, a citation per point, no numbers outside the context, no verdict advice |
+| `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs the query |
+| `assist/prompts/auditor_answer.md` | `auditor_answer/1` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` proves every claim |
 
 ## Call log
 
@@ -56,4 +58,4 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 
 ## Not yet verified live
 
-No `META_API_KEY` was set when this module was built, so every test fakes the model. The real call is `tests/unit/test_assist_brief.py::test_a_real_brief_from_muse_spark`, marked `live`: `META_API_KEY=... uv run pytest -m live -s`.
+No `META_API_KEY` was set when this module was built, so every test fakes the model. The real calls are `test_a_real_brief_from_muse_spark` and `test_a_real_audit_answer_from_muse_spark`, marked `live`: `META_API_KEY=... uv run pytest -m live -s`.

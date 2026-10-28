@@ -15,8 +15,8 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `anchor/` | Done for this step. RFC 3161 timestamps from DigiCert and FreeTSA on every final checkpoint, verified offline; OpenTimestamps (Bitcoin) submit and upgrade; confirmed Bitcoin vector after O5 | [`docs/modules/anchor.md`](docs/modules/anchor.md) |
 | `gate/` (`pl-gate`) | Done for this step. Normalizer, Cedar allow / deny / escalate (`cedarpy`), signed decision, verdict and result records, write-before-effect, approval queue with expiry, agent and approver tokens, `@governed` wrapper that verifies receipts itself, demo beat 2 (`make demo-gate`); MCP proxy deferred, briefs with `assist/` | [`docs/modules/gate.md`](docs/modules/gate.md) |
 | `policy/` | Not started | |
-| `assist/` | Partial. `assist/llm.py`, the only model entry point (Muse Spark via LiteLLM, Standard mode only, structured output, one checked retry, call log), and approval briefs grounded in ledger history and recorded as `assist.brief`; auditor Q&A with `claims/`; not yet run against the live API (no key) | [`docs/modules/assist.md`](docs/modules/assist.md), [`docs/MODELS.md`](docs/MODELS.md) |
-| `claims/` | Not started | |
+| `assist/` | Done for this step. `assist/llm.py`, the only model entry point (Muse Spark via LiteLLM, Standard mode only, structured output, one checked retry, call log); approval briefs recorded as `assist.brief`; auditor Q&A (beat 3, `make demo-audit`) recorded as `assist.qa`; not yet run against the live API (no key) | [`docs/modules/assist.md`](docs/modules/assist.md), [`docs/MODELS.md`](docs/MODELS.md) |
+| `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, exact assertions, numbers in text backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
 | `learn/` | Not started | |
 | `agent/` | Not started | |
 | `web/` | Not started | |
@@ -27,7 +27,7 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 816 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 852 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -45,7 +45,9 @@ uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEY
 make gate               # Gate on 127.0.0.1:8070 in front of the ledger (policies: deploy/policies/)
 make demo-gate          # demo beat 2: $48,000 to a new payee is held until j.ortiz approves;
                         # with META_API_KEY set, Muse Spark's brief is shown first
-uv run pytest -m live -s  # one real Muse Spark brief (needs META_API_KEY)
+make demo-audit         # demo beat 3: examiner's question, each claim proven or rejected (needs
+                        # META_API_KEY); ARGS="--inject-fault" shows a wrong claim caught
+uv run pytest -m live -s  # real Muse Spark brief and audit answer (needs META_API_KEY)
 make ots-upgrade        # hours after submission: record the confirmed Bitcoin proof
 ```
 
@@ -77,5 +79,7 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `gate/api.py`, `gate/auth.py`, `gate/client.py`, `gate/server.py` (`pl-gate`), `gate/pg_escalations.py`, `gate/schema.sql`, `deploy/demo/payees.json`, `scripts/demo_gate.py` (`make demo-gate`, demo beat 2); Gate tokens in `scripts/dev_keys.py` |
 | Oct 28 | `assist/llm.py`: the model entry point (LiteLLM, Meta Model API, Standard mode, structured output, retries, redaction, call log); `docs/MODELS.md` |
 | Oct 28 | `assist/brief.py`, `assist/prompts/approval_brief.md`: approval briefs grounded in ledger history and checked; Gate's `BriefWriter` port and `assist.brief` records |
+| Oct 28 | `claims/checker.py`: the claim checker |
+| Oct 28 | `assist/auditor.py`, `assist/evidence.py`, auditor prompts, `scripts/demo_audit.py` (`make demo-audit`, demo beat 3), `assist-1` producer key in `scripts/dev_keys.py` |
 
-Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.
+Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

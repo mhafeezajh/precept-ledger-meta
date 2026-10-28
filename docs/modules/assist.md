@@ -2,7 +2,7 @@
 
 Guarantees that every model call goes through one function, to a Meta model in Standard mode, and comes back as a validated schema or not at all. Approval briefs say only what code found in the ledger: every cited record and every number is checked against that context before Gate records the brief, and a brief never decides.
 
-Status: partial. `assist/llm.py` and approval briefs are done. Auditor Q&A (demo beat 3) comes with `claims/`, because its answers are only shown after the claim checker verifies them. Not yet run against the real Meta Model API: no key was set (see [`../MODELS.md`](../MODELS.md)). · Last updated: 2026-10-28 · Tests: 37 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19) plus 1 `live` test skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 97%, `assist/brief.py` 99%.
+Status: done for this step: `assist/llm.py`, approval briefs, and auditor Q&A (beat 3) with every claim proven by [`claims/`](claims.md). Not yet run against the real Meta Model API: no key was set (see [`../MODELS.md`](../MODELS.md)). · Last updated: 2026-10-28 · Tests: 51 unit (`test_assist_llm.py` 18, `test_assist_brief.py` 19, `test_assist_auditor.py` 8, `test_assist_evidence.py` 6) plus 2 `live` tests skipped by default, and 1 Postgres integration test. Coverage: `assist/llm.py` 92%, `assist/brief.py` 99%, `assist/auditor.py` 98%, `assist/evidence.py` 100%.
 
 Related pages: [`gate.md`](gate.md) (escalations, the `BriefWriter` port), [`../MODELS.md`](../MODELS.md) (model IDs, prices, parameters).
 
@@ -15,12 +15,14 @@ Owns:
 | The only model entry point: routes, profiles, structured output, retries, redaction, call log | `assist/llm.py` |
 | Brief context from the ledger, `Brief` schema, grounding checks, `BriefWriter` | `assist/brief.py` |
 | The brief prompt, versioned | `assist/prompts/approval_brief.md` |
+| Auditor Q&A: query, rows, answer, claim check, `assist.qa` | `assist/auditor.py`, `assist/prompts/auditor_query.md`, `assist/prompts/auditor_answer.md` |
+| Reading records and evidence from the ledger API | `assist/evidence.py` |
 
 Does not own:
 
 - **Deciding.** Gate decided before the brief exists, and only a person closes the escalation (R2).
 - **Recording the brief.** Gate signs and appends it as `assist.brief` and links it to the escalation; see [`gate.md`](gate.md).
-- **Proving answers to auditors.** That is `claims/`.
+- **Proving claims.** That is [`claims/`](claims.md); the auditor only shows what it accepts.
 
 ## How it works
 
@@ -53,6 +55,17 @@ sequenceDiagram
     G->>G: attach to escalation
 ```
 
+### Auditor Q&A (beat 3)
+
+1. Muse Spark turns the question into a `RecordQuery` (filters only).
+2. Code reads the stream's export and runs the query: each `gate.decision` joined with its `gate.verdict`, newest first, at most 50 rows.
+3. Muse Spark answers from those rows with claims (text, record ids, assertions). Ids outside the rows get one retry.
+4. `claims.checker` proves each claim against the latest final checkpoint (see [`claims.md`](claims.md)).
+5. The answer text uses only accepted claims; rejected ones are listed with reasons.
+6. The audit is appended as `assist.qa`, signed by `assist-1`.
+
+`--inject-fault` (demo) makes the first assertion of the first claim false and marks it injected, so the video can show a wrong claim being caught on demand.
+
 ## Interfaces
 
 | Function / class | Input | Output | Errors |
@@ -64,6 +77,10 @@ sequenceDiagram
 | `build_context(escalation, decision, history)` | escalation, the decision `Receipted`, raw stream records | `BriefContext(data, record_ids)` | |
 | `check_brief(brief, context)` | | list of problems | |
 | `BriefWriter(llm, history).write(escalation, decision)` | | `assist.brief` record body | `ModelOutputError` (Gate logs it and records no brief) |
+| `Auditor(llm, reader, trust, recorder, clock=, timezone=).ask(question, inject_fault=False)` | question (≤ 500 chars) | `AuditResult(query, rows, summary, results, injected, record)`, `.answer_text()` | `ModelOutputError` (model or ledger unavailable, invalid twice) |
+| `run_query(query, records, now)`, `build_rows(records)` | | rows | |
+| `HttpLedgerReader(base, http, stream, final=True)` | | `records()`, `final_size()`, `evidence(id, size)` | `audit.ledger_unavailable` |
+| `LedgerRecorder(...).record(body)` | | receipted `assist.qa` | ledger errors |
 
 ## Data
 
@@ -77,6 +94,8 @@ sequenceDiagram
 | `context_record_ids` | Every record id the context offered, so an auditor can see what the model had |
 
 The `escalation` table gains `brief_record_id`, which can be set once in any state; the guard trigger refuses a change after that. `gate.verdict` gains `brief_record_id`.
+
+`assist.qa` (signed by `assist-1`): `question`, `query`, `rows`, `model`, `prompt_versions`, `answer` (the shown text), `claims[{text, record_ids, accepted, reasons, injected}]`, `asked_at`.
 
 Files: `logs/model_calls.csv` (see [`../MODELS.md`](../MODELS.md)).
 
@@ -118,12 +137,11 @@ With `META_API_KEY` in `.env`, `make gate` starts with briefs on (its log says `
 
 ## Decisions
 
-[D56](../DECISIONS.md) the model entry point · [D57](../DECISIONS.md) briefs grounded in code-built context · [D58](../DECISIONS.md) briefs as ledger records, off the decision path · [D59](../DECISIONS.md) `litellm` version and hygiene · [D60](../DECISIONS.md) auditor Q&A moves to `claims/`.
+[D56](../DECISIONS.md) the model entry point · [D57](../DECISIONS.md) briefs grounded in code-built context · [D58](../DECISIONS.md) briefs as ledger records, off the decision path · [D59](../DECISIONS.md) `litellm` version and hygiene · [D60](../DECISIONS.md) auditor Q&A built with `claims/` · [D63](../DECISIONS.md) query then answer · [D64](../DECISIONS.md) answer text, fault injection, `assist.qa`.
 
 ## Known gaps
 
 - No live run yet (no key). The parameters come from Meta's docs and LiteLLM's model table.
-- Auditor Q&A not built (D60).
 - On-prem profile configured but never run.
 - History is the whole stream read on each brief, which is fine at demo scale. A query by agent and payee is needed before production.
 - No spend cap: the call log shows spend, nothing stops it.
