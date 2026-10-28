@@ -113,7 +113,7 @@ All routes need `Authorization: Bearer <token>` except health.
 | `GET /gate/v1/escalations/{id}?wait=0..25` | the owning agent, or an approver | | `200 {"escalation", "verdict": {record, receipt} \| null}` |
 | `POST /gate/v1/escalations/{id}/verdict` | approver | `{"verdict": "approve" \| "reject"}` | `201 {record, receipt}` |
 | `POST /gate/v1/results` | agent | `{"decision_record_id", "outcome": "ok" \| "error", "result_digest"?, "error"?}` | `201 {record, receipt}` |
-| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, open_escalations, briefs}`; `503` if the sweep stopped |
+| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, policy_record, open_escalations, briefs}`; `503` if the sweep stopped. `policy_record` is the active `policy.approve`, or null on the policy file |
 
 | Status | Codes |
 | --- | --- |
@@ -287,6 +287,10 @@ Environment variables (`GATE_*`, see `.env.example`): `GATE_LEDGER_URL`, `GATE_P
 ## Decisions
 
 [D49](../DECISIONS.md) Cedar with escalate annotations, fail closed on any Cedar error · [D50](../DECISIONS.md) facts, cents, time zone, argument digest · [D51](../DECISIONS.md) Gate as a service; the wrapper verifies · [D52](../DECISIONS.md) escalations close once; verdict before state · [D53](../DECISIONS.md) bearer tokens per caller · [D54](../DECISIONS.md) result records · [D55](../DECISIONS.md) `cedarpy`, MCP proxy deferred, briefs in `assist/`. Also D6 (Cedar via `cedarpy`), D9 (producer signature scope), D34 (strict JSON at the boundary).
+
+## Policy activation
+
+`pl-gate` also serves the policy review API (`/policy/v1`, see [`policy.md`](policy.md)). `Gate.activate(policies, approval_record_id)` switches the set Gate decides with; only `policy.service` calls it, after an approval that passed every check. At startup `restore_active` re-activates the latest `policy.approve` from the ledger, verified (D74). `Gate.append_record` and `Gate.read_record` let the policy service sign and read records with Gate's key and receipt checks.
 
 ## Known gaps
 

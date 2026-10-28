@@ -205,7 +205,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | `checkpoint` | stream, tree\_size, root\_hash, note (the full signed note, signature included) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; also written to a write-once directory, one file per tree size (D30) |
 | `cosignature` | stream, tree\_size, witness, line (the full C2SP signature line, which carries the time) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; verified before insert and before serving (D39) |
 | `anchor` | stream, tree\_size, kind (`rfc3161`, `ots`), source, status (`verified`, `pending`, `confirmed`), token, digest | Insert only; an upgraded OpenTimestamps proof is a new `confirmed` row (D47) |
-| `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept |
+| `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept *(as built, D73: not a table; `policy.draft` and `policy.approve` ledger records)* |
 | `escalation` | id, stream, decision\_record\_id, agent, tool, action, approver\_roles, opened\_at, expires\_at, state, approver, verdict\_record\_id, decided\_at, brief\_record\_id | App state. Closes once from `open`; the brief attaches once; a trigger refuses other edits and deletes (D52, D58) |
 | `learner_proposal` | id, direction (`tighten`, `loosen`), yaml, cited\_record\_ids, counts, replay\_result, state, approvers | State guarded; every transition also a ledger record |
 
@@ -228,7 +228,7 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | GET | `/gate/v1/escalations/{id}?wait=S` | One request, long-polled, with its verdict record (owning agent or approver) |
 | POST | `/gate/v1/escalations/{id}/verdict` | Approve or reject (approver with the required role) |
 | POST | `/gate/v1/results` | Record that a cleared tool ran, with its result digest |
-| POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules |
+| POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules *(as built, D73: also `GET /policy/v1/drafts/{id}`, `POST …/{id}/revisions`, `POST …/{id}/approve`, `GET /policy/v1/active`; served by `pl-gate`, compliance-officer token)* |
 | POST | `/assist/v1/ask` | Auditor question; returns checked claims |
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
 | POST | `/learn/v1/proposals/{id}/approve` | Approve a proposal (two distinct approvers for loosening) |
@@ -364,3 +364,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Flow C | The model's read-only query tools are one structured `RecordQuery` run by code over the export; claims are checked by `claims/checker.py` (producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers in text); answers use only accepted claims; audits are `assist.qa` records signed by a new `assist-1` key | D61-D64 |
 | 2026-10-28 | Flow C, `claims/` | The export is verified up to the final checkpoint before any question is answered; the query moves to `claims/query.py` and runs over the proven prefix; names in claim text and the summary are checked; `claims/` also imports `verify.bundle` and `verify.checks` | D65-D67 |
 | 2026-10-28 | Flow B, example policy YAML (kickoff 2.4) | Rule YAML gains `quote` in `source` (span computed by code later), optional `unless` and `agent`, fixture `agent`; amounts stay in dollars in YAML and compile to `amount_cents`. Checks: schema, whole-set fixtures, untested and one-sided rules, allows everything (riskiest-request probe), clause numbers. `pyyaml` added | D68-D70 |
+| 2026-10-28 | Flow B steps 1, 2, 4, 5; Data model; API | PDF read with pypdf, spans computed by code from the model's clause and quote; drafts and approvals are `gate-1`-signed `policy.draft` / `policy.approve` ledger records, not a `policy_rule` table; approval re-checks and refuses findings; Gate activates on approval and restores the latest approval at startup; `/policy/v1` routes in `pl-gate`; compliance-officer role | D73-D75 |

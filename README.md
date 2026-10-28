@@ -14,7 +14,7 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `witness/` (`pl-witness`) | Done for this step. C2SP tlog-cosignature and tlog-witness, three witnesses with their own keys and state, 2-of-3 finality, demo beat 5 (`make demo-rogue`); compose services later | [`docs/modules/witness.md`](docs/modules/witness.md) |
 | `anchor/` | Done for this step. RFC 3161 timestamps from DigiCert and FreeTSA on every final checkpoint, verified offline; OpenTimestamps (Bitcoin) submit and upgrade; confirmed Bitcoin vector after O5 | [`docs/modules/anchor.md`](docs/modules/anchor.md) |
 | `gate/` (`pl-gate`) | Done for this step. Normalizer, Cedar allow / deny / escalate (`cedarpy`), signed decision, verdict and result records, write-before-effect, approval queue with expiry, agent and approver tokens, `@governed` wrapper that verifies receipts itself, demo beat 2 (`make demo-gate`); MCP proxy deferred, briefs with `assist/` | [`docs/modules/gate.md`](docs/modules/gate.md) |
-| `policy/` | Partial (step 1 of 3). YAML rules citing their clause, compiler to Cedar (the seed rules compile to a set that decides like the hand-written one), checks: schema, fixtures, untested or one-sided rules, allows everything, numbers not in the clause. Not yet: PDF spans, Muse Wonder drafting, approval and activation | [`docs/modules/policy.md`](docs/modules/policy.md) |
+| `policy/` | Done for this step (demo beat 1, `make demo-policy`). Policy PDF to clauses with spans (pypdf), Muse Wonder drafting (run on the mock so far), YAML rules compiled to Cedar and checked (schema, fixtures, allows everything, numbers not in the clause), review as signed ledger records, approval that re-checks and refuses findings, Gate activation and restore at startup | [`docs/modules/policy.md`](docs/modules/policy.md) |
 | `assist/` | Done for this step. `assist/llm.py`, the only model entry point (Muse Spark via LiteLLM, Standard mode only, structured output, one checked retry, call log); approval briefs recorded as `assist.brief`; auditor Q&A (beat 3, `make demo-audit`) recorded as `assist.qa`; run live against the Meta Model API on Oct 28 (beats 2 and 3) | [`docs/modules/assist.md`](docs/modules/assist.md), [`docs/MODELS.md`](docs/MODELS.md) |
 | `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, or the whole export proven up to the final checkpoint; the auditor's query run in code over that proven prefix; exact assertions; numbers and names in claims and the summary backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
 | `learn/` | Not started | |
@@ -47,6 +47,8 @@ make demo-gate          # demo beat 2: $48,000 to a new payee is held until j.or
                         # with META_API_KEY set, Muse Spark's brief is shown first
 make demo-audit         # demo beat 3: examiner's question, each claim proven or rejected (needs
                         # META_API_KEY); ARGS="--inject-fault" shows a wrong claim caught
+make demo-policy          # beat 1 against make serve + make gate DEMO_MODE=true: a bad
+                          # drafted rule caught, fixed, approved, enforced
 uv run pytest -m live -s  # real Muse Spark brief and audit answer (needs META_API_KEY)
 # MODEL_PROFILE=mock in .env: briefs and audit answers come from assist/mock.py, offline and
 # free, labelled mock/scripted; MODEL_PROFILE=cloud for the live Meta Model API (D72)
@@ -86,5 +88,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `claims/log.py` (whole export proven up to the final checkpoint), `claims/query.py` (the auditor's query, run over proven records), names and the summary checked in `claims/checker.py` |
 | Oct 28 | `policy/rules.py`, `policy/compiler.py`, `policy/checks.py`, `deploy/policies/harbor-federal.yaml`, `deploy/demo/payments_policy.txt` (policy step 1 of 3, demo beat 1) |
 | Oct 28 | First live Meta Model API runs (beats 2 and 3); brief history fix; `assist/mock.py`, the `mock` model profile for offline development |
+| Oct 28 | `policy/pdf.py`, `policy/draft.py`, `policy/service.py`, `policy/api.py`, `assist/prompts/policy_draft.md`, `deploy/demo/payments_policy.pdf`, `scripts/make_policy_pdf.py`, `scripts/demo_policy.py` (`make demo-policy`, demo beat 1); compliance officer `a.chen` in `scripts/dev_keys.py` |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.
