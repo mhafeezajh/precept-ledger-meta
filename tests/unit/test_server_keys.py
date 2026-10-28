@@ -130,3 +130,42 @@ def test_anchor_view_from_settings(tmp_path: Path) -> None:
     with pytest.raises(ConfigError):
         parse_urls("http://plain.example", "OTS_CALENDARS")
     assert parse_urls(" https://a.example/ ,", "X") == ["https://a.example"]
+
+
+def test_dev_keys_give_gate_its_key_and_callers(tmp_path: Path) -> None:
+    from gate.auth import APPROVER
+    from gate.server import load_gate_keys
+
+    signers = ensure_keys(tmp_path)
+    signer, log_keys, callers = load_gate_keys(tmp_path, "gate-1")
+    assert signer.key_id == signers["gate-1"].key_id
+    assert log_keys.owner(signers["log"].key_id) == "log"
+    token_file = tmp_path / "tokens" / "j.ortiz.token"
+    assert not token_file.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO)
+    caller = callers.authenticate(f"Bearer {token_file.read_text().strip()}", kind=APPROVER)
+    assert caller.roles == frozenset({"payments-supervisor"})
+    before = (tmp_path / "gate-callers.txt").read_text()
+    ensure_keys(tmp_path)
+    assert (tmp_path / "gate-callers.txt").read_text() == before  # tokens never change
+
+
+def test_dev_keys_cli_never_prints_tokens(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert dev_keys_main([str(tmp_path)]) == 0
+    out = capsys.readouterr().out
+    for token_file in (tmp_path / "tokens").iterdir():
+        assert token_file.read_text().strip() not in out
+
+
+def test_gate_refuses_a_key_the_trusted_file_does_not_list(tmp_path: Path) -> None:
+    from gate.server import load_gate_keys
+
+    ensure_keys(tmp_path)
+    trusted = json.loads((tmp_path / "trusted.json").read_text())
+    trusted["producers"]["gate-1"] = trusted["log"]
+    (tmp_path / "trusted.json").write_text(json.dumps(trusted))
+    with pytest.raises(ConfigError, match="not listed"):
+        load_gate_keys(tmp_path, "gate-1")
+    with pytest.raises(ConfigError):
+        load_gate_keys(tmp_path / "missing", "gate-1")

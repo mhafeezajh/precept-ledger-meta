@@ -24,6 +24,7 @@ pl-verify = "verify.cli:main"
 pl-export = "ledger.export_cli:main"
 pl-ledger = "ledger.server:main"
 pl-witness = "witness.server:main"
+pl-gate = "gate.server:main"
 
 [dependency-groups]
 dev = [
@@ -75,11 +76,11 @@ addopts = "-m 'not integration and not live'"
 [tool.coverage.run]
 branch = true
 source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate"]
-# Postgres modules, pl-export and the two servers: make test-integration and the live smoke
+# Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [
   "ledger/pg_store.py", "ledger/pg_tree.py", "ledger/export_cli.py", "ledger/server.py",
-  "verify/__main__.py", "witness/server.py",
+  "verify/__main__.py", "witness/server.py", "gate/server.py", "gate/pg_escalations.py",
 ]
 
 [tool.coverage.report]

@@ -4,7 +4,9 @@
 - ``witnesses/witness-{1,2,3}.pem``, one key per witness, and ``witnesses.txt``, their
   cosigner verifier keys (read by ``pl-ledger`` and ``pl-verify --witness-keys``);
 - ``log-verifiers.txt``: the log's signed-note verifier key for the stream's origin, which
-  the witnesses trust (``WITNESS_LOGS_FILE``).
+  the witnesses trust (``WITNESS_LOGS_FILE``);
+- ``tokens/<name>.token``, one bearer token per Gate caller (the demo agent and two
+  supervisors), and ``gate-callers.txt``, their hashes and roles, read by ``pl-gate``.
 
 Refuses to write inside the repository, never overwrites an existing key, writes private keys
 with mode 0600 and prints only key ids. These are development keys, not production keys.
@@ -13,13 +15,15 @@ with mode 0600 and prints only key ids. These are development keys, not producti
 import argparse
 import json
 import os
+import secrets
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ledger.checkpoint import NoteKey  # noqa: E402  # path set up above for a plain script
+from gate.auth import token_hash  # noqa: E402  # path set up above for a plain script
+from ledger.checkpoint import NoteKey  # noqa: E402
 from ledger.checkpointer import origin_for  # noqa: E402
 from ledger.cosignature import CosignerKey  # noqa: E402
 from ledger.format import b64encode  # noqa: E402
@@ -27,6 +31,12 @@ from ledger.signing import Signer  # noqa: E402
 
 PRODUCERS = ("gate-1",)
 WITNESSES = ("witness-1", "witness-2", "witness-3")
+# Gate callers: (kind, name, roles). Two supervisors, so a loosening can get two approvals.
+GATE_CALLERS = (
+    ("agent", "payments-ops", "-"),
+    ("approver", "j.ortiz", "payments-supervisor"),
+    ("approver", "m.lee", "payments-supervisor"),
+)
 
 
 def _write_private(path: Path, signer: Signer) -> None:
@@ -44,6 +54,23 @@ def _ensure_signer(path: Path) -> Signer:
 def _write_public(path: Path, text: str) -> None:
     if not path.exists():
         path.write_text(text)
+
+
+def _ensure_token(path: Path) -> str:
+    if not path.exists():
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write(secrets.token_urlsafe(32) + "\n")
+    return path.read_text().strip()
+
+
+def ensure_gate_callers(keys_dir: Path) -> None:
+    (keys_dir / "tokens").mkdir(mode=0o700, exist_ok=True)
+    lines = ["# kind name roles sha256(token); tokens are in tokens/<name>.token\n"]
+    for kind, name, roles in GATE_CALLERS:
+        token = _ensure_token(keys_dir / "tokens" / f"{name}.token")
+        lines.append(f"{kind} {name} {roles} {token_hash(token)}\n")
+    _write_public(keys_dir / "gate-callers.txt", "".join(lines))
 
 
 def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
@@ -71,6 +98,7 @@ def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
         origin = origin_for(os.environ.get("LEDGER_ORIGIN", "precept-ledger.local"), stream)
     log_verifier = NoteKey(origin, signers["log"].public_key_raw).verifier()
     _write_public(keys_dir / "log-verifiers.txt", f"{log_verifier}\n")
+    ensure_gate_callers(keys_dir)
     return signers
 
 
@@ -83,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     for name, signer in ensure_keys(Path(args.keys_dir)).items():
         print(f"{name:<10} {signer.key_id}")
     print(f"public keys: {Path(args.keys_dir) / 'trusted.json'}")
+    print(f"gate callers: {', '.join(name for _, name, _ in GATE_CALLERS)} (tokens/<name>.token)")
     return 0
 
 

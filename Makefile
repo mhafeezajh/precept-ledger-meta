@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -29,9 +29,10 @@ secrets:
 db-up:
 	docker compose up -d --wait postgres
 
-# Re-applies ledger/schema.sql (idempotent) so an existing volume picks up new tables.
+# Re-applies ledger/schema.sql then gate/schema.sql (idempotent) so an existing volume picks up
+# new tables. Recreate the container after adding a schema file: it is mounted at start.
 db-schema: db-up
-	docker compose exec -T -e PGOPTIONS='-c client_min_messages=warning' postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U postgres -d "$$POSTGRES_DB" -f /schema/ledger.sql'
+	docker compose exec -T -e PGOPTIONS='-c client_min_messages=warning' postgres sh -c 'psql -v ON_ERROR_STOP=1 -q -U postgres -d "$$POSTGRES_DB" -f /schema/ledger.sql -f /schema/gate.sql'
 
 # Creates TEST-grade keys in KEYS_DIR (outside the repo) if they are not there yet.
 dev-keys:
@@ -52,6 +53,14 @@ witnesses:
 	  WITNESS_PORT=809$$n \
 	  uv run pl-witness & \
 	done; wait
+
+# Gate on 127.0.0.1:8070, in front of the ledger at GATE_LEDGER_URL (make serve).
+gate: db-schema
+	uv run pl-gate
+
+# Demo beat 2 against make serve + make gate: a $48,000 payment held until j.ortiz approves.
+demo-gate:
+	uv run python scripts/demo_gate.py
 
 # Demo beat 5 in one process: the rogue operator rewrites history and is caught.
 demo-rogue:
