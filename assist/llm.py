@@ -33,6 +33,7 @@ os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
 import litellm  # the environment variable above must be set first
 from pydantic import BaseModel, ValidationError
 
+from common.config import Settings
 from common.errors import ConfigError, ModelOutputError
 
 litellm.telemetry = False
@@ -264,3 +265,22 @@ def _parse[P: BaseModel](
         return problems[:10], None
     problems = check(parsed) if check is not None else []
     return problems[:10], parsed
+
+
+def model_config(settings: Settings) -> ModelConfig | None:
+    """The model routes for both profiles, or None when the active one has no credentials."""
+    key = settings.meta_api_key.get_secret_value() if settings.meta_api_key else None
+    onprem = Route(f"openai/{settings.onprem_model}", settings.onprem_api_base or None, None)
+    routes = {
+        "cloud": {
+            "spark": Route("meta/muse-spark-1.3", settings.meta_api_base, key),
+            "wonder": Route("meta/muse-wonder-1.0", settings.meta_api_base, key),
+        },
+        "onprem": {"spark": onprem},
+    }
+    active = key if settings.model_profile == "cloud" else settings.onprem_api_base
+    if not active:
+        return None
+    return ModelConfig(
+        settings.model_profile, routes, settings.model_timeout_seconds, settings.model_call_log
+    )

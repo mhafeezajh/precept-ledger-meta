@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-audit demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -61,6 +61,11 @@ gate: db-schema
 # Demo beat 2 against make serve + make gate: a $48,000 payment held until j.ortiz approves.
 demo-gate:
 	uv run python scripts/demo_gate.py
+
+# Demo beat 3 against make serve: an examiner's question answered with proven claims (needs
+# META_API_KEY). ARGS="--inject-fault" shows a wrong claim rejected.
+demo-audit:
+	uv run python scripts/demo_audit.py $(ARGS)
 
 # Demo beat 5 in one process: the rogue operator rewrites history and is caught.
 demo-rogue:

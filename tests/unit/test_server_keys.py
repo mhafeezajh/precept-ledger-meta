@@ -169,3 +169,17 @@ def test_gate_refuses_a_key_the_trusted_file_does_not_list(tmp_path: Path) -> No
         load_gate_keys(tmp_path, "gate-1")
     with pytest.raises(ConfigError):
         load_gate_keys(tmp_path / "missing", "gate-1")
+
+
+def test_dev_keys_add_new_producers_to_an_existing_trusted_file(tmp_path: Path) -> None:
+    signers = ensure_keys(tmp_path)
+    trusted = json.loads((tmp_path / "trusted.json").read_text())
+    gate_key = trusted["producers"]["gate-1"]
+    del trusted["producers"]["assist-1"]
+    (tmp_path / "trusted.json").write_text(json.dumps(trusted))
+    ensure_keys(tmp_path)
+    again = json.loads((tmp_path / "trusted.json").read_text())
+    assert again["producers"]["gate-1"] == gate_key  # untouched
+    assert "assist-1" in again["producers"]
+    _, producers = load_keys(tmp_path)
+    assert producers.owner(signers["assist-1"].key_id) == "assist-1"

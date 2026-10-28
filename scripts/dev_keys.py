@@ -29,7 +29,7 @@ from ledger.cosignature import CosignerKey  # noqa: E402
 from ledger.format import b64encode  # noqa: E402
 from ledger.signing import Signer  # noqa: E402
 
-PRODUCERS = ("gate-1",)
+PRODUCERS = ("gate-1", "assist-1")  # assist-1 signs assist.qa audit records
 WITNESSES = ("witness-1", "witness-2", "witness-3")
 # Gate callers: (kind, name, roles). Two supervisors, so a loosening can get two approvals.
 GATE_CALLERS = (
@@ -54,6 +54,26 @@ def _ensure_signer(path: Path) -> Signer:
 def _write_public(path: Path, text: str) -> None:
     if not path.exists():
         path.write_text(text)
+
+
+def _ensure_trusted(path: Path, signers: dict[str, Signer]) -> None:
+    """Write trusted.json, or add producers missing from an existing one. Never removes or
+    replaces a key: a key already listed stays exactly as it is."""
+    if not path.exists():
+        trusted = {
+            "v": 1,
+            "producers": {n: [b64encode(signers[n].public_key_raw)] for n in PRODUCERS},
+            "log": [b64encode(signers["log"].public_key_raw)],
+        }
+        path.write_text(json.dumps(trusted, indent=2) + "\n")
+        return
+    trusted = json.loads(path.read_text())
+    missing = [n for n in PRODUCERS if n not in trusted["producers"]]
+    for name in missing:
+        trusted["producers"][name] = [b64encode(signers[name].public_key_raw)]
+        print(f"added producer {name} to {path.name}; restart pl-ledger to trust it")
+    if missing:
+        path.write_text(json.dumps(trusted, indent=2) + "\n")
 
 
 def _ensure_token(path: Path) -> str:
@@ -85,12 +105,7 @@ def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
     (keys_dir / "witnesses").mkdir(mode=0o700, exist_ok=True)
     for name in WITNESSES:
         signers[name] = _ensure_signer(keys_dir / "witnesses" / f"{name}.pem")
-    trusted = {
-        "v": 1,
-        "producers": {n: [b64encode(signers[n].public_key_raw)] for n in PRODUCERS},
-        "log": [b64encode(signers["log"].public_key_raw)],
-    }
-    _write_public(keys_dir / "trusted.json", json.dumps(trusted, indent=2) + "\n")
+    _ensure_trusted(keys_dir / "trusted.json", signers)
     cosigners = [CosignerKey(n, signers[n].public_key_raw).verifier() for n in WITNESSES]
     _write_public(keys_dir / "witnesses.txt", "".join(f"{v}\n" for v in cosigners))
     if origin is None:
