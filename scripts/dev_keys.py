@@ -1,4 +1,10 @@
-"""Create local development keys in KEYS_DIR: gate-1.pem, log.pem and trusted.json.
+"""Create local development keys in KEYS_DIR.
+
+- ``gate-1.pem``, ``log.pem`` and ``trusted.json`` (producer and log public keys);
+- ``witnesses/witness-{1,2,3}.pem``, one key per witness, and ``witnesses.txt``, their
+  cosigner verifier keys (read by ``pl-ledger`` and ``pl-verify --witness-keys``);
+- ``log-verifiers.txt``: the log's signed-note verifier key for the stream's origin, which
+  the witnesses trust (``WITNESS_LOGS_FILE``).
 
 Refuses to write inside the repository, never overwrites an existing key, writes private keys
 with mode 0600 and prints only key ids. These are development keys, not production keys.
@@ -13,10 +19,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from ledger.format import b64encode  # noqa: E402  # path set up above for a plain script
+from ledger.checkpoint import NoteKey  # noqa: E402  # path set up above for a plain script
+from ledger.checkpointer import origin_for  # noqa: E402
+from ledger.cosignature import CosignerKey  # noqa: E402
+from ledger.format import b64encode  # noqa: E402
 from ledger.signing import Signer  # noqa: E402
 
 PRODUCERS = ("gate-1",)
+WITNESSES = ("witness-1", "witness-2", "witness-3")
 
 
 def _write_private(path: Path, signer: Signer) -> None:
@@ -25,25 +35,42 @@ def _write_private(path: Path, signer: Signer) -> None:
         file.write(signer.private_pem())
 
 
-def ensure_keys(keys_dir: Path) -> dict[str, Signer]:
+def _ensure_signer(path: Path) -> Signer:
+    if not path.exists():
+        _write_private(path, Signer.generate())
+    return Signer.from_pem_file(path)
+
+
+def _write_public(path: Path, text: str) -> None:
+    if not path.exists():
+        path.write_text(text)
+
+
+def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
     keys_dir = keys_dir.resolve()
     if keys_dir == ROOT or ROOT in keys_dir.parents:
         raise SystemExit(f"refusing to write keys inside the repository: {keys_dir}")
     keys_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
     signers = {}
     for name in (*PRODUCERS, "log"):
-        path = keys_dir / f"{name}.pem"
-        if not path.exists():
-            _write_private(path, Signer.generate())
-        signers[name] = Signer.from_pem_file(path)
+        signers[name] = _ensure_signer(keys_dir / f"{name}.pem")
+    # Separate files per witness; in a real deployment each lives on its own host.
+    (keys_dir / "witnesses").mkdir(mode=0o700, exist_ok=True)
+    for name in WITNESSES:
+        signers[name] = _ensure_signer(keys_dir / "witnesses" / f"{name}.pem")
     trusted = {
         "v": 1,
         "producers": {n: [b64encode(signers[n].public_key_raw)] for n in PRODUCERS},
         "log": [b64encode(signers["log"].public_key_raw)],
     }
-    trusted_path = keys_dir / "trusted.json"
-    if not trusted_path.exists():
-        trusted_path.write_text(json.dumps(trusted, indent=2) + "\n")
+    _write_public(keys_dir / "trusted.json", json.dumps(trusted, indent=2) + "\n")
+    cosigners = [CosignerKey(n, signers[n].public_key_raw).verifier() for n in WITNESSES]
+    _write_public(keys_dir / "witnesses.txt", "".join(f"{v}\n" for v in cosigners))
+    if origin is None:
+        stream = os.environ.get("LEDGER_STREAM", "harbor-federal/decisions")
+        origin = origin_for(os.environ.get("LEDGER_ORIGIN", "precept-ledger.local"), stream)
+    log_verifier = NoteKey(origin, signers["log"].public_key_raw).verifier()
+    _write_public(keys_dir / "log-verifiers.txt", f"{log_verifier}\n")
     return signers
 
 
@@ -54,7 +81,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.keys_dir:
         parser.error("set KEYS_DIR or pass a directory")
     for name, signer in ensure_keys(Path(args.keys_dir)).items():
-        print(f"{name:<8} {signer.key_id}")
+        print(f"{name:<10} {signer.key_id}")
     print(f"public keys: {Path(args.keys_dir) / 'trusted.json'}")
     return 0
 

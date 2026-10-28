@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     checkpoint_interval_seconds: float = 10.0
     api_host: str = "127.0.0.1"  # localhost only: reads are unauthenticated in the demo
     api_port: int = 8080
+    # Witnesses: "name=url" pairs, comma-separated; empty means checkpoints are not witnessed.
+    # Their cosigner keys are read from KEYS_DIR/witnesses.txt (the pl-verify --witness-keys file).
+    witnesses: str = ""
+    witness_quorum: int = 2  # D5: 2 of 3
+    witness_timeout_seconds: float = 5.0
     log_level: str = "INFO"
     demo_mode: bool = False
 

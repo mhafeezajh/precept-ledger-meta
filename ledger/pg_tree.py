@@ -92,3 +92,29 @@ class PostgresCheckpointSink:
             (self._stream,),
         )
         return [str(row[0]) for row in rows]
+
+
+class PostgresCosignatureStore:
+    """``cosignature`` rows of one stream; first line per (size, witness) wins."""
+
+    def __init__(self, pool: AsyncConnectionPool, stream: str) -> None:
+        self._pool, self._stream = pool, stream
+
+    async def add(self, size: int, witness: str, line: str) -> None:
+        try:
+            async with self._pool.connection() as conn:
+                await conn.execute(
+                    "INSERT INTO cosignature (stream, tree_size, witness, line)"
+                    " VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
+                    (self._stream, size, witness, line),
+                )
+        except (psycopg.Error, PoolTimeout) as exc:
+            raise StoreError(f"cosignature write failed: {type(exc).__name__}") from exc
+
+    async def lines(self, size: int) -> dict[str, str]:
+        rows = await _query(
+            self._pool,
+            "SELECT witness, line FROM cosignature WHERE stream = %s AND tree_size = %s",
+            (self._stream, size),
+        )
+        return {str(row[0]): str(row[1]) for row in rows}

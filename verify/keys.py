@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
 from common.errors import FormatError, VerificationError
 from ledger.checkpoint import NoteKey
+from ledger.cosignature import CosignerKey
 from ledger.format import b64decode, key_id_for, parse_json_strict
 
 KEYS_FILE_VERSION = 1
@@ -87,3 +88,40 @@ class TrustedKeys:
 
     def log_note_keys(self, origin: str) -> list[NoteKey]:
         return [NoteKey(origin, raw) for raw in self.log_keys]
+
+
+@dataclass(frozen=True)
+class WitnessPolicy:
+    """Witness cosigner keys the auditor trusts and how many must cosign (D5: 2 of 3).
+
+    The keys file has one C2SP cosigner verifier key per line (``name+hash+base64``, type
+    0x04); blank lines and ``#`` comments are ignored. Like the keys file, it comes from the
+    auditor, never from the bundle.
+    """
+
+    keys: tuple[CosignerKey, ...]
+    quorum: int
+
+    def __post_init__(self) -> None:
+        names = [key.name for key in self.keys]
+        if not names or len(set(names)) != len(names):
+            raise _bad_witnesses("need at least one witness key, each name once")
+        if not 1 <= self.quorum <= len(names):
+            raise _bad_witnesses(f"quorum {self.quorum} needs 1..{len(names)} witnesses")
+
+    @classmethod
+    def from_text(cls, data: bytes, quorum: int) -> "WitnessPolicy":
+        try:
+            lines = data.decode("utf-8").splitlines()
+            keys = tuple(
+                CosignerKey.from_verifier(line.strip())
+                for line in lines
+                if line.strip() and not line.lstrip().startswith("#")
+            )
+        except (UnicodeDecodeError, FormatError) as exc:
+            raise _bad_witnesses(str(exc)) from exc
+        return cls(keys, quorum)
+
+
+def _bad_witnesses(detail: str) -> VerificationError:
+    return VerificationError(f"witness keys file: {detail}", code="verify.bad_witness_keys")

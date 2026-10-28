@@ -8,6 +8,7 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "cryptography==50.0.2",
     "fastapi==0.162.0",
+    "httpx==0.28.1",
     "psycopg-pool==3.3.3",
     "psycopg[binary]==3.3.6",
     "pydantic==2.14.1",
@@ -20,10 +21,10 @@ dependencies = [
 pl-verify = "verify.cli:main"
 pl-export = "ledger.export_cli:main"
 pl-ledger = "ledger.server:main"
+pl-witness = "witness.server:main"
 
 [dependency-groups]
 dev = [
-    "httpx==0.28.1",
     "hypothesis==6.170.12",
     "mypy==2.4.0",
     "pytest==9.1.1",
@@ -71,11 +72,12 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify"]
-# Postgres modules and pl-export: make test-integration. verify/__main__.py: a subprocess test.
+source = ["common", "ledger", "merkle", "verify", "witness"]
+# Postgres modules, pl-export and the two servers: make test-integration and the live smoke
+# run. verify/__main__.py: a subprocess test.
 omit = [
   "ledger/pg_store.py", "ledger/pg_tree.py", "ledger/export_cli.py", "ledger/server.py",
-  "verify/__main__.py",
+  "verify/__main__.py", "witness/server.py",
 ]
 
 [tool.coverage.report]

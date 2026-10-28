@@ -1,4 +1,5 @@
-"""``pl-verify BUNDLE --keys KEYS.json [--trusted-checkpoint NOTE] [--json]``
+"""``pl-verify BUNDLE --keys KEYS.json [--trusted-checkpoint NOTE]
+[--witness-keys WITNESSES.txt [--quorum N]] [--json]``
 
 Exit codes: 0 verified, 1 verification failed (findings printed), 2 could not verify (bad
 input or usage). Offline: this package imports no networking code (import test), and a test
@@ -15,7 +16,7 @@ from common.errors import VerificationError
 from ledger.format import b64encode
 from verify.bundle import MAX_BUNDLE_BYTES, read_bundle
 from verify.checks import Finding, Report, verify_bundle
-from verify.keys import TrustedKeys
+from verify.keys import TrustedKeys, WitnessPolicy
 
 MAX_SMALL_FILE_BYTES = 1024 * 1024
 
@@ -47,6 +48,17 @@ def render_text(report: Report) -> str:
         + (f"latest: size {latest.size}, root {b64encode(latest.root)}" if latest else "none"),
         f"unanchored   {report.unanchored:>6}  records after the latest checkpoint",
     ]
+    if report.quorum is not None:
+        final = report.final
+        lines.append(
+            f"witnessed    {report.unwitnessed:>6}  records after the latest final checkpoint; "
+            + (
+                f"final: size {final.size}, {len(report.final_cosigners)} of quorum"
+                f" {report.quorum} ({', '.join(report.final_cosigners)})"
+                if final
+                else f"no checkpoint has {report.quorum} witness cosignatures"
+            )
+        )
     first = report.first_break
     if first is None:
         lines.append("RESULT  OK")
@@ -77,6 +89,15 @@ def render_json(report: Report) -> str:
             if latest is None
             else {"size": latest.size, "root": b64encode(latest.root)},
             "unanchored": report.unanchored,
+            "quorum": report.quorum,
+            "final": None
+            if report.final is None
+            else {
+                "size": report.final.size,
+                "root": b64encode(report.final.root),
+                "cosigners": list(report.final_cosigners),
+            },
+            "unwitnessed": report.unwitnessed,
             "first_break": finding(report.first_break),
             "findings": [finding(f) for f in report.findings],
         },
@@ -93,15 +114,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--trusted-checkpoint", type=Path, help="a signed checkpoint you kept from earlier"
     )
+    parser.add_argument(
+        "--witness-keys", type=Path, help="cosigner verifier keys of trusted witnesses"
+    )
+    parser.add_argument(
+        "--quorum", type=int, help="witness cosignatures a checkpoint needs (default 2)"
+    )
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
+    if args.quorum is not None and args.witness_keys is None:
+        print("pl-verify: --quorum needs --witness-keys", file=sys.stderr)
+        return 2
     try:
         bundle = read_bundle(_read(args.bundle, MAX_BUNDLE_BYTES))
         keys = TrustedKeys.from_json(_read(args.keys, MAX_SMALL_FILE_BYTES))
         trusted = None
         if args.trusted_checkpoint is not None:
             trusted = _read(args.trusted_checkpoint, MAX_SMALL_FILE_BYTES).decode("utf-8")
-        report = verify_bundle(bundle, keys, trusted_checkpoint=trusted)
+        witnesses = None
+        if args.witness_keys is not None:
+            quorum = 2 if args.quorum is None else args.quorum  # D5: 2 of 3
+            witnesses = WitnessPolicy.from_text(
+                _read(args.witness_keys, MAX_SMALL_FILE_BYTES), quorum
+            )
+        report = verify_bundle(bundle, keys, trusted_checkpoint=trusted, witnesses=witnesses)
     except (VerificationError, OSError, UnicodeDecodeError) as exc:
         # Could not verify is never reported as verified (R4): its own exit code.
         print(f"pl-verify: cannot verify: {exc}", file=sys.stderr)

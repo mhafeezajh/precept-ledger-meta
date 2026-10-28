@@ -301,7 +301,12 @@ async def test_stream_query_parameter(api: Api) -> None:
 async def test_health_without_a_loop(api: Api) -> None:
     response = await api.client.get("/ledger/v1/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok", "checkpoint_loop": "disabled", "streams": [STREAM]}
+    assert response.json() == {
+        "status": "ok",
+        "checkpoint_loop": "disabled",
+        "streams": [STREAM],
+        "witnesses": {STREAM: None},
+    }
 
 
 async def test_error_bodies_are_json_with_a_code(api: Api) -> None:

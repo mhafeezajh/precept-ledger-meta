@@ -48,6 +48,18 @@ CREATE TABLE IF NOT EXISTS checkpoint (
     PRIMARY KEY (stream, tree_size)
 );
 
+-- Witness cosignatures (D39): one C2SP cosignature/v1 signature line per witness per
+-- checkpoint. The line is the only column the verifier trusts; it is checked under the
+-- witness's key before it is stored and again before it is served or exported.
+CREATE TABLE IF NOT EXISTS cosignature (
+    stream     text   NOT NULL,
+    tree_size  bigint NOT NULL,
+    witness    text   NOT NULL,
+    line       text   NOT NULL,
+    PRIMARY KEY (stream, tree_size, witness),
+    FOREIGN KEY (stream, tree_size) REFERENCES checkpoint (stream, tree_size)
+);
+
 CREATE OR REPLACE FUNCTION pl_reject_change() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -75,12 +87,19 @@ CREATE OR REPLACE TRIGGER checkpoint_no_truncate
     BEFORE TRUNCATE ON checkpoint
     FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
 
-REVOKE ALL ON ledger_record, receipt, checkpoint FROM PUBLIC;
+CREATE OR REPLACE TRIGGER cosignature_append_only
+    BEFORE UPDATE OR DELETE ON cosignature
+    FOR EACH ROW EXECUTE FUNCTION pl_reject_change();
+CREATE OR REPLACE TRIGGER cosignature_no_truncate
+    BEFORE TRUNCATE ON cosignature
+    FOR EACH STATEMENT EXECUTE FUNCTION pl_reject_change();
+
+REVOKE ALL ON ledger_record, receipt, checkpoint, cosignature FROM PUBLIC;
 
 DO $$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pl_app') THEN
-        GRANT SELECT, INSERT ON ledger_record, receipt, checkpoint TO pl_app;
+        GRANT SELECT, INSERT ON ledger_record, receipt, checkpoint, cosignature TO pl_app;
     END IF;
 END;
 $$;

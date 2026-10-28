@@ -7,9 +7,11 @@ from pathlib import Path
 import pytest
 
 from common.errors import ConfigError
-from ledger.server import load_keys
+from ledger.server import load_keys, load_witness_set, parse_witnesses
+from ledger.witnessing import MemoryCosignatureStore
 from scripts.dev_keys import ROOT, ensure_keys
 from scripts.dev_keys import main as dev_keys_main
+from verify.keys import WitnessPolicy
 
 
 def test_dev_keys_then_load(tmp_path: Path) -> None:
@@ -53,3 +55,45 @@ def test_log_key_not_in_trusted_file_fails(tmp_path: Path) -> None:
     (tmp_path / "trusted.json").write_text(json.dumps(trusted))
     with pytest.raises(ConfigError, match="not a log key"):
         load_keys(tmp_path)
+
+
+def test_dev_keys_create_witness_keys_and_public_files(tmp_path: Path) -> None:
+    from ledger.checkpoint import NoteKey
+    from witness.keys import load_log_keys, load_signer
+
+    origin = "precept-ledger.local/harbor-federal/decisions"
+    signers = ensure_keys(tmp_path, origin)
+    for n in (1, 2, 3):
+        path = tmp_path / "witnesses" / f"witness-{n}.pem"
+        assert load_signer(path).public_key_raw == signers[f"witness-{n}"].public_key_raw
+    assert load_log_keys(tmp_path / "log-verifiers.txt") == [
+        NoteKey(origin, signers["log"].public_key_raw)
+    ]
+    policy = WitnessPolicy.from_text((tmp_path / "witnesses.txt").read_bytes(), 2)
+    assert [k.name for k in policy.keys] == ["witness-1", "witness-2", "witness-3"]
+    for name in ("witnesses.txt", "log-verifiers.txt", "trusted.json"):
+        assert "PRIVATE" not in (tmp_path / name).read_text()
+
+
+def test_parse_witnesses() -> None:
+    assert parse_witnesses("") == []
+    assert parse_witnesses("witness-1=http://127.0.0.1:8091, witness-2=https://w2.example") == [
+        ("witness-1", "http://127.0.0.1:8091"),
+        ("witness-2", "https://w2.example"),
+    ]
+    for bad in ("witness-1", "=http://x", "w=ftp://x", "w=http://a,w=http://b"):
+        with pytest.raises(ConfigError):
+            parse_witnesses(bad)
+
+
+def test_load_witness_set_checks_names_and_quorum(tmp_path: Path) -> None:
+    ensure_keys(tmp_path, "o.example/s")
+    store = MemoryCosignatureStore()
+    witness_set = load_witness_set(tmp_path, ["witness-1", "witness-3"], 2, store)
+    assert witness_set.quorum == 2
+    with pytest.raises(ConfigError):
+        load_witness_set(tmp_path, ["witness-9"], 2, store)
+    with pytest.raises(ConfigError):
+        load_witness_set(tmp_path, ["witness-1"], 4, store)
+    with pytest.raises(ConfigError):
+        load_witness_set(tmp_path / "missing", ["witness-1"], 2, store)

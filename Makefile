@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses demo-rogue
 
 check: lint typecheck test secrets
 
@@ -39,6 +39,23 @@ dev-keys:
 
 serve: db-schema
 	uv run pl-ledger
+
+# Three witnesses on 127.0.0.1:8091-8093, each with its own key and state directory.
+# Ctrl-C stops all three. Point the ledger at them with WITNESSES (see .env.example).
+witnesses:
+	@trap 'kill 0' INT TERM; \
+	for n in 1 2 3; do \
+	  WITNESS_NAME=witness-$$n \
+	  WITNESS_KEY_FILE="$(KEYS_DIR)/witnesses/witness-$$n.pem" \
+	  WITNESS_LOGS_FILE="$(KEYS_DIR)/log-verifiers.txt" \
+	  WITNESS_STATE_DIR=var/witness-$$n \
+	  WITNESS_PORT=809$$n \
+	  uv run pl-witness & \
+	done; wait
+
+# Demo beat 5 in one process: the rogue operator rewrites history and is caught.
+demo-rogue:
+	uv run python scripts/demo_rogue_operator.py
 
 db-down:
 	docker compose down -v

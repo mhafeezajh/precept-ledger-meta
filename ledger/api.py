@@ -9,14 +9,12 @@ records; reads are unauthenticated in the demo (see docs/modules/api.md, known g
 import asyncio
 import hmac
 import logging
-import time
-from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
+from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from typing import Annotated, Any
 
 from fastapi import APIRouter, FastAPI, Query, Request
-from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response
 
 from common.errors import (
@@ -27,14 +25,15 @@ from common.errors import (
     SignatureError,
     StoreError,
 )
-from common.logging import accept_trace_id, log_event, trace_id_var
+from common.http import error_response, install_common_handlers, read_limited
 from ledger.checkpoint import Checkpoint, NoteKey, NoteSigner, open_checkpoint, peek_checkpoint
-from ledger.checkpoint_loop import CheckpointLoop
+from ledger.checkpoint_loop import CheckpointLoop, Publisher
 from ledger.checkpointer import Checkpointer, CheckpointSink
 from ledger.export import export_bundle
 from ledger.format import MAX_RECORD_BYTES, b64encode
 from ledger.service import Ledger
 from ledger.store import Store
+from ledger.witnessing import WitnessClient, WitnessedPublisher, Witnessing, WitnessSet
 from merkle.log import LogTree
 from merkle.store import TreeStore
 
@@ -43,7 +42,7 @@ logger = logging.getLogger("pl.ledger.api")
 
 @dataclass(frozen=True)
 class StreamLog:
-    """One stream's Merkle tree, checkpoint store and checkpointer."""
+    """One stream's Merkle tree, checkpoint store, checkpointer and (optionally) witnesses."""
 
     stream: str
     origin: str
@@ -51,6 +50,7 @@ class StreamLog:
     sink: CheckpointSink  # where checkpoints are read back from: the checkpointer's first sink
     checkpointer: Checkpointer
     key: NoteKey
+    witnessing: Witnessing | None = None
 
     @classmethod
     def create(
@@ -60,12 +60,38 @@ class StreamLog:
         tree_store: TreeStore,
         sinks: Sequence[CheckpointSink],
         signer: NoteSigner,
+        *,
+        witnesses: WitnessSet | None = None,
+        clients: Sequence[WitnessClient] = (),
+        witness_timeout_seconds: float = 5.0,
     ) -> "StreamLog":
         tree = LogTree(tree_store)
         checkpointer = Checkpointer(tree, signer, origin, sinks)
-        return cls(
-            stream, origin, tree, sinks[0], checkpointer, NoteKey(origin, signer.public_key_raw)
-        )
+        witnessing = None
+        if witnesses is not None:
+            witnessing = Witnessing(
+                tree, witnesses, clients, timeout_seconds=witness_timeout_seconds
+            )
+        key = NoteKey(origin, signer.public_key_raw)
+        return cls(stream, origin, tree, sinks[0], checkpointer, key, witnessing)
+
+    @property
+    def witnesses(self) -> WitnessSet | None:
+        return None if self.witnessing is None else self.witnessing.witnesses
+
+    @property
+    def publisher(self) -> Publisher:
+        if self.witnessing is None:
+            return self.checkpointer
+        return WitnessedPublisher(self.checkpointer, self.witnessing)
+
+
+@dataclass(frozen=True)
+class ServedCheckpoint:
+    checkpoint: Checkpoint
+    note: str  # the log-signed note with every verified cosignature appended
+    cosigners: dict[str, int]  # witness -> cosignature time
+    final: bool
 
 
 @dataclass(frozen=True)
@@ -97,6 +123,7 @@ _STATUS_BY_CODE = {
     "checkpoint.inconsistent": 503,
     "checkpoint.conflict": 503,
     "checkpoint.unverifiable": 503,
+    "cosignature.unverifiable": 503,
 }
 
 
@@ -112,10 +139,6 @@ def status_for(exc: PreceptError) -> int:
     if isinstance(exc, FormatError | MerkleError | LedgerError):
         return 400
     return 500
-
-
-def _error(status: int, code: str, message: str) -> JSONResponse:
-    return JSONResponse({"error": {"code": code, "message": message}}, status_code=status)
 
 
 def _services(request: Request) -> Services:
@@ -134,33 +157,32 @@ def _stream_log(services: Services, stream: str | None) -> StreamLog:
     return log
 
 
-async def _read_limited(request: Request, limit: int) -> bytes:
-    declared = request.headers.get("content-length")
-    if declared is not None and declared.isdigit() and int(declared) > limit:
-        raise FormatError(f"request exceeds {limit} bytes", code="format.too_large")
-    chunks, total = [], 0
-    async for chunk in request.stream():
-        total += len(chunk)
-        if total > limit:
-            raise FormatError(f"request exceeds {limit} bytes", code="format.too_large")
-        chunks.append(chunk)
-    return b"".join(chunks)
-
-
-async def _checkpoint_at(log: StreamLog, size: int | None) -> tuple[Checkpoint, str]:
-    notes = await log.sink.notes()
-    if size is not None:
-        notes = [note for note in notes if peek_checkpoint(note).size == size]
-    if not notes:
-        raise LedgerError("no such checkpoint", code="checkpoint.not_found")
-    note = notes[-1]
+async def _serve(log: StreamLog, note: str) -> ServedCheckpoint:
     try:
         # Never serve a checkpoint our own key does not verify (R5).
-        return open_checkpoint(note, log.key), note
+        checkpoint = open_checkpoint(note, log.key)
     except LedgerError as exc:
         raise LedgerError(
             "stored checkpoint does not verify", code="checkpoint.unverifiable"
         ) from exc
+    witnesses = log.witnesses
+    if witnesses is None:
+        return ServedCheckpoint(checkpoint, note, {}, False)
+    full, cosigners = await witnesses.cosigned(note, checkpoint.size)
+    return ServedCheckpoint(checkpoint, full, cosigners, witnesses.is_final(cosigners))
+
+
+async def _checkpoint_at(
+    log: StreamLog, size: int | None, *, final: bool = False
+) -> ServedCheckpoint:
+    notes = await log.sink.notes()
+    if size is not None:
+        notes = [note for note in notes if peek_checkpoint(note).size == size]
+    for note in reversed(notes):
+        served = await _serve(log, note)
+        if served.final or not final:
+            return served
+    raise LedgerError("no such checkpoint", code="checkpoint.not_found")
 
 
 router = APIRouter()
@@ -176,7 +198,7 @@ async def append_record(stream: str, request: Request) -> JSONResponse:
             "content type must be application/json", code="request.media_type", status=415
         )
     receipt = await services.ledger.append_json(
-        stream, await _read_limited(request, MAX_RECORD_BYTES)
+        stream, await read_limited(request, MAX_RECORD_BYTES)
     )
     return JSONResponse(receipt.to_json(), status_code=201)
 
@@ -194,7 +216,8 @@ async def record_proof(
     services = _services(request)
     _, receipt = await services.ledger.get(record_id)
     log = _stream_log(services, receipt.stream)
-    checkpoint, note = await _checkpoint_at(log, size)
+    served = await _checkpoint_at(log, size)
+    checkpoint = served.checkpoint
     if receipt.seq > checkpoint.size:
         raise LedgerError(
             f"seq {receipt.seq} is after checkpoint {checkpoint.size}",
@@ -213,20 +236,29 @@ async def record_proof(
         "tree_size": proof.size,
         "leaf_hash": receipt.leaf_hash,
         "hashes": [b64encode(h) for h in proof.hashes],
-        "checkpoint": note,
+        "checkpoint": served.note,
+        "final": served.final,
     }
 
 
 @router.get("/ledger/v1/checkpoints/latest")
-async def latest_checkpoint(request: Request, stream: str | None = None) -> dict[str, Any]:
+async def latest_checkpoint(
+    request: Request, stream: str | None = None, final: bool = False
+) -> dict[str, Any]:
+    """The latest checkpoint, or with ``final=true`` the latest one with a witness quorum."""
     log = _stream_log(_services(request), stream)
-    checkpoint, note = await _checkpoint_at(log, None)
+    served = await _checkpoint_at(log, None, final=final)
+    witnesses = log.witnesses
     return {
         "stream": log.stream,
-        "size": checkpoint.size,
-        "root": b64encode(checkpoint.root),
-        "note": note,
-        "cosignatures": [],  # witness/ (day 3)
+        "size": served.checkpoint.size,
+        "root": b64encode(served.checkpoint.root),
+        "note": served.note,
+        "cosignatures": [
+            {"witness": name, "timestamp": ts} for name, ts in sorted(served.cosigners.items())
+        ],
+        "quorum": None if witnesses is None else witnesses.quorum,
+        "final": served.final,
         "anchors": [],  # anchor/ (day 4)
     }
 
@@ -259,7 +291,9 @@ async def export(
         )
     services = _services(request)
     log = _stream_log(services, stream)
-    bundle = await export_bundle(services.store, log.sink, log.stream, log.origin)
+    witnesses = log.witnesses
+    cosignatures = None if witnesses is None else witnesses.store
+    bundle = await export_bundle(services.store, log.sink, log.stream, log.origin, cosignatures)
     filename = log.stream.replace("/", "_") + ".tar"
     return Response(
         bundle,
@@ -275,7 +309,12 @@ async def health(request: Request) -> JSONResponse:
         "status": "ok",
         "checkpoint_loop": "disabled" if loop is None else loop.status(),
         "streams": sorted(_services(request).logs),
-    }
+        "witnesses": {
+            stream: None if log.witnesses is None else
+            {"count": len(log.witnesses.keys), "quorum": log.witnesses.quorum}
+            for stream, log in _services(request).logs.items()
+        },
+    }  # fmt: skip
     if loop is not None:
         body["checkpoint_errors"] = loop.last_errors()
         if loop.status() == "stopped":
@@ -286,40 +325,9 @@ async def health(request: Request) -> JSONResponse:
 def _register_handlers(app: FastAPI) -> None:
     @app.exception_handler(PreceptError)
     async def precept_error(request: Request, exc: PreceptError) -> JSONResponse:
-        return _error(status_for(exc), exc.code, str(exc.args[0]))
+        return error_response(status_for(exc), exc.code, str(exc.args[0]))
 
-    @app.exception_handler(RequestValidationError)
-    async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
-        # FastAPI's default body echoes the input; ours does not.
-        return _error(422, "request.invalid", "invalid request parameters")
-
-    @app.exception_handler(Exception)
-    async def unexpected(request: Request, exc: Exception) -> JSONResponse:
-        log_event(logger, logging.ERROR, "unhandled error", error=type(exc).__name__)
-        return _error(500, "internal", "internal error")
-
-    @app.middleware("http")
-    async def trace(
-        request: Request, call_next: Callable[[Request], Awaitable[Response]]
-    ) -> Response:
-        token = trace_id_var.set(accept_trace_id(request.headers.get("x-trace-id")))
-        started = time.perf_counter()
-        try:
-            response = await call_next(request)
-            route = request.scope.get("route")
-            log_event(
-                logger,
-                logging.INFO,
-                "request",
-                method=request.method,
-                route=getattr(route, "path", "unmatched"),  # template, not the raw path
-                status=response.status_code,
-                duration_ms=round((time.perf_counter() - started) * 1000, 1),
-            )
-            response.headers["x-trace-id"] = trace_id_var.get()
-            return response
-        finally:
-            trace_id_var.reset(token)
+    install_common_handlers(app, logger)
 
 
 def create_app(open_services: ServicesFactory, *, checkpoint_interval: float | None) -> FastAPI:
@@ -333,7 +341,7 @@ def create_app(open_services: ServicesFactory, *, checkpoint_interval: float | N
             task = None
             if checkpoint_interval is not None:
                 loop = CheckpointLoop(
-                    {s: log.checkpointer for s, log in services.logs.items()}, checkpoint_interval
+                    {s: log.publisher for s, log in services.logs.items()}, checkpoint_interval
                 )
                 app.state.checkpoint_loop = loop
                 task = asyncio.create_task(loop.run_forever())

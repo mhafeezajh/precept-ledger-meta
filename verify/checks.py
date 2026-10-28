@@ -1,8 +1,8 @@
 """Every check pl-verify runs on a bundle. Pure: bytes and trusted keys in, a report out.
 
 This is a second implementation of the ledger's checks, built only on ``ledger.format``,
-``ledger.checkpoint`` and the ``merkle`` core (skill §2). A differential test runs it against
-``ledger.chain`` on the same inputs (D32).
+``ledger.checkpoint``, ``ledger.cosignature`` and the ``merkle`` core (skill §2). A
+differential test runs it against ``ledger.chain`` on the same inputs (D32).
 
 The chain walk stops at the first break so one edit is not reported as a cascade; receipts
 and checkpoints are still checked against the records as given, which is what names the
@@ -14,10 +14,11 @@ from dataclasses import dataclass, field
 
 from common.errors import LedgerError, VerificationError
 from ledger.checkpoint import Checkpoint, open_checkpoint
+from ledger.cosignature import open_cosignatures
 from ledger.format import GENESIS_HASH, Receipt, Record, chain_hash, leaf_hash, parse_canonical
 from merkle.proofs import root_hash
 from verify.bundle import Bundle
-from verify.keys import TrustedKeys
+from verify.keys import TrustedKeys, WitnessPolicy
 
 
 @dataclass(frozen=True)
@@ -39,6 +40,16 @@ class Report:
     latest: Checkpoint | None
     unanchored: int  # records after the latest matching checkpoint
     findings: tuple[Finding, ...]
+    quorum: int | None = None  # set when witness keys were given
+    final: Checkpoint | None = None  # latest matching checkpoint with a witness quorum
+    final_cosigners: tuple[str, ...] = ()
+
+    @property
+    def unwitnessed(self) -> int | None:
+        """Records after the latest final checkpoint, if witnesses were checked."""
+        if self.quorum is None:
+            return None
+        return self.records - (self.final.size if self.final else 0)
 
     @property
     def ok(self) -> bool:
@@ -170,7 +181,7 @@ def _against_records(cp: Checkpoint, leaves: list[bytes], prefix: str) -> Findin
 
 def _check_checkpoints(
     bundle: Bundle, keys: TrustedKeys, leaves: list[bytes]
-) -> tuple[list[Checkpoint], list[Finding]]:
+) -> tuple[list[tuple[Checkpoint, str]], list[Finding]]:
     matching, findings, by_size = [], [], dict[int, Checkpoint]()
     for note in bundle.checkpoints:
         opened = _open(note, keys, bundle.origin)
@@ -185,7 +196,7 @@ def _check_checkpoints(
             continue
         problem = _against_records(opened, leaves, "checkpoint_")
         if problem is None:
-            matching.append(opened)
+            matching.append((opened, note))
         else:
             findings.append(problem)
     return matching, findings
@@ -209,17 +220,62 @@ def _check_trusted(
     ]
 
 
+@dataclass(frozen=True)
+class _Quorum:
+    final: Checkpoint | None
+    cosigners: tuple[str, ...]
+    findings: list[Finding]
+
+
+def _check_quorum(
+    matching: list[tuple[Checkpoint, str]], policy: WitnessPolicy, records: int
+) -> _Quorum:
+    """Which matching checkpoints carry ``quorum`` valid cosignatures. The latest one must:
+    a checkpoint the witnesses did not back is not trusted, however well it is signed (R4)."""
+    final, cosigners, findings = None, tuple[str, ...](), []
+    counts: dict[int, int] = {}
+    for checkpoint, note in matching:
+        try:
+            names = open_cosignatures(note, policy.keys)
+        except LedgerError as exc:
+            detail = f"checkpoint {checkpoint.size}: {exc}"
+            findings.append(Finding("bad_cosignature", detail))
+            names = {}
+        counts[checkpoint.size] = len(names)
+        if len(names) >= policy.quorum and (final is None or checkpoint.size > final.size):
+            final, cosigners = checkpoint, tuple(sorted(names))
+    latest = max((cp for cp, _ in matching), key=lambda cp: cp.size, default=None)
+    if latest is not None and counts[latest.size] < policy.quorum:
+        detail = (
+            f"latest checkpoint (size {latest.size}) has {counts[latest.size]} of"
+            f" {policy.quorum} witness cosignatures"
+        )
+        findings.append(Finding("below_quorum", detail))
+    elif latest is None and records:
+        findings.append(Finding("below_quorum", "no checkpoint carries witness cosignatures"))
+    return _Quorum(final, cosigners, findings)
+
+
 def verify_bundle(
-    bundle: Bundle, keys: TrustedKeys, *, trusted_checkpoint: str | None = None
+    bundle: Bundle,
+    keys: TrustedKeys,
+    *,
+    trusted_checkpoint: str | None = None,
+    witnesses: WitnessPolicy | None = None,
 ) -> Report:
-    """Check records, receipts and checkpoints; optionally a checkpoint the auditor held."""
+    """Check records, receipts and checkpoints; optionally a checkpoint the auditor held and
+    the witness quorum."""
     walk = _check_records(bundle, keys)
     findings = [*walk.findings, *_check_receipts(bundle, keys, walk)]
     matching, checkpoint_findings = _check_checkpoints(bundle, keys, walk.leaves)
     findings += checkpoint_findings
     if trusted_checkpoint is not None:
         findings += _check_trusted(trusted_checkpoint, keys, bundle, walk.leaves)
-    latest = max(matching, key=lambda cp: cp.size, default=None)
+    quorum = None
+    if witnesses is not None:
+        quorum = _check_quorum(matching, witnesses, len(walk.leaves))
+        findings += quorum.findings
+    latest = max((cp for cp, _ in matching), key=lambda cp: cp.size, default=None)
     return Report(
         stream=bundle.stream,
         origin=bundle.origin,
@@ -230,4 +286,7 @@ def verify_bundle(
         latest=latest,
         unanchored=len(walk.leaves) - (latest.size if latest else 0),
         findings=tuple(findings),
+        quorum=None if witnesses is None else witnesses.quorum,
+        final=None if quorum is None else quorum.final,
+        final_cosigners=() if quorum is None else quorum.cosigners,
     )

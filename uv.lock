@@ -432,6 +432,7 @@ source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "psycopg-pool" },
     { name = "pydantic" },
@@ -442,7 +443,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "hypothesis" },
     { name = "mypy" },
     { name = "pytest" },
@@ -455,6 +455,7 @@ dev = [
 requires-dist = [
     { name = "cryptography", specifier = "==50.0.2" },
     { name = "fastapi", specifier = "==0.162.0" },
+    { name = "httpx", specifier = "==0.28.1" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
     { name = "psycopg-pool", specifier = "==3.3.3" },
     { name = "pydantic", specifier = "==2.14.1" },
@@ -465,7 +466,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = "==0.28.1" },
     { name = "hypothesis", specifier = "==6.170.12" },
     { name = "mypy", specifier = "==2.4.0" },
     { name = "pytest", specifier = "==9.1.1" },

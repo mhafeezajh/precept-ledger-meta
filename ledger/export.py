@@ -5,7 +5,9 @@ Members, in this order:
 - ``manifest.json``: ``{format, v, stream, origin, counts}``, canonical JSON.
 - ``records.jsonl``: every record as stored (D21), one canonical JSON line each, seq order.
 - ``receipts.jsonl``: every receipt as stored, same encoding.
-- ``checkpoints/<20-digit size>.note``: every signed checkpoint.
+- ``checkpoints/<20-digit size>.note``: every signed checkpoint, with the witness
+  cosignature lines stored for it appended (D39). Readers that do not know the witness keys
+  ignore those lines (signed-note), so the bundle is still v1.
 
 No keys travel in the bundle: the verifier gets trusted keys from the auditor, never from the
 party being audited. The tar is deterministic (fixed order, zero times and owners).
@@ -17,8 +19,10 @@ from typing import Any
 
 from ledger.checkpoint import peek_checkpoint
 from ledger.checkpointer import CheckpointSink
+from ledger.cosignature import add_cosignatures
 from ledger.format import canonical_bytes
 from ledger.store import Store
+from ledger.witnessing import CosignatureStore
 
 EXPORT_FORMAT = "precept-ledger-export"
 EXPORT_VERSION = 1
@@ -40,14 +44,28 @@ def _tar(files: list[tuple[str, bytes]]) -> bytes:
     return buffer.getvalue()
 
 
-async def export_bundle(store: Store, sink: CheckpointSink, stream: str, origin: str) -> bytes:
+async def _with_cosignatures(note: str, cosignatures: CosignatureStore | None) -> str:
+    if cosignatures is None:
+        return note
+    lines = await cosignatures.lines(peek_checkpoint(note).size)
+    # Exported as stored: the verifier, not the exporter, decides which lines verify.
+    return add_cosignatures(note, [lines[name] for name in sorted(lines)])
+
+
+async def export_bundle(
+    store: Store,
+    sink: CheckpointSink,
+    stream: str,
+    origin: str,
+    cosignatures: CosignatureStore | None = None,
+) -> bytes:
     records = await store.read_raw(stream)
     receipts = await store.read_receipts(stream)
-    notes = await sink.notes()
-    checkpoints = [
-        (f"checkpoints/{peek_checkpoint(note).size:020d}.note", note.encode("utf-8"))
-        for note in notes
-    ]
+    checkpoints = []
+    for note in await sink.notes():
+        full = await _with_cosignatures(note, cosignatures)
+        name = f"checkpoints/{peek_checkpoint(note).size:020d}.note"
+        checkpoints.append((name, full.encode("utf-8")))
     manifest = {
         "format": EXPORT_FORMAT,
         "v": EXPORT_VERSION,
