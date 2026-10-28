@@ -10,9 +10,9 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | --- | --- | --- |
 | `ledger/` | Partial. Canonical records, producer signatures, hash chain, receipts, memory and Postgres stores, C2SP signed checkpoints, the Postgres tree adapter, the HTTP API (`pl-ledger`), the 10 s checkpoint loop and witness collection with 2-of-3 finality done. Batch append and read auth later | [`docs/modules/ledger.md`](docs/modules/ledger.md), [`docs/modules/checkpoints.md`](docs/modules/checkpoints.md), [`docs/modules/api.md`](docs/modules/api.md) |
 | `merkle/` | Done for now. RFC 9162 core, inclusion and consistency proofs, `TreeStore` port, memory adapter | [`docs/modules/merkle.md`](docs/modules/merkle.md) |
-| `verify/` (`pl-verify`) | Done for now. Export bundle v1, `pl-export`, offline `pl-verify` naming the first broken seq and record, witness quorum (`--witness-keys`, `--quorum`); timestamp tokens with `anchor/` | [`docs/modules/verify.md`](docs/modules/verify.md) |
+| `verify/` (`pl-verify`) | Done for now. Export bundle v2, `pl-export`, offline `pl-verify` naming the first broken seq and record, witness quorum (`--witness-keys`, `--quorum`), RFC 3161 timestamps and backdating (`--tsa-roots`), OpenTimestamps claims | [`docs/modules/verify.md`](docs/modules/verify.md) |
 | `witness/` (`pl-witness`) | Done for this step. C2SP tlog-cosignature and tlog-witness, three witnesses with their own keys and state, 2-of-3 finality, demo beat 5 (`make demo-rogue`); compose services later | [`docs/modules/witness.md`](docs/modules/witness.md) |
-| `anchor/` | Not started | |
+| `anchor/` | Done for this step. RFC 3161 timestamps from DigiCert and FreeTSA on every final checkpoint, verified offline; OpenTimestamps (Bitcoin) submit and upgrade; confirmed Bitcoin vector after O5 | [`docs/modules/anchor.md`](docs/modules/anchor.md) |
 | `gate/` | Not started | |
 | `policy/` | Not started | |
 | `assist/` | Not started | |
@@ -27,17 +27,20 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 507 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 599 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
-make test-integration   # Postgres 16 via docker compose; 19 tests incl. demo beat 4 end to end
-                        # (edit a row, export, pl-verify names the record) and 2-of-3 witnessing
+make test-integration   # Postgres 16 via docker compose; 20 tests incl. demo beat 4 end to end
+                        # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors
 make vectors            # regenerate tests/vectors/{ledger,checkpoint,cosignature}-v1.json
 make demo-rogue         # demo beat 5: operator rewrites history, witnesses refuse, pl-verify catches it
 make dev-keys           # keys in KEYS_DIR (outside the repo): producer, log, three witnesses
 make witnesses          # three witnesses on 127.0.0.1:8091-8093 (own keys, own state)
-make serve              # ledger API on 127.0.0.1:8080, checkpoint every 10 s, cosigned by WITNESSES
+make serve              # ledger API on 127.0.0.1:8080, checkpoint every 10 s, cosigned by WITNESSES,
+                        # timestamped by TSAS, OpenTimestamps hourly (see .env.example)
 uv run pl-export --out export.tar
-uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt"
+uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt" \
+  --tsa-roots deploy/tsa/roots.pem
+make ots-upgrade        # hours after submission: record the confirmed Bitcoin proof
 ```
 
 ## Built during the hackathon (Oct 27 – Nov 4)
@@ -61,5 +64,7 @@ Every line of code in this repository was written during the building period.
 | Oct 27 | `ledger/cosignature.py`: C2SP `cosignature/v1` cosignatures and the tlog-witness request format; vectors in `tests/vectors/cosignature-v1.json` |
 | Oct 27 | `witness/` (`pl-witness`): witness core, own file state with refusal evidence, key loading, HTTP API; `common/http.py` shared by both APIs |
 | Oct 27 | `ledger/witnessing.py`, `ledger/witness_client.py`, `cosignature` table: collecting and verifying cosignatures, 2-of-3 finality, cosigned checkpoints in the API and export; `pl-verify --witness-keys --quorum`; `scripts/demo_rogue_operator.py` (demo beat 5) |
+| Oct 28 | `anchor/rfc3161.py`, `anchor/ots.py`, `anchor/clients.py`: RFC 3161 requests and offline token verification, OpenTimestamps proof reading and upgrading, TSA and calendar clients; real TSA tokens and calendar proofs as vectors (`tests/vectors/rfc3161-published.json`, `ots-published.json`) |
+| Oct 28 | `ledger/anchoring.py`, `anchor` table, export bundle v2, `verify/anchors.py`: anchoring final checkpoints, anchors in the API, `pl-verify --tsa-roots` with backdating checks; `deploy/tsa/` roots; `scripts/upgrade_ots_vectors.py` (`make ots-upgrade`) |
 
 Meta tooling used so far: none. Model calls start with Gate and the demo agent (day 4). Muse Code will be used for at least one slice and recorded here.

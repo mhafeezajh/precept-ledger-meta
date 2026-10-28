@@ -25,7 +25,7 @@ Owns:
 Does not own:
 
 - Checkpoint signing. That is `ledger/checkpointer.py`; a witness never signs a checkpoint, only cosigns one.
-- Timestamps from outside parties (RFC 3161, OpenTimestamps). Those belong to `anchor/` on day 4. A cosignature's time is the witness's own claim.
+- Timestamps from outside parties (RFC 3161, OpenTimestamps): [`anchor.md`](anchor.md). Final checkpoints are anchored after witnessing. A cosignature's time is the witness's own claim.
 
 A witness imports only `ledger.checkpoint`, `ledger.cosignature`, `ledger.canonical` and the `merkle` core. It cannot reach the ledger's database or its internals; the import test enforces this.
 
@@ -169,8 +169,8 @@ Primary key `(stream, tree_size, witness)`. The first line stored wins. Triggers
 
 What witnesses do not protect against yet:
 
-- **The operator and 2 of 3 witnesses colluding.** In the demo all three witnesses run on one machine with keys from one `make dev-keys`, so they are independent processes, not independent organisations. Anchors (day 4) cover collusion, and O4 (a witness on a separate host) would make independence visible.
-- **Cosignature times.** They are the witness's own claim, and `pl-verify` does not compare them with any clock, because it runs offline. RFC 3161 tokens (day 4) give trusted time.
+- **The operator and 2 of 3 witnesses colluding.** In the demo all three witnesses run on one machine with keys from one `make dev-keys`, so they are independent processes, not independent organisations. RFC 3161 backdating checks cover collusion that happens later ([`anchor.md`](anchor.md)), and O4 (a witness on a separate host) would make independence visible.
+- **Cosignature times.** They are the witness's own claim, and `pl-verify` does not compare them with any clock, because it runs offline. RFC 3161 tokens give trusted time ([`anchor.md`](anchor.md)).
 - **Unauthenticated witness requests.** Anyone who can reach a witness can submit checkpoints. They must be signed by the log key to be cosigned, so the only gain is load, and witnesses bind to 127.0.0.1.
 
 ## Formulas and formats
@@ -258,5 +258,5 @@ D5 (2 of 3), D38, D39, D40, D41, D42, D43 in [`docs/DECISIONS.md`](../DECISIONS.
 - All three demo witnesses share one machine and one key-generation step (O4 is open: a witness on a separate host).
 - Witnesses keep only the latest cosigned checkpoint per log, not every one. Each refused checkpoint is kept.
 - The ledger asks witnesses inside the checkpoint tick. A slow witness delays the next checkpoint by up to `WITNESS_TIMEOUT_SECONDS`.
-- Cosignature times are not checked against a trusted clock (anchors, day 4).
+- Cosignature times are not checked against a trusted clock; RFC 3161 tokens are ([`anchor.md`](anchor.md)).
 - `pl-verify` requires the quorum on the latest checkpoint only. Older checkpoints without a quorum are counted but are not findings, because a later final checkpoint covers them through consistency.

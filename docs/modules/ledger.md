@@ -19,7 +19,7 @@ Does not own:
 
 - Deciding anything. That is Gate's job; the ledger records decisions.
 - Merkle hashing and proofs: the `merkle/` package (D25). Checkpoints live in `ledger/` but have their own page, [`checkpoints.md`](checkpoints.md).
-- Witnesses ([`witness.md`](witness.md)) and anchors (day 4).
+- Witnesses ([`witness.md`](witness.md)) and anchors ([`anchor.md`](anchor.md)).
 - Key storage in production (KMS/HSM). Keys are loaded from files under `KEYS_DIR`.
 
 ## How it works

@@ -46,7 +46,7 @@ Gate lets a tool call through only after the ledger returns a receipt; the verif
 | `merkle/` | RFC 9162 core: leaf/node hashing, roots, inclusion and consistency proofs; `TreeStore` port that storage adapters implement | stdlib |
 | `ledger/` | Canonical records, signatures, chain, checkpoints, receipts, API; Postgres `TreeStore` adapter | `rfc8785`, `cryptography`, `psycopg` |
 | `witness/` | Independent service, own key and storage; verifies consistency and cosigns | `cryptography`, `fastapi` |
-| `anchor/` | RFC 3161 timestamp requests; OpenTimestamps submit and upgrade | `rfc3161ng`, `opentimestamps-client` |
+| `anchor/` | RFC 3161 timestamp requests and offline token verification; OpenTimestamps submit, upgrade and proof reading | `asn1crypto`, `cryptography`, `httpx` (D44, D46) |
 | `verify/` (`pl-verify`) | Offline verification of an export; no network imports | stdlib, `cryptography` |
 | `gate/` | Normalizer, Cedar, decision records, write-before-effect, approval queue, MCP proxy, `@governed` decorator | `cedarpy`, `mcp` |
 | `policy/` | PDF extraction with spans, Muse Wonder drafting, YAML to Cedar compiler, fixtures | `pypdf`, `pydantic`, `litellm` |
@@ -203,7 +203,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | `receipt` | record\_id, v, alg, stream, seq, leaf\_hash, chain\_hash, received\_at, key\_id, sig | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger |
 | `checkpoint` | stream, tree\_size, root\_hash, note (the full signed note, signature included) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; also written to a write-once directory, one file per tree size (D30) |
 | `cosignature` | stream, tree\_size, witness, line (the full C2SP signature line, which carries the time) | Insert only; UPDATE, DELETE and TRUNCATE rejected by trigger; verified before insert and before serving (D39) |
-| `anchor` | checkpoint\_id, kind (`rfc3161`, `ots`), token, status | Insert, then status updates |
+| `anchor` | stream, tree\_size, kind (`rfc3161`, `ots`), source, status (`verified`, `pending`, `confirmed`), token, digest | Insert only; an upgraded OpenTimestamps proof is a new `confirmed` row (D47) |
 | `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept |
 | `escalation` | id, decision\_record\_id, state, approver, expires\_at | State guarded on `open` |
 | `learner_proposal` | id, direction (`tighten`, `loosen`), yaml, cited\_record\_ids, counts, replay\_result, state, approvers | State guarded; every transition also a ledger record |
@@ -229,7 +229,7 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
 | POST | `/learn/v1/proposals/{id}/approve` | Approve a proposal (two distinct approvers for loosening) |
 
-The offline CLI: `pl-verify export.tar --keys keys.json --witness-keys witnesses.txt --quorum 2` checks the chain, every producer signature, every receipt, every checkpoint signature, consistency between checkpoints, the witness quorum, and the timestamp tokens, with no network access.
+The offline CLI: `pl-verify export.tar --keys keys.json --witness-keys witnesses.txt --quorum 2 --tsa-roots roots.pem` checks the chain, every producer signature, every receipt, every checkpoint signature, consistency between checkpoints, the witness quorum, and the timestamp tokens, with no network access.
 
 ## Threat model
 
@@ -321,7 +321,7 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | --- | --- | --- |
 | O1 | Resolved Oct 26: Official Rules require new work only, public repos, and a demo showing only work built during the event | Done |
 | O2 | Exact Muse model IDs, structured-output support and rate limits; claim the $150 credits (card required, credits arrive in batches) | Oct 27 |
-| O3 | Which public timestamp authority to use (free and reachable from the demo machine) | Oct 29 |
+| O3 | Which public timestamp authority to use (free and reachable from the demo machine). Resolved: DigiCert and FreeTSA (D45) | Oct 29 |
 | O4 | Whether one witness can run on a separate host (Modal or a second machine) to make independence visible | Oct 29 |
 | O5 | OpenTimestamps confirmation takes hours: submit on day 3 so a confirmed Bitcoin proof is ready for the video | Oct 29 |
 | O6 | Managed Postgres for the Modal deployment (Modal Volumes are not suited to a live database) | Nov 2 |
@@ -347,3 +347,7 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-27 | Data model | `cosignature` table is `(stream, tree_size, witness, line)` instead of `checkpoint_id, witness_id, signature, ts`; insert-only by trigger | The signature line carries signature and time; one authoritative column (D39) |
 | 2026-10-27 | API | `/witness/v1/cosign` uses the C2SP tlog-witness text body and statuses, also served at `/witness/v1/add-checkpoint`; added `GET /witness/v1/latest` and `/witness/v1/health`. `checkpoints/latest` returns the cosigned note plus `quorum` and `final`, and takes `final=true`; proofs return the cosigned note | Interoperability; auditors need a witness-held checkpoint for `--trusted-checkpoint` (D40, D41) |
 | 2026-10-27 | Verification | `--witness-keys` is a file of C2SP cosigner verifier keys, not a directory; the quorum (default 2) is required on the latest checkpoint | D42 |
+| 2026-10-28 | Components | `anchor/` uses `asn1crypto` + `cryptography` (RFC 3161) and its own OpenTimestamps reader instead of `rfc3161ng` and `opentimestamps-client`; the verifier imports the pure `anchor.rfc3161` and `anchor.ots` | Keep the offline verifier free of network libraries; licence and dependency weight (D44, D46) |
+| 2026-10-28 | Data model | `anchor` table columns as built; insert-only instead of "insert, then status updates" | Every proof an auditor saw stays (D47) |
+| 2026-10-28 | Verification, API | Export bundle v2 adds `anchors/`; `pl-verify --tsa-roots [--max-timestamp-lag]` checks tokens and back-dating; `checkpoints/latest` lists re-verified anchors | D47, D48 |
+| 2026-10-28 | Open questions | O3 resolved: DigiCert and FreeTSA | D45 |

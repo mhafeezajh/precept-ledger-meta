@@ -8,8 +8,9 @@ One page per module, written when the module is finished and kept current with t
 | [merkle.md](merkle.md) | RFC 9162 hashing, roots, inclusion and consistency proofs, `TreeStore` port | Done for now |
 | [checkpoints.md](checkpoints.md) | C2SP checkpoints and signed notes, the checkpointer, write-once sinks, Postgres tree adapter | Done for this step |
 | [api.md](api.md) | Ledger HTTP API, status codes and error bodies, checkpoint loop, JSON logs, `pl-ledger`, dev keys | Done for this step: batch, ranges and read auth later |
-| [verify.md](verify.md) | Export bundle v1, `pl-export`, the offline `pl-verify` CLI, every finding it can report, witness quorum | Done for this step: anchors later |
+| [verify.md](verify.md) | Export bundle, `pl-export`, the offline `pl-verify` CLI, every finding it can report, witness quorum, timestamps | Done for this step |
 | [witness.md](witness.md) | C2SP cosignatures, the witness service (`pl-witness`), its own state, 2-of-3 finality in the ledger, demo beat 5 | Done for this step: compose services later |
+| [anchor.md](anchor.md) | RFC 3161 timestamps (request, offline verification), OpenTimestamps (submit, upgrade, read), backdating checks, bundle v2 | Done for this step: confirmed Bitcoin vector after O5 |
 
 ## Where to look for what
 
@@ -24,6 +25,7 @@ One page per module, written when the module is finished and kept current with t
 | What `pl-verify` reports and why | [verify.md](verify.md), "Interfaces" (finding names) and "Security and failure behaviour" |
 | What a witness checks, and what happens when witnesses are down or lie | [witness.md](witness.md), "How it works" and "Security and failure behaviour" |
 | How to run demo beat 5 (rogue operator) | [witness.md](witness.md), "How to run and test" |
+| How a TSA token is checked, and what stops backdating | [anchor.md](anchor.md), "Interfaces" and "Formulas and formats" |
 
 ## Signing contexts in use
 
@@ -36,4 +38,5 @@ One table for every hashed or signed byte string, so a new one never collides wi
 | Merkle leaf, node | | `SHA-256(0x00 ‖ JCS(record))`, `SHA-256(0x01 ‖ left ‖ right)` | `merkle/hashing.py` |
 | Receipt | Log | `"PL-receipt-v1\x00" ‖ JCS(receipt − sig)` | `ledger/format.py` |
 | Checkpoint | Log | Note text (C2SP signed-note); contains no NUL, so it never matches the two above | `ledger/checkpoint.py` |
+| RFC 3161 / OpenTimestamps digest | TSA / calendar | `SHA-256(checkpoint body)`; signed by the TSA inside CMS, not by any of our keys | `anchor/rfc3161.py` |
 | Cosignature | Witness | `"cosignature/v1\ntime " ‖ t ‖ "\n" ‖ checkpoint body` (C2SP tlog-cosignature); key type 0x04, so its key hash never equals a log key's (0x01) | `ledger/cosignature.py` |

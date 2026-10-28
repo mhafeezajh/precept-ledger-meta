@@ -2,22 +2,22 @@
 
 Guarantees that anyone with an export bundle and the public keys can check, offline and without trusting the operator, that every record is signed, chained, receipted and covered by signed checkpoints. When something is wrong, it names the first broken sequence number and record.
 
-Status: done for this step (bundle v1, `pl-export`, `pl-verify`, tamper suite, differential test, witness quorum). Timestamp checks come with `anchor/`. · Last updated: 2026-10-27 · Tests: 88 unit + property (`verify/` 100% lines and branches, `ledger/export.py` 100%), 3 integration (`export_cli.py` 90%)
+Status: done for this step (bundle v2, `pl-export`, `pl-verify`, tamper suite, differential test, witness quorum, RFC 3161 timestamps and backdating, OpenTimestamps claims). · Last updated: 2026-10-28 · Tests: 99 unit + property (`verify/` 96–100%, `ledger/export.py` 100%), 4 integration (`export_cli.py` 90%)
 
 ## Responsibilities
 
 Owns:
 
-- The export bundle v1 format: the writer is `ledger/export.py`, the reader is `verify/bundle.py`.
+- The export bundle format (v2; v1 still readable): the writer is `ledger/export.py`, the reader is `verify/bundle.py`.
 - `pl-export` (`ledger/export_cli.py`): writes one stream's bundle from Postgres.
 - The trusted-keys file, the witness-keys file (`WitnessPolicy`) and signature checks (`verify/keys.py`).
-- Every verification check (`verify/checks.py`) and the CLI (`verify/cli.py`, also `python -m verify`).
+- Every verification check (`verify/checks.py`, anchor checks in `verify/anchors.py`) and the CLI (`verify/cli.py`, also `python -m verify`).
 
 Does not own:
 
 - Record, receipt, checkpoint and cosignature formats. It reads them through `ledger.format`, `ledger.checkpoint` and `ledger.cosignature` only.
 - Merkle math (`merkle.proofs`).
-- Producing cosignatures (see [`witness.md`](witness.md)), and RFC 3161 / OpenTimestamps tokens (day 4).
+- Producing cosignatures (see [`witness.md`](witness.md)) and anchors (see [`anchor.md`](anchor.md)). Token and proof parsing is `anchor.rfc3161` and `anchor.ots`.
 
 ## How it works
 
@@ -29,6 +29,7 @@ Does not own:
 4. **Check checkpoints.** Each note must verify under a trusted log key with the bundle's origin. Its root must equal the Merkle root of the exported records up to its size. A checkpoint larger than the export means records were removed. Two signed roots for one size means split view.
 5. **Optionally, a checkpoint the auditor kept** (`--trusted-checkpoint`), for example `GET /witness/v1/latest` from a witness. If the export no longer reaches that size, it was truncated. If the root differs, history was rewritten since then. This catches an operator who rebuilt and re-signed everything with the real log key.
 6. **Optionally, the witness quorum** (`--witness-keys FILE [--quorum N]`, default 2). Each matching checkpoint's cosignature lines are checked under the trusted witness keys; lines from other keys are ignored. The latest checkpoint must carry `N` valid ones; the report names the latest final checkpoint and how many records come after it (D42).
+7. **Anchors.** OpenTimestamps proofs are always read (`bad_ots` if they do not commit to their checkpoint). With `--tsa-roots`, every RFC 3161 token must verify, and each record's `ts` is compared with the earliest trusted timestamp covering it (`late_timestamp`, `record_after_timestamp`, D48). Details: [`anchor.md`](anchor.md).
 
 ```mermaid
 flowchart LR
@@ -49,7 +50,7 @@ flowchart LR
 
 | Function / command | Input | Output | Errors |
 | --- | --- | --- | --- |
-| `pl-verify BUNDLE --keys KEYS [--trusted-checkpoint NOTE] [--witness-keys FILE [--quorum N]] [--json]` | files | report on stdout | exit 0 verified, 1 findings, 2 cannot verify (message on stderr; also `--quorum` without `--witness-keys`, or a quorum larger than the key count) |
+| `pl-verify BUNDLE --keys KEYS [--trusted-checkpoint NOTE] [--witness-keys FILE [--quorum N]] [--tsa-roots PEM [--max-timestamp-lag S]] [--json]` | files | report on stdout | exit 0 verified, 1 findings, 2 cannot verify (message on stderr; also `--quorum` without `--witness-keys`, or a quorum larger than the key count) |
 | `pl-export --out FILE [--stream S]` | `DATABASE_URL`, `LEDGER_ORIGIN` | tar file | exit 2 on `PreceptError` |
 | `await export_bundle(store, sink, stream, origin, cosignatures=None)` | `Store`, `CheckpointSink`, optional `CosignatureStore` | tar bytes; notes carry stored cosignature lines | `FormatError` if a stored row is not I-JSON; `StoreError` |
 | `read_bundle(data)` | bytes | `Bundle(stream, origin, records, receipts, checkpoints)` | `VerificationError bundle.not_tar`, `.bad_member`, `.duplicate`, `.too_large`, `.missing`, `.bad_manifest`, `.count_mismatch`, `.bad_lines` |
@@ -66,17 +67,19 @@ Finding names, each with `seq` (or none) and `record_id` where known:
 | Checkpoints | `bad_checkpoint`, `checkpoint_beyond_records`, `checkpoint_mismatch`, `checkpoint_conflict` |
 | Held checkpoint | `truncated_since_trusted`, `rewritten_since_trusted` |
 | Witnesses | `bad_cosignature`, `below_quorum` |
+| Anchors | `anchor_without_checkpoint`, `bad_timestamp`, `bad_ots`, `not_timestamped`, `late_timestamp`, `record_after_timestamp` |
 
 ## Data
 
-Bundle v1 (D31), one plain tar with zero timestamps and owners and a fixed member order, so the same ledger always exports the same bytes:
+Bundle v2 (D31, D47), one plain tar with zero timestamps and owners and a fixed member order, so the same ledger always exports the same bytes:
 
 | Member | Content |
 | --- | --- |
-| `manifest.json` | `{"format": "precept-ledger-export", "v": 1, "stream", "origin", "counts": {"records", "receipts", "checkpoints"}}` |
+| `manifest.json` | `{"format": "precept-ledger-export", "v": 2, "stream", "origin", "counts": {"records", "receipts", "checkpoints", "anchors"}}` (v1: no `anchors`) |
 | `records.jsonl` | Every record as stored (rebuilt from columns, D21), one canonical JSON line each, seq order |
 | `receipts.jsonl` | Every receipt as stored, same encoding |
 | `checkpoints/<20-digit size>.note` | Every signed checkpoint, with its stored witness cosignature lines appended (D39). Names are only labels; the verifier reads the size from the signed text |
+| `anchors/<20-digit size>-<rfc3161\|ots>-<nn>.<tsr\|ots>` | v2 only. DER RFC 3161 tokens and OpenTimestamps proofs. The size is a label; each must commit to that checkpoint's digest |
 
 The bundle carries no keys. Witness keys come from the auditor too, one C2SP cosigner verifier key per line (`witnesses.txt`, written by `make dev-keys`):
 
@@ -108,7 +111,7 @@ Producer and log keys come from the auditor in a file like this:
 
 What it does not protect against yet:
 
-- An operator who rewrites everything and colludes with enough witnesses to reach the quorum. Anchors (day 4) close this.
+- An operator who rewrites everything and colludes with enough witnesses, if the rewrite happens within `--max-timestamp-lag` of the original records. Later rewrites are caught by `late_timestamp` (see [`anchor.md`](anchor.md)).
 - A checkpoint mismatch is not pinned to a seq unless another check pins it. The verifier has only the current records, not the old leaves.
 
 ## Formulas and formats
@@ -150,18 +153,19 @@ uv run pl-export --out export.tar                    # needs DATABASE_URL, KEYS_
 uv run pl-verify export.tar --keys keys.json         # add --json for machine output
 uv run pl-verify export.tar --keys keys.json --trusted-checkpoint held.note
 uv run pl-verify export.tar --keys keys.json --witness-keys witnesses.txt --quorum 2
+uv run pl-verify export.tar --keys keys.json --tsa-roots deploy/tsa/roots.pem
 uv run pytest tests/unit/test_verify*.py tests/unit/test_export.py tests/property/test_verify_properties.py   # includes test_verify_witnesses.py
 make test-integration                                # includes beat 4 end to end on Postgres
 ```
 
 ## Decisions
 
-D20, D21, D28, D31, D32, D33, D39, D42 in [`docs/DECISIONS.md`](../DECISIONS.md).
+D20, D21, D28, D31, D32, D33, D39, D42, D47, D48 in [`docs/DECISIONS.md`](../DECISIONS.md).
 
 ## Known gaps
 
-- Range exports (`?from=M&to=N`) are not built. Bundle v1 is always the whole stream from seq 1. A range export needs inclusion proofs and a consistency proof in the bundle.
-- No timestamp tokens yet (day 4). Cosignature times are not checked against any clock.
+- Range exports (`?from=M&to=N`) are not built. A bundle is always the whole stream from seq 1. A range export needs inclusion proofs and a consistency proof in the bundle.
+- Cosignature times are not checked against any clock; RFC 3161 times are (D48).
 - No helper writes `keys.json` from `KEYS_DIR` yet. The demo setup step will add one.
 - A stored row that an admin edits into non-I-JSON (for example a float) makes `pl-export` fail with `FormatError` instead of exporting it. That fails closed, but the verifier then never sees the row.
 - `pl-verify` holds the whole bundle in memory (limit 256 MiB). That's fine at demo scale.
