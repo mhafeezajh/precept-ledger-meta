@@ -10,10 +10,16 @@ same code path as on Muse Spark. Switch to live with ``MODEL_PROFILE=cloud`` (D7
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import yaml
+
 MOCK_MODEL = "mock/scripted"
+# Drafting: the seed rules, written by hand from the demo policy, stand in for Muse Wonder.
+SEED_RULES = Path(__file__).resolve().parent.parent / "deploy" / "policies" / "harbor-federal.yaml"
+_CLAUSE_LINE = re.compile(r"^\[([^\]]+)\] \(page \d+\) (.*)$")
 MAX_CLAIMS = 12  # assist.auditor.AuditorAnswer allows 12
 _AMOUNT = r"\$([\d,]+(?:\.\d{2})?)"
 
@@ -155,10 +161,51 @@ def _answer(user: str) -> dict[str, Any]:
             "claims": claims}  # fmt: skip
 
 
+def _draft_conditions(conditions: Mapping[str, Any]) -> list[dict[str, Any]]:
+    out = []
+    for field, test in conditions.items():
+        pairs = test.items() if isinstance(test, dict) else [("eq", test)]
+        out += [{"field": field, "op": op, "value": value} for op, value in pairs]
+    return out
+
+
+def _draft(user: str) -> dict[str, Any]:
+    """Each seed rule whose clause is in the document and whose quote is in that clause."""
+    clauses = {}
+    for line in _after(user, "Clauses:\n").splitlines():
+        if match := _CLAUSE_LINE.match(line):
+            clauses[match.group(1)] = match.group(2)
+    rules = []
+    for seed in yaml.safe_load(SEED_RULES.read_text("utf-8")):
+        source = seed["source"]
+        text = clauses.get(str(source["clause"]))
+        if text is None or " ".join(source["quote"].split()) not in text:
+            continue
+        when = {k: v for k, v in seed["when"].items() if k != "action"}
+        tests = [
+            {
+                "facts": [
+                    {"field": k, "value": v} for k, v in t.items() if k not in ("expect", "agent")
+                ],
+                "agent": t.get("agent"),
+                "expect": t["expect"],
+            }
+            for t in seed["tests"]
+        ]
+        rules.append({
+            "id": seed["id"], "clause": str(source["clause"]), "quote": source["quote"],
+            "agent": seed.get("agent"), "action": seed["when"]["action"],
+            "when": _draft_conditions(when), "unless": _draft_conditions(seed.get("unless") or {}),
+            "then": seed["then"], "approver_role": seed.get("approver_role"), "tests": tests,
+        })  # fmt: skip
+    return {"rules": rules}
+
+
 _SCRIPTS: dict[str, Callable[[str], dict[str, Any]]] = {
     "Brief": _brief,
     "RecordQuery": _query,
     "AuditorAnswer": _answer,
+    "DraftRules": _draft,
 }
 
 

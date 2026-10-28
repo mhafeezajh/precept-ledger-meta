@@ -87,6 +87,7 @@ class Source:
     page: int
     clause: str
     quote: str  # the clause text the rule implements; numbers in the rule must appear in it
+    span: tuple[int, int] | None = None  # [start, end) in the document text, set by code
 
 
 @dataclass(frozen=True)
@@ -174,8 +175,20 @@ def _text(raw: object, pattern: re.Pattern[str], where: str) -> str:
     return raw
 
 
+def _span(raw: object, where: str) -> tuple[int, int] | None:
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or len(raw) != 2 or any(type(v) is not int for v in raw):
+        raise _bad(f"{where}.source.span must be [start, end]", "policy.rule_value")
+    start, end = raw
+    if not 0 <= start < end <= 10_000_000:
+        raise _bad(f"{where}.source.span must be [start, end]", "policy.rule_value")
+    return start, end
+
+
 def _source(raw: object, where: str) -> Source:
-    if not isinstance(raw, dict) or set(raw) != {"doc", "page", "clause", "quote"}:
+    keys = {"doc", "page", "clause", "quote"}
+    if not isinstance(raw, dict) or not keys <= set(raw) <= keys | {"span"}:
         raise _bad(f"{where}.source needs doc, page, clause and quote", "policy.rule_shape")
     page, quote = raw["page"], raw["quote"]
     if not isinstance(page, int) or isinstance(page, bool) or not 1 <= page <= 10_000:
@@ -184,7 +197,8 @@ def _source(raw: object, where: str) -> Source:
         raise _bad(f"{where}.source.quote must be the clause text", "policy.rule_value")
     doc = _text(raw["doc"], _DOC, f"{where}.source.doc")
     clause = _text(str(raw["clause"]), _CLAUSE, f"{where}.source.clause")
-    return Source(doc, page, clause, " ".join(quote.split()))
+    span = _span(raw.get("span"), where)
+    return Source(doc, page, clause, " ".join(quote.split()), span)
 
 
 def _fixtures(action: str, raw: object, where: str) -> tuple[Fixture, ...]:
@@ -245,6 +259,11 @@ def parse_rules(text: str) -> tuple[PolicyRule, ...]:
         raw = yaml.safe_load(text)  # safe_load: plain data only, never Python objects
     except yaml.YAMLError as exc:
         raise _bad(f"not valid YAML: {exc}", "policy.yaml") from exc
+    return rules_from_data(raw)
+
+
+def rules_from_data(raw: object) -> tuple[PolicyRule, ...]:
+    """The same validation as ``parse_rules``, for data already parsed (a model's JSON)."""
     if raw == [] or raw is None:
         raise _bad("no rules", "policy.empty")
     if not isinstance(raw, list):
@@ -254,6 +273,51 @@ def parse_rules(text: str) -> tuple[PolicyRule, ...]:
     if len(set(ids)) != len(ids):
         raise _bad("rule ids must be unique", "policy.duplicate_id")
     return rules
+
+
+def _plain(value: Value) -> object:
+    # Dollars go back out as the exact string they were read from; nothing becomes a float.
+    if isinstance(value, Decimal):
+        return int(value) if value == value.to_integral_value() else format(value, "f")
+    return value
+
+
+def _conditions_data(conditions: tuple[Condition, ...]) -> dict[str, object]:
+    out: dict[str, dict[str, object]] = {}
+    for c in conditions:
+        out.setdefault(c.field, {})[c.op] = _plain(c.value)
+    return {k: v["eq"] if list(v) == ["eq"] else v for k, v in out.items()}
+
+
+def rule_data(rule: PolicyRule) -> dict[str, object]:
+    """The rule as plain data that ``rules_from_data`` reads back to an equal rule."""
+    s = rule.source
+    source: dict[str, object] = {"doc": s.doc, "page": s.page, "clause": s.clause, "quote": s.quote}
+    if s.span is not None:
+        source["span"] = list(s.span)
+    data: dict[str, object] = {"id": rule.id, "source": source}
+    if rule.agent is not None:
+        data["agent"] = rule.agent
+    data["when"] = {"action": rule.action, **_conditions_data(rule.when)}
+    if rule.unless:
+        data["unless"] = _conditions_data(rule.unless)
+    data["then"] = rule.then
+    if rule.approver_role is not None:
+        data["approver_role"] = rule.approver_role
+    data["tests"] = [
+        {**{k: _plain(v) for k, v in f.facts}, **({"agent": f.agent} if f.agent else {}),
+         "expect": f.expect}
+        for f in rule.tests
+    ]  # fmt: skip
+    return data
+
+
+def to_yaml(rules: tuple[PolicyRule, ...]) -> str:
+    """Reviewable YAML for ``rules``; ``parse_rules(to_yaml(r)) == r``."""
+    text = yaml.safe_dump(
+        [rule_data(r) for r in rules], sort_keys=False, allow_unicode=True, width=100
+    )
+    return str(text)
 
 
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")

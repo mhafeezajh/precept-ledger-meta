@@ -35,6 +35,9 @@ from gate.pg_escalations import PostgresEscalationStore
 from ledger.pg_store import PostgresStore
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing, Signer
+from policy.api import install_policy_routes
+from policy.draft import Drafter
+from policy.service import restore_active
 from verify.keys import TrustedKeys
 
 CALLERS_FILE = "gate-callers.txt"
@@ -104,34 +107,43 @@ async def gate_from_settings(
     log_event(logger, logging.INFO, "gate starting", briefs=config is not None,
               profile=settings.model_profile)  # fmt: skip
     try:
-        yield (
-            Gate(
-                producer_id=gate.producer_id,
-                signer=signer,
-                stream=settings.ledger_stream,
-                ledger=HttpLedgerClient(gate.ledger_url, http),
-                log_keys=log_keys,
-                normalizer=normalizer,
-                policies=load_policy_set(gate.policy_file),
-                escalations=store,
-                clock=clock,
-                approval_timeout=timedelta(seconds=gate.approval_timeout_seconds),
-                briefs=briefs,
-            ),
-            callers,
+        service = Gate(
+            producer_id=gate.producer_id,
+            signer=signer,
+            stream=settings.ledger_stream,
+            ledger=HttpLedgerClient(gate.ledger_url, http),
+            log_keys=log_keys,
+            normalizer=normalizer,
+            policies=load_policy_set(gate.policy_file),
+            escalations=store,
+            clock=clock,
+            approval_timeout=timedelta(seconds=gate.approval_timeout_seconds),
+            briefs=briefs,
         )
+        # The latest approved policy set replaces the file Gate starts with (D74).
+        await restore_active(service, history)
+        yield service, callers
     finally:
         await http.aclose()
         await history.close()
         await store.close_pool()
 
 
+def _drafter(settings: Settings) -> Drafter | None:
+    config = model_config(settings)
+    if config is None or "wonder" not in config.routes[config.profile]:
+        return None
+    return Drafter(LlmClient(config))
+
+
 def app_from_settings() -> FastAPI:
     settings, gate_settings = load_settings(), GateSettings()
     configure_logging(settings.log_level)
+    drafter = _drafter(settings)
     return create_gate_app(
         lambda: gate_from_settings(settings, gate_settings),
         sweep_interval=gate_settings.sweep_interval_seconds,
+        extend=lambda app: install_policy_routes(app, drafter, demo_mode=settings.demo_mode),
     )
 
 

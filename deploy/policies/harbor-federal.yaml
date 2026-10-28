@@ -64,7 +64,7 @@
     - { amount: 250000, agent: payments-ops, expect: escalate }
 
 - id: email-internal-01
-  source: { doc: payments_policy.pdf, page: 1, clause: "4.1",
+  source: { doc: payments_policy.pdf, page: 2, clause: "4.1",
             quote: "The payments-ops agent may send email to bank staff without approval." }
   agent: payments-ops
   when: { action: comm.external, external_recipients: 0 }
@@ -74,7 +74,7 @@
     - { recipients: 3, external_recipients: 1, expect: escalate }
 
 - id: email-external-01
-  source: { doc: payments_policy.pdf, page: 1, clause: "4.2",
+  source: { doc: payments_policy.pdf, page: 2, clause: "4.2",
             quote: "Any email to a recipient outside the bank requires approval by a payments supervisor." }
   agent: payments-ops
   when: { action: comm.external, external_recipients: { gt: 0 } }

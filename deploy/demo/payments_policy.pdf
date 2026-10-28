@@ -1,0 +1,90 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [4 0 R 6 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 5 0 R >>
+endobj
+5 0 obj
+<< /Length 1250 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+56 770 Td
+(HARBOR FEDERAL SAVINGS BANK \(FICTIONAL, FOR DEMONSTRATION ONLY\)) Tj T*
+(Payments Operations Policy for Automated Agents) Tj T*
+(Policy PO-7, version 3. Owner: Compliance.) Tj T*
+() Tj T*
+(1. Scope) Tj T*
+() Tj T*
+(1.1 This policy applies to every software agent that acts for Payments Operations, including) Tj T*
+(the agent named payments-ops.) Tj T*
+() Tj T*
+(1.2 An action that this policy does not permit is not allowed.) Tj T*
+() Tj T*
+(2. Vendor information) Tj T*
+() Tj T*
+(2.1 The payments-ops agent may look up vendor records without approval.) Tj T*
+() Tj T*
+(3. Outgoing payments) Tj T*
+() Tj T*
+(3.1 The payments-ops agent may pay a known payee up to $5,000 per payment without approval.) Tj T*
+() Tj T*
+(3.2 Any payment over $5,000 requires approval by a payments supervisor before it is sent.) Tj T*
+() Tj T*
+(3.3 Any payment to a payee that has not been paid before requires approval by a payments) Tj T*
+(supervisor, whatever the amount.) Tj T*
+() Tj T*
+(3.4 Payments must be made in U.S. dollars \(USD\). A payment in any other currency is not) Tj T*
+(allowed.) Tj T*
+() Tj T*
+(3.5 No single payment may exceed $250,000. Larger payments are made by staff, outside the) Tj T*
+(agent.) Tj T*
+() Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 3 0 R >> >> /Contents 7 0 R >>
+endobj
+7 0 obj
+<< /Length 387 >>
+stream
+BT
+/F1 10 Tf
+14 TL
+56 770 Td
+(4. Email) Tj T*
+() Tj T*
+(4.1 The payments-ops agent may send email to bank staff without approval.) Tj T*
+() Tj T*
+(4.2 Any email to a recipient outside the bank requires approval by a payments supervisor.) Tj T*
+() Tj T*
+(5. Business hours) Tj T*
+() Tj T*
+(5.1 Business hours are 9:00 a.m. to 5:00 p.m., Monday to Friday, bank time \(New York\).) Tj T*
+ET
+endstream
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000344 00000 n 
+0000001646 00000 n 
+0000001772 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+2210
+%%EOF
