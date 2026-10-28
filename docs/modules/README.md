@@ -14,6 +14,7 @@ One page per module, written when the module is finished and kept current with t
 | [gate.md](gate.md) | Normalizer, Cedar allow / deny / escalate, decision, verdict and result records, write-before-effect, approval queue, tokens, `pl-gate`, `@governed`, demo beat 2 | Done for this step: MCP proxy deferred |
 | [assist.md](assist.md) | `assist/llm.py` (the only model entry point), Muse Spark approval briefs, auditor Q&A (beat 3) | Done for this step: no live model run yet |
 | [claims.md](claims.md) | The claim checker: producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers and names in text and summary; the whole export proven before an auditor query runs | Done for this step |
+| [policy.md](policy.md) | Rule YAML citing its clause, compiler to Cedar, checks before review (schema, fixtures, allows everything, clause numbers) | Partial: step 1 of 3 |
 
 ## Where to look for what
 
@@ -34,6 +35,7 @@ One page per module, written when the module is finished and kept current with t
 | Which model, mode, price and parameters each call uses | [`../MODELS.md`](../MODELS.md) |
 | What stops a brief from inventing facts or advising a verdict | [assist.md](assist.md), "Security and failure behaviour" |
 | When an auditor answer is shown as true | [claims.md](claims.md), "How it works" |
+| What catches a wrong drafted policy rule | [policy.md](policy.md), "The checks" |
 
 ## Signing contexts in use
 

@@ -146,7 +146,7 @@ Three flows share one ledger; each ends in a signed record before anything chang
 
 1. A compliance officer uploads a policy PDF. Text is extracted with page and character spans.
 2. Muse Wonder drafts YAML rules, each with the exact source span it came from.
-3. Code compiles YAML to Cedar, validates it against the schema, runs each rule's fixtures, and flags any rule that allows everything or contradicts its clause's numbers.
+3. Code compiles YAML to Cedar, validates it against the schema, runs each rule's fixtures, and flags any rule that allows everything or contradicts its clause's numbers. *(As built, D68, D69: rules carry the clause `quote` rather than a model-given `span`; code finds the quote and records the span in step 2. Fixtures run against the whole set; rules may also have `unless` and `agent`.)*
 4. The officer reviews each rule beside its clause, edits if needed, and approves.
 5. The approval is appended, and the new policy set becomes active with its hash recorded.
 
@@ -363,3 +363,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Build plan | Auditor Q&A is built with `claims/`, not `assist/` | D60 |
 | 2026-10-28 | Flow C | The model's read-only query tools are one structured `RecordQuery` run by code over the export; claims are checked by `claims/checker.py` (producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers in text); answers use only accepted claims; audits are `assist.qa` records signed by a new `assist-1` key | D61-D64 |
 | 2026-10-28 | Flow C, `claims/` | The export is verified up to the final checkpoint before any question is answered; the query moves to `claims/query.py` and runs over the proven prefix; names in claim text and the summary are checked; `claims/` also imports `verify.bundle` and `verify.checks` | D65-D67 |
+| 2026-10-28 | Flow B, example policy YAML (kickoff 2.4) | Rule YAML gains `quote` in `source` (span computed by code later), optional `unless` and `agent`, fixture `agent`; amounts stay in dollars in YAML and compile to `amount_cents`. Checks: schema, whole-set fixtures, untested and one-sided rules, allows everything (riskiest-request probe), clause numbers. `pyyaml` added | D68-D70 |
