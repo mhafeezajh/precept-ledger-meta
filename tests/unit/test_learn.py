@@ -322,9 +322,11 @@ async def test_the_model_sees_each_row_as_its_two_records_with_the_checked_field
 ) -> None:
     # Live, the model asserted body.decision 'approved' on decision records: the verdict sits
     # on its own record. Rows now show each field under the path the claim checker reads.
-    records = await week.records()
+    records, log = await week.records(), await week.view.proven()
     for pattern in (await candidates(week)).values():
-        rows = json.loads(model_input(pattern, parse_rules(SEED_YAML)).split("Pattern:\n", 1)[1])
+        rows = json.loads(
+            model_input(pattern, parse_rules(SEED_YAML), log).split("Pattern:\n", 1)[1]
+        )
         for row in rows["rows"]:
             assert set(row) == {"decision_record", "verdict_record", "seconds_to_verdict"}
             assert row["decision_record"]["body.decision"] == "escalate"
@@ -340,11 +342,42 @@ async def test_the_model_sees_each_row_as_its_two_records_with_the_checked_field
             assert row["verdict_record"]["body.verdict"] in ("approve", "reject", "expire")
 
 
+async def test_the_model_is_told_which_active_rules_hold_the_requests_now(week: Week) -> None:
+    # Live after a clean reset, Muse Wonder's rules (pay-over-5k-03) had replaced the seed's
+    # (pay-over-5k-01) that the history cites; the model, told to replace rules that no longer
+    # existed, ran past its timeout. Code re-evaluates the recorded requests instead.
+    from learn.draft import held_by
+
+    renamed = parse_rules(SEED_YAML.replace("pay-over-5k-01", "pay-over-5k-03"))
+    log = await week.view.proven()
+    loosen = (await candidates(week))[LOOSEN]
+    assert loosen.policy_ids() == ["pay-over-5k-01"]
+    assert held_by(loosen, renamed, log) == ["pay-over-5k-03"]
+    view = json.loads(model_input(loosen, renamed, log).split("Pattern:\n")[1])
+    assert view["policies_matched"] == ["pay-over-5k-03"]
+
+
+async def test_leaving_out_a_rule_whose_fixtures_must_move_gets_the_retry(week: Week) -> None:
+    # Live, the model left out an allow rule whose "just above" fixture fell in the scope, and
+    # replay blocked the proposal. The structure check names it, so the one retry can fix it.
+    from learn.draft import LearnerProposal, _structure
+
+    loosen = (await candidates(week))[LOOSEN]
+    answer = await answer_for(week, loosen)
+    assert "pay-known-payee-01" in {r["id"] for r in answer["rules"]}
+    assert _structure(LearnerProposal.model_validate(answer), loosen, parse_rules(SEED_YAML)) == []
+    answer["rules"] = [r for r in answer["rules"] if r["id"] != "pay-known-payee-01"]
+    problems = _structure(LearnerProposal.model_validate(answer), loosen, parse_rules(SEED_YAML))
+    assert "replace pay-known-payee-01 to move its fixtures [3] outside the scope" in problems
+
+
 async def test_code_marks_the_fixtures_a_change_would_move(week: Week) -> None:
     # Live, the model kept a fixture the new allow rule now covers, at every reasoning effort.
-    found = await candidates(week)
+    found, log = await candidates(week), await week.view.proven()
     for key, expected in ((LOOSEN, {"pay-known-payee-01": [3]}), (TIGHTEN, {})):
-        view = json.loads(model_input(found[key], parse_rules(SEED_YAML)).split("Pattern:\n")[1])
+        view = json.loads(
+            model_input(found[key], parse_rules(SEED_YAML), log).split("Pattern:\n")[1]
+        )
         marked = {r["id"]: r["fixtures_to_move"] for r in view["active_rules"]
                   if r["fixtures_to_move"]}  # fmt: skip
         assert marked == expected
@@ -402,18 +435,18 @@ async def test_an_inflated_count_rejects_the_proposal(week: Week, tmp_path: Path
     assert refused.value.code == "learn.not_reviewable"
 
 
-def answer_for(pattern: Pattern, base: str = SEED_YAML) -> dict[str, Any]:
-    return _learner_proposal(model_input(pattern, parse_rules(base)))
+async def answer_for(w: Week, pattern: Pattern, base: str = SEED_YAML) -> dict[str, Any]:
+    return _learner_proposal(model_input(pattern, parse_rules(base), await w.view.proven()))
 
 
 async def test_a_wider_rule_or_a_wrong_claim_is_caught(week: Week, tmp_path: Path) -> None:
     found = await candidates(week)
-    wide = answer_for(found[LOOSEN])
+    wide = await answer_for(week, found[LOOSEN])
     for rule in wide["rules"]:  # the model widens $15,000 to $50,000
         for c in [*rule["when"], *rule["unless"]]:
             if c["field"] == "amount" and c["value"] == 15000:
                 c["value"] = 50000
-    wrong = answer_for(found[TIGHTEN])
+    wrong = await answer_for(week, found[TIGHTEN])
     for a in wrong["claims"][0]["assertions"]:
         if a["field"] == "body.approver":
             a["value"] = "k.wu" if a["value"] != "k.wu" else "j.ortiz"
@@ -431,9 +464,9 @@ async def test_structure_gets_one_retry_and_a_model_failure_gives_no_proposal(
     week: Week, tmp_path: Path
 ) -> None:
     found = await candidates(week)
-    stray = answer_for(found[LOOSEN])
+    stray = await answer_for(week, found[LOOSEN])
     stray["claims"][0]["record_ids"].append("01ZZZZZZZZZZZZZZZZZZZZZZZZ")
-    fake = FakeCompletion(json.dumps(stray), json.dumps(answer_for(found[LOOSEN])),
+    fake = FakeCompletion(json.dumps(stray), json.dumps(await answer_for(week, found[LOOSEN])),
                           RuntimeError("model down"))  # fmt: skip
     run = await week.service(LearnDrafter(llm(tmp_path, fake))).run(OFFICER)
     assert [p.body["state"] for p in run.proposals] == ["review"]

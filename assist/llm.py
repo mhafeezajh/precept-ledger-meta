@@ -57,7 +57,6 @@ _TRANSIENT = (
     litellm.exceptions.InternalServerError,
     litellm.exceptions.BadGatewayError,
     litellm.exceptions.APIConnectionError,
-    litellm.exceptions.Timeout,
 )
 # 10+ digits with optional single separators, or 8+ in a row; dates (8 digits) and amounts
 # with thousands commas survive, account and routing numbers do not.
@@ -223,9 +222,11 @@ class LlmClient:
                 response = await self._completion(
                     model=route.model, messages=conversation, response_format=response_format,
                     temperature=0, api_base=route.api_base, api_key=route.api_key,
-                    timeout=self.config.timeout_seconds, **_effort(route),
-                )  # fmt: skip
+                    timeout=self.config.timeout_seconds, max_retries=0, **_effort(route),
+                )  # fmt: skip  # max_retries: the SDK's own retries hid under ours (D90)
                 break
+            except litellm.exceptions.Timeout as exc:  # out of time: again would be too (D90)
+                raise ModelOutputError("model timed out", code="model.unavailable") from exc
             except _TRANSIENT as exc:
                 if attempt == MAX_ATTEMPTS:
                     raise ModelOutputError("model unavailable", code="model.unavailable") from exc

@@ -124,6 +124,6 @@ D84 (server-rendered with htmx, vendored), D85 (personas instead of sign-in, dem
 ## Known gaps
 
 - Real sign-in (SSO) instead of the persona menu.
-- The Audit page and agent runs use the model profile; on `cloud`, a learner run or audit takes as long as the model (up to `WEB_TIMEOUT_SECONDS`).
+- The Audit page and agent runs use the model profile; on `cloud`, a learner run or audit takes as long as the model (up to `WEB_TIMEOUT_SECONDS`, 200 s by default: one model call may take up to `MODEL_TIMEOUT_SECONDS`, 150 s).
 - The ledger page verifies the whole export on each load; fine for the demo's hundreds of records, too slow for millions (a range export is a known gap in the ledger API).
 - Agent runs are kept in memory and lost on restart; their effects are in the ledger.

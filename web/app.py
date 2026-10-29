@@ -51,7 +51,7 @@ class WebSettings(BaseSettings):
     ledger_url: str = "http://127.0.0.1:8080"
     default_persona: str = "j.ortiz"
     timezone: str = "America/New_York"
-    timeout_seconds: float = 120.0  # a learner run or an audit waits for the model
+    timeout_seconds: float = 200.0  # a learner run waits for one model call (up to 150 s)
     witnessed: bool = True  # proven means cosigned by the witness quorum
     secure_cookie: bool = False  # true behind HTTPS
     session_secret: str = ""  # empty: a fresh key per start (sessions end on restart)

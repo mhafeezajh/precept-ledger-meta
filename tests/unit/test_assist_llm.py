@@ -153,6 +153,21 @@ async def test_rate_limits_and_outages_are_retried_with_backoff(tmp_path: Path) 
     assert 1.0 <= slept[1] < 2.0  # doubled
 
 
+async def test_a_timeout_fails_closed_at_once_and_the_sdk_never_retries(tmp_path: Path) -> None:
+    # Live, the OpenAI SDK's own two retries under our three turned one 60 s timeout into
+    # nine minutes. A reasoning call that ran out of time is not retried (D90).
+    timeout = litellm.Timeout("took too long", model="muse-spark-1.3", llm_provider="meta")
+    fake = FakeCompletion(timeout, '{"text": "ok", "count": 1}')
+    with pytest.raises(ModelOutputError) as caught:
+        await client(tmp_path, fake).complete_structured(
+            "spark", Answer, MESSAGES, prompt_version="t/1"
+        )
+    assert caught.value.code == "model.unavailable"
+    assert len(fake.calls) == 1
+    assert fake.calls[0]["max_retries"] == 0
+    assert log_rows(tmp_path)[-1]["outcome"] == "unavailable"
+
+
 async def test_a_model_that_stays_down_is_a_model_error(tmp_path: Path) -> None:
     down = litellm.ServiceUnavailableError("down", llm_provider="meta", model="muse-spark-1.3")
     fake = FakeCompletion(down, down, down)

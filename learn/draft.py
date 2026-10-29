@@ -34,9 +34,11 @@ from assist.llm import LlmClient
 from claims.checker import ClaimResult, check_claims_in_log, check_summary
 from claims.log import ProvenLog
 from common.errors import PolicyError
+from gate.decide import SCHEMA_FILE, PolicySet
 from learn.patterns import COUNT_NAMES, Pattern, Scope
 from learn.replay import scope_policies
 from policy.checks import FIXTURE_AGENT
+from policy.compiler import compile_rules
 from policy.draft import ConditionOut, FixtureOut, Short
 from policy.rules import PolicyRule, rule_data, rules_from_data, to_context
 
@@ -164,6 +166,11 @@ def _structure(answer: LearnerProposal, pattern: Pattern, base: Sequence[PolicyR
     }
     if unknown := sorted(cited - allowed):
         problems.append(f"record ids that are not in the pattern's rows: {unknown}")
+    answered = {r.id for r in answer.rules}
+    for rule in base:  # left out, its fixture would flip and replay would block (D90)
+        skip = rule.action != pattern.scope.action or rule.id in answered
+        if not skip and (moved := fixtures_to_move(rule, pattern)):
+            problems.append(f"replace {rule.id} to move its fixtures {moved} outside the scope")
     return problems
 
 
@@ -217,14 +224,28 @@ def _row_view(row: Mapping[str, Any]) -> dict[str, Any]:
             "seconds_to_verdict": row["verdict_seconds"]}  # fmt: skip
 
 
-def model_input(pattern: Pattern, base_rules: Sequence[PolicyRule]) -> str:
+def held_by(pattern: Pattern, base_rules: Sequence[PolicyRule], log: ProvenLog) -> list[str]:
+    """The active escalate rules that hold the pattern's recorded requests now. The history
+    names the rules in force then; after a new policy is approved those ids may be gone, and
+    live the model, told to replace rules that no longer existed, ran out of time (D90)."""
+    policies = PolicySet(compile_rules(base_rules), SCHEMA_FILE.read_text("utf-8"))
+    escalate = {r.id for r in base_rules if r.then == "escalate"}
+    held: set[str] = set()
+    for row in pattern.rows:
+        body = (log.get(row["decision_record_id"]) or {}).get("body") or {}
+        args = (str(body.get("agent")), str(body.get("action")), str(body.get("tool")))
+        held.update(escalate & set(policies.evaluate(*args, body.get("resource") or {}).policy_ids))
+    return sorted(held)
+
+
+def model_input(pattern: Pattern, base_rules: Sequence[PolicyRule], log: ProvenLog) -> str:
     scope = pattern.scope
     view = {
         "direction": pattern.direction,
         "scope": {"statement": scope.statement(), "agent": scope.agent, "action": scope.action,
                   "when": scope.when(), "unless": scope.unless()},
         "counts": pattern.counts,
-        "policies_matched": pattern.policy_ids(),
+        "policies_matched": held_by(pattern, base_rules, log),
         "active_rules": [{**rule_data(r), "fixtures_to_move": fixtures_to_move(r, pattern)}
                          for r in base_rules if r.action == scope.action],
         "rows": [_row_view(row) for row in pattern.rows[:MAX_ROWS]],
@@ -252,7 +273,7 @@ class LearnDrafter:
         answer = await self._llm.complete_structured(
             "spark", LearnerProposal,
             [{"role": "system", "content": self._instructions},
-             {"role": "user", "content": model_input(pattern, base_rules)}],
+             {"role": "user", "content": model_input(pattern, base_rules, log)}],
             prompt_version=self.prompt_version,
             check=lambda a: _structure(a, pattern, base_rules),
         )  # fmt: skip

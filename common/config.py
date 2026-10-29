@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     # Cloud only: minimal ... max; empty lets the model pick. medium measured best on the
     # learner live (docs/MODELS.md): low failed the claim checker, the model's own pick was slow
     model_reasoning_effort: str = "medium"
-    model_timeout_seconds: float = 60.0  # a live brief took 23 s (docs/MODELS.md)
+    model_timeout_seconds: float = 150.0  # per attempt; a live learner call took 110 s (D90)
     model_call_log: Path = Path("logs/model_calls.csv")
     log_level: str = "INFO"
     demo_mode: bool = False

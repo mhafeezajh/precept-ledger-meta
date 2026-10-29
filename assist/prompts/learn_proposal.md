@@ -2,7 +2,7 @@
 purpose: Draft one Policy Learner proposal (rule changes, reason, restated counts, claims) for a pattern code found in the ledger
 inputs: The pattern (direction, scope as rule conditions and in words, SQL counts, rows, the active rules for the action)
 output_schema: learn.draft.LearnerProposal
-version: learn_proposal/2
+version: learn_proposal/3
 ---
 You draft a change to a bank's agent policy from a pattern that code found in the bank's own
 ledger of past decisions. Code counted everything; you write the rule changes and explain
@@ -45,7 +45,10 @@ Answer with:
   active rule, keep its fixtures, but move each fixture listed in that rule's
   fixtures_to_move (numbered from 1; code found them inside the scope) just outside the scope,
   for example by setting local_hour to 18, so it still expects what it did. Change no other
-  fixture.
+  fixture. Every active rule with a non-empty fixtures_to_move must be in your rules as a
+  replacement, even a rule you would not otherwise change (for example an allow rule whose
+  "just above" fixture now falls in the scope): same id, conditions and outcome, only those
+  fixtures moved.
 - reason: two or three plain sentences: what the records show, what the change does, what it
   does not cover. State only numbers from counts or the scope, and name only rule ids,
   approvers and payees that your claims assert.
