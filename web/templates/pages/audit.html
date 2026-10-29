@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, empty with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Audit</h1>
+    <p class="lede">Ask about the history in plain words. The log is verified first, code runs the search, and each claim in the answer is checked against the signed records. A claim that does not hold is shown as rejected, with the reason.</p>
+  </div>
+</header>
+
+{% if available %}
+<section class="section">
+  <form class="panel" method="post" action="/audit/ask" hx-post="/audit/ask" hx-target="#answer" hx-swap="innerHTML">
+    {{ csrf() }}
+    <div class="field">
+      <label for="question">Question</label>
+      <input id="question" name="question" type="text" maxlength="{{ max_chars }}" required autocomplete="off" value="{{ example }}">
+      <span class="hint">For example, payments over an amount, approved or rejected, by an approver, outside business hours, this week.</span>
+    </div>
+    {% if demo_mode %}
+    <label class="check spaced"><input type="checkbox" name="inject_fault" value="1"> Change one of the model's facts before checking, to show it rejected</label>
+    {% endif %}
+    <div class="form-row">
+      <button class="btn" type="submit">Ask</button>
+      <span class="htmx-indicator small muted">Verifying the log and checking each claim…</span>
+    </div>
+  </form>
+  <div id="answer" aria-live="polite"></div>
+</section>
+{% else %}
+  {{ empty("Audits are not available", "Set MODEL_PROFILE to mock or cloud and restart the console.") }}
+{% endif %}
+
+{% if earlier %}
+<section class="section" aria-labelledby="earlier-heading">
+  <div class="section-head"><h2 id="earlier-heading">Earlier audits</h2><p>Each one is itself a ledger record</p></div>
+  <ul class="items">
+    {% for q in earlier %}
+    <li class="item">
+      <p class="item-title">{{ q.body.question }}</p>
+      <p class="item-body">{{ q.body.answer }}</p>
+      <p class="item-meta">{{ when(q.ts) }}, {{ q.body.model }}, {{ rid(q.record_id) }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

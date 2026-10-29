@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Problem{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>{{ "Not found" if error.status == 404 else "That did not work" }}</h1>
+    <p class="lede">{{ error.message }}</p>
+  </div>
+</header>
+<div class="notice notice--deny">
+  <strong>Code {{ error.code }}</strong>
+  <span>{% if error.status == 503 %}Start the service and reload this page.{% elif error.status == 403 %}Switch to a person with the right role in the menu, then try again.{% else %}Go back and try again, or return to the <a href="/">overview</a>.{% endif %}</span>
+</div>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% from "macros.html" import badge, rid, empty, csrf with context %}
+{% if queue %}
+<ul class="items">
+  {% for e in queue %}
+  <li class="item" id="esc-{{ e.id }}">
+    <div class="item-head">
+      <p class="item-title">{{ e.agent }} wants to run {{ e.tool }}</p>
+      {{ badge("escalate", "Held") }}
+    </div>
+    <p class="item-meta">Opened {{ when(e.opened_at) }}, expires {{ when(e.expires_at) }}. Needs {{ e.approver_roles | join(", ") | replace("-", " ") }}. Decision {{ rid(e.decision_record_id) }}</p>
+    <div class="item-body">
+      {% if e.brief %}
+        <p><strong>{{ e.brief.headline }}</strong></p>
+        <ul class="points">
+          {% for point in e.brief.unusual %}
+          <li>{{ point.text }} {% for r in point.record_ids %}{{ rid(r) }} {% endfor %}</li>
+          {% endfor %}
+        </ul>
+        {% if e.brief.approver_checks %}
+        <p class="small muted">Before you decide: {{ e.brief.approver_checks | join(" ") }}</p>
+        {% endif %}
+        <p class="small muted">Brief by {{ e.brief.model }}. It points to records; it never recommends a verdict.</p>
+      {% else %}
+        <p class="muted">No brief yet. Decide from the decision record, or wait a few seconds.</p>
+      {% endif %}
+    </div>
+    <form class="item-actions" method="post" action="/approvals/{{ e.id }}/verdict"
+          hx-post="/approvals/{{ e.id }}/verdict" hx-target="#flash" hx-swap="innerHTML">
+      {{ csrf() }}
+      <button class="btn btn--allow" type="submit" name="verdict" value="approve">Approve</button>
+      <button class="btn btn--deny" type="submit" name="verdict" value="reject">Reject</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+  {{ empty("Nothing is waiting", "When Gate holds a request, it appears here within a few seconds. Try a payment over $5,000 on the Agent page.") }}
+{% endif %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% from "macros.html" import seal_mark, badge, rid with context %}
+{% block title %}Record {{ record.record_id[:8] }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="small muted"><a href="/ledger">Ledger</a> / record {{ record.seq }}</p>
+    <h1>{{ record.type | type_label }}: {{ record | summary }}</h1>
+  </div>
+  <div class="page-actions">{{ badge(record | outcome) }}</div>
+</header>
+
+<section class="section split">
+  <div class="panel">
+    {% if found.problem is none %}
+    <div class="seal seal--proven seal--small" role="status">
+      {{ seal_mark("proven") }}
+      <div>
+        <p class="seal-title">This record is proven</p>
+        <p class="seal-detail">Its producer's signature verifies, and its inclusion proof reaches the root of checkpoint {{ found.proof.tree_size }}{% if found.proof.final %}, which the witness quorum cosigned{% endif %}.</p>
+      </div>
+    </div>
+    {% else %}
+    <div class="seal seal--{{ 'pending' if found.proof is none else 'broken' }} seal--small" role="status">
+      {{ seal_mark('pending' if found.proof is none else 'broken') }}
+      <div>
+        <p class="seal-title">{{ "Not yet proven" if found.proof is none else "This record does not verify" }}</p>
+        <p class="seal-detail">{{ found.problem }}</p>
+      </div>
+    </div>
+    {% endif %}
+    <h2 class="spaced">Recorded body</h2>
+    <pre><code>{{ pretty }}</code></pre>
+  </div>
+  <div class="panel">
+    <h2>Signed facts</h2>
+    <dl class="facts">
+      <dt>Record id</dt><dd><span class="rid">{{ record.record_id }}</span></dd>
+      <dt>Sequence</dt><dd>{{ record.seq }} in {{ record.stream }}</dd>
+      <dt>Written</dt><dd>{{ when(record.ts) }} ({{ zone }})</dd>
+      <dt>Received</dt><dd>{{ when(found.receipt.received_at) }}</dd>
+      <dt>Producer</dt><dd>{{ record.producer.id }}</dd>
+      <dt>Producer key</dt><dd><span class="rid" title="{{ record.producer.key_id }}">{{ record.producer.key_id[:22] }}…</span></dd>
+      <dt>Chain hash</dt><dd><span class="rid" title="{{ found.receipt.chain_hash }}">{{ found.receipt.chain_hash[:16] }}…</span></dd>
+      <dt>Leaf hash</dt><dd><span class="rid" title="{{ found.receipt.leaf_hash }}">{{ found.receipt.leaf_hash[:16] }}…</span></dd>
+      {% if found.proof %}
+      <dt>Leaf</dt><dd>{{ found.proof.leaf_index }} of {{ found.proof.tree_size }}</dd>
+      <dt>Proof</dt><dd>{{ found.proof.hashes | length }} hashes</dd>
+      {% endif %}
+      {% for key in ("decision_record_id", "verdict_record_id", "brief_record_id", "draft_record_id", "proposal_record_id") %}
+        {% if record.body.get(key) %}<dt>{{ key | replace("_record_id", "") | replace("_", " ") | capitalize }}</dt><dd>{{ rid(record.body[key]) }}</dd>{% endif %}
+      {% endfor %}
+    </dl>
+  </div>
+</section>
+{% endblock %}

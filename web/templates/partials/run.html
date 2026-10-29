@@ -1,0 +1,35 @@
+{% from "macros.html" import badge, rid with context %}
+{% set labels = {"ok": "Ran", "held": "Held by Gate", "denied": "Denied", "error": "Tool failed", "skipped": "Not repeated", "running": "Asking Gate"} %}
+<div class="panel"{% if not run.finished %} hx-get="/agent/runs/{{ run.id }}" hx-trigger="every 1s" hx-swap="outerHTML"{% endif %}>
+  <div class="item-head">
+    <h2>{{ run.task }}</h2>
+    {% if not run.finished %}{{ badge("escalate", "Working") }}{% elif run.stopped or run.error %}{{ badge("deny", "Stopped") }}{% else %}{{ badge("allow", "Done") }}{% endif %}
+  </div>
+  {% if run.events %}
+  <ol class="steps spaced">
+    {% for e in run.events %}
+    <li class="step step--{{ 'held' if e.state in ('held', 'running') else e.state }}">
+      <p><strong>{{ labels.get(e.state, e.state) }}</strong>{% if e.decision %} {{ badge(e.decision) }}{% endif %}</p>
+      <p class="step-call">{{ e.tool }} {{ e.arguments | tojson }}</p>
+      {% if e.note %}<p class="step-why">{{ e.note }}</p>{% endif %}
+      {% if e.state == "held" %}
+      <p class="notice notice--escalate small">Waiting for a payments supervisor. <a href="/approvals">Open Approvals</a> as j.ortiz or m.lee to decide.</p>
+      {% endif %}
+      <p class="small muted">
+        {% if e.decision_record_id %}Decision {{ rid(e.decision_record_id) }}{% endif %}
+        {% if e.verdict_record_id %}, approved in {{ rid(e.verdict_record_id) }}{% endif %}
+        {% if e.code %}, code {{ e.code }}{% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% elif not run.finished %}
+  <p class="muted spaced">The agent is planning its first step…</p>
+  {% endif %}
+  {% if run.reply %}
+  <div class="notice notice--{{ 'deny' if run.stopped else 'allow' }}"><strong>Agent's reply</strong><span>{{ run.reply }}</span></div>
+  {% endif %}
+  {% if run.error %}
+  <div class="notice notice--deny"><strong>The run ended early</strong><span>Code {{ run.error }}. Nothing more was sent to Gate.</span></div>
+  {% endif %}
+</div>

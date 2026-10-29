@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge, role_note with context %}
+{% block title %}Proposal{% endblock %}
+{% block content %}
+{% set needed = body.approvals_needed %}
+{% set have = approvals | length %}
+<header class="page-head">
+  <div>
+    <p class="small muted"><a href="/learn">Learner</a> / proposal {{ rid(record.record_id) }}</p>
+    <h1>{{ body.title }}</h1>
+    <p class="lede">{{ body.pattern.statement }}</p>
+  </div>
+  <div class="page-actions">
+    {{ badge("escalate" if body.direction == "loosen" else "deny", body.direction | capitalize) }}
+    {% if body.state == "review" and have >= needed %}{{ badge("allow", "Approved") }}{% else %}{{ badge(body.state, {"review": "In review", "rejected": "Rejected", "blocked": "Blocked"}[body.state]) }}{% endif %}
+  </div>
+</header>
+
+{% if body.reasons %}
+<div class="notice notice--deny">
+  <strong>{{ "The model's account does not hold" if body.state == "rejected" else "Blocked before review" }}</strong>
+  <ul class="points">{% for r in body.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+</div>
+{% endif %}
+
+<section class="section">
+  <div class="section-head"><h2>What the records show</h2><p>Counted by SQL; the model restated them</p></div>
+  <dl class="figures">
+    <div class="figure"><dt>Decisions counted</dt><dd>{{ body.pattern.counts.decisions }}</dd></div>
+    <div class="figure figure--allow"><dt>Approved</dt><dd>{{ body.pattern.counts.approved }}</dd></div>
+    <div class="figure figure--deny"><dt>Rejected</dt><dd>{{ body.pattern.counts.rejected }}</dd></div>
+    <div class="figure figure--escalate"><dt>Set aside as rubber stamps</dt><dd>{{ body.pattern.counts.fast_dropped + body.pattern.counts.stamped_dropped }}</dd></div>
+  </dl>
+  <div class="table-wrap spaced">
+    <table>
+      <caption class="visually-hidden">Counts the model restated, beside the SQL counts</caption>
+      <thead><tr><th scope="col">Count</th><th scope="col" class="num">SQL</th><th scope="col" class="num">Model said</th><th scope="col">Match</th></tr></thead>
+      <tbody>
+      {% for name, value in body.stated_counts.items() %}
+        <tr><td>{{ name | replace("_", " ") }}</td><td class="num">{{ body.pattern.counts[name] }}</td><td class="num">{{ value }}</td>
+            <td>{% if body.pattern.counts[name] == value %}{{ badge("allow", "Matches") }}{% else %}{{ badge("deny", "Does not match") }}{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="section split">
+  <div class="panel">
+    <h2>The model's reason and its claims</h2>
+    <p>{{ body.reason }}</p>
+    <div class="spaced">
+    {% for c in body.claims %}
+      <div class="claim claim--{{ 'held' if c.accepted else 'rejected' }}">
+        <span class="claim-mark" aria-hidden="true">{{ "✓" if c.accepted else "✕" }}</span>
+        <div>
+          <span class="visually-hidden">{{ "Proven:" if c.accepted else "Rejected:" }}</span>{{ c.text }}
+          <span class="small">{% for r in c.record_ids %}{{ rid(r) }} {% endfor %}</span>
+          {% for why in c.reasons %}<p class="claim-why">{{ why }}</p>{% endfor %}
+        </div>
+      </div>
+    {% endfor %}
+    </div>
+    <p class="small muted spaced">Drafted by {{ body.model }} ({{ body.prompt_version }}){% if body.injected %}, with a planted fault in {{ body.injected }}{% endif %}.</p>
+  </div>
+  <div class="panel">
+    <h2>Replaying the past week under it</h2>
+    {% if body.replay %}
+    <p class="muted">{{ body.replay.replayed }} past decisions decided again by Cedar, under the active rules and under these.</p>
+    <dl class="facts spaced">
+      {% for label, value in replay %}<dt>{{ label | capitalize }}</dt><dd><strong>{{ value }}</strong></dd>{% endfor %}
+    </dl>
+    {% else %}
+    <p class="muted">Not replayed: the rules did not load.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section split">
+  <div class="panel">
+    <h2>Rule changes</h2>
+    {% for rule in rules %}
+    {% set when_text, unless_text = conditions(rule) %}
+    <div class="rule">
+      <div class="rule-head"><span class="rule-id">{{ rule.id }}</span>{{ badge(rule.then) }}<span class="small muted">source: {{ rule.source.doc }}, clause {{ rule.source.clause }}</span></div>
+      <p class="conds small">When <span class="cond-list">{% for c in when_text %}<span>{{ c }}</span>{% endfor %}</span>{% if unless_text %}, unless <span class="cond-list">{% for c in unless_text %}<span>{{ c }}</span>{% endfor %}</span>{% endif %}.</p>
+    </div>
+    {% else %}
+    <p class="muted">No valid rules.</p>
+    {% endfor %}
+  </div>
+  <div class="panel">
+    <h2>Review</h2>
+    <p class="muted">{{ "A loosening needs two different compliance officers, and never the agent's owner." if body.direction == "loosen" else "A tightening needs one compliance officer." }} The last approval creates a policy draft, approved on the Policy page like any other.</p>
+    <ul class="points spaced">
+      {% for a in approvals %}<li>Approved by {{ a.body.approver }} ({{ a.body.approval }} of {{ a.body.approvals_needed }}) {{ rid(a.record_id) }}</li>{% else %}<li class="muted">No approvals yet.</li>{% endfor %}
+    </ul>
+    {% if body.state == "review" and have < needed %}
+    {% if "compliance-officer" not in session.persona.roles %}{{ role_note("compliance-officer") }}{% endif %}
+    <form class="form-row" method="post" action="/learn/proposals/{{ record.record_id }}/approve"
+          hx-post="/learn/proposals/{{ record.record_id }}/approve" hx-target="#flash">
+      {{ csrf() }}
+      <button class="btn btn--allow" type="submit">Approve as {{ session.persona.name }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

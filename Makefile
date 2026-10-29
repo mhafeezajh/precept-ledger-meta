@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-agent demo-audit demo-policy demo-learn policy-pdf seed-week demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web demo-gate demo-agent demo-audit demo-policy demo-learn policy-pdf seed-week demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -59,6 +59,11 @@ witnesses:
 # Gate on 127.0.0.1:8070, in front of the ledger at GATE_LEDGER_URL (make serve).
 gate: db-schema
 	uv run pl-gate
+
+# The console (pl-web) on 127.0.0.1:8090, in front of make serve + make gate. DEMO_MODE=true
+# adds the Attacks page; ADMIN_DATABASE_URL enables its tamper button.
+web:
+	uv run pl-web
 
 # Demo beat 2 against make serve + make gate: a $48,000 payment held until j.ortiz approves.
 demo-gate:

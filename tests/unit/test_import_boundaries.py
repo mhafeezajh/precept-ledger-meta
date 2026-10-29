@@ -140,3 +140,17 @@ def test_the_learner_counts_and_replays_without_a_model(path: Path) -> None:
         assert not {top(n) for n in names} & {"assist", "litellm", "openai"}
     if path.name != "draft.py":
         assert "assist.llm" not in names
+
+
+# The console is a client of Gate and the ledger: no store, no ledger service, no Gate core
+# to sign with, and a database connection only in the demo tamper button (skill §7).
+WEB_FORBIDDEN = {"ledger.store", "ledger.service", "ledger.pg_store", "gate.core",
+                 "gate.escalations", "gate.pg_escalations", "litellm", "openai"}  # fmt: skip
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "web").rglob("*.py")), ids=lambda p: p.name)
+def test_the_console_has_no_write_path_but_the_demo_button(path: Path) -> None:
+    names = imports_of(path)
+    assert not {n for n in names if n in WEB_FORBIDDEN or top(n) in WEB_FORBIDDEN}
+    if path.name != "demo.py" or path.parent.name != "web":
+        assert "psycopg" not in {top(n) for n in names}

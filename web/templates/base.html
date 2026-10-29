@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="htmx-config" content='{"includeIndicatorStyles": false, "allowEval": false, "allowScriptTags": false, "selfRequestsOnly": true, "responseHandling": [{"code": "204", "swap": false}, {"code": "[23]..", "swap": true}, {"code": "[45]..", "swap": true, "error": true}]}'>
+  <title>{% block title %}{{ page.title if page else "Console" }}{% endblock %} | Precept Ledger</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/css/app.css?v={{ static_version }}">
+  <script src="/static/js/theme.js?v={{ static_version }}"></script>
+  <script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
+  <script src="/static/js/app.js?v={{ static_version }}" defer></script>
+</head>
+<body hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'>
+{% from "macros.html" import csrf with context %}
+<a class="skip" href="#main">Skip to content</a>
+<div class="shell">
+  <aside class="rail">
+    <a class="brand" href="/" aria-label="Precept Ledger, Harbor Federal: overview">
+      <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" focusable="false">
+        <rect x="1" y="1" width="32" height="32" rx="7" fill="currentColor"/>
+        <path class="brand-lines" d="M8 11h18M8 17h12M8 23h8" stroke-width="2.4" stroke-linecap="round"/>
+        <path class="brand-lines" d="M20 23l2.6 2.6L27 20" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <span><span class="brand-name">Precept Ledger</span><span class="brand-bank">Harbor Federal</span></span>
+    </a>
+    <nav aria-label="Main">
+      {% for group, pages in nav %}
+      <div class="nav-group">
+        <p class="nav-group-name" id="nav-{{ group | lower }}">{{ group }}</p>
+        <ul class="nav-list" aria-labelledby="nav-{{ group | lower }}">
+          {% for p in pages %}
+          <li><a href="{{ p.path }}" title="{{ p.hint }}"{% if page and page.path == p.path %} aria-current="page"{% endif %}>{{ p.title }}</a></li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endfor %}
+    </nav>
+    <div class="rail-foot">
+      <form class="persona" method="post" action="/session/persona">
+        {{ csrf() }}
+        <input type="hidden" name="back" value="{{ request.url.path }}">
+        <label for="persona">Acting as</label>
+        <div class="persona-row">
+          <select id="persona" name="persona" data-autosubmit>
+            {% for name, p in personas.items() %}
+            <option value="{{ name }}"{% if name == session.persona.name %} selected{% endif %}>{{ p.label }}</option>
+            {% endfor %}
+          </select>
+          <button class="btn btn--quiet btn--small" type="submit" data-no-js>Switch</button>
+        </div>
+      </form>
+      <button class="btn btn--quiet btn--small theme-toggle" type="button" data-theme-toggle hidden data-js-only>Theme: follow system</button>
+    </div>
+  </aside>
+  <main id="main" class="content" tabindex="-1">
+    <div id="flash" aria-live="polite"></div>
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

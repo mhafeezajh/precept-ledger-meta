@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge, empty, role_note with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Policy</h1>
+    <p class="lede">The rules Gate enforces come from the bank's written policy. A model drafts them, code checks every number against its clause, and a compliance officer approves.</p>
+  </div>
+</header>
+
+{% if not officer %}{{ role_note("compliance-officer") }}{% endif %}
+
+<section class="section split">
+  <div class="panel">
+    <h2>Draft rules from a policy PDF</h2>
+    <form method="post" action="/policy/drafts" enctype="multipart/form-data"
+          hx-post="/policy/drafts" hx-encoding="multipart/form-data">
+      {{ csrf() }}
+      <div class="field">
+        <label for="pdf">Policy document</label>
+        <input id="pdf" name="pdf" type="file" accept="application/pdf">
+        <span class="hint">Up to 5 MB. The drafter quotes clauses; code finds each quote and its page.</span>
+      </div>
+      <div class="field">
+        <label class="check"><input type="checkbox" name="use_demo" value="1"> Use the demo policy instead ({{ demo_pdf }})</label>
+        {% if demo_mode %}
+        <label class="check"><input type="checkbox" name="inject_fault" value="1"> Plant a wrong threshold ($50,000 for $5,000) to show it caught</label>
+        {% endif %}
+      </div>
+      <div class="form-row">
+        <button class="btn" type="submit">Draft the rules</button>
+        <span class="htmx-indicator small muted">The drafter is reading the clauses…</span>
+      </div>
+    </form>
+  </div>
+  <div class="panel">
+    <h2>In force now</h2>
+    {% if active %}
+    <dl class="facts">
+      <dt>Rules</dt><dd>{{ active.rules | length }}: {{ active.rules | join(", ") }}</dd>
+      <dt>Approved in</dt><dd>{% if active.policy_record %}{{ rid(active.policy_record) }}{% else %}Not yet: Gate runs on its policy file{% endif %}</dd>
+      <dt>Set digest</dt><dd><span class="rid">{{ active.policy_set[:19] }}…</span></dd>
+    </dl>
+    {% else %}
+    <p class="muted">Only a compliance officer can see the active set.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section" aria-labelledby="drafts-heading">
+  <div class="section-head"><h2 id="drafts-heading">Drafts and approvals</h2><p>Newest first, from the ledger</p></div>
+  {% if drafts %}
+  <ul class="items">
+    {% for r in drafts %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="{% if r.type == 'policy.draft' %}/policy/drafts/{{ r.record_id }}{% else %}/ledger/records/{{ r.record_id }}{% endif %}">{{ r | summary }}</a>
+        {% if r.type == "policy.approve" %}{{ badge("allow", "Approved") }}{% elif r.body.findings %}{{ badge("deny", r.body.findings | length ~ " findings") }}{% else %}{{ badge("allow", "Clean") }}{% endif %}
+      </div>
+      <p class="item-meta">{{ r.type | type_label }}, {{ when(r.ts) }}, {{ rid(r.record_id) }}{% if r.body.revises %}, revises {{ rid(r.body.revises) }}{% endif %}{% if r.body.proposal_record_id %}, from learner proposal {{ rid(r.body.proposal_record_id) }}{% endif %}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty("No drafts yet", "Draft the rules from the demo policy to start.") }}
+  {% endif %}
+</section>
+{% endblock %}

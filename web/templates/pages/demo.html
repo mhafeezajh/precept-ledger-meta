@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, seal, rid, badge with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Attacks</h1>
+    <p class="lede">Two people with real power try to change the record. Both are caught by checks anyone can run offline. Shown only in demo mode.</p>
+  </div>
+</header>
+
+<section class="section">
+  <div class="panel">{{ seal(proof) }}</div>
+</section>
+
+<section class="section split">
+  <div class="panel">
+    <h2>A database administrator edits a payment</h2>
+    <p class="muted">The admin switches the database's protections off for one session and multiplies a recorded amount by ten. Nothing else changes, so a hash chain alone would still look whole to a casual reader.</p>
+    {% if admin %}
+    <form class="spaced" method="post" action="/demo/tamper" hx-post="/demo/tamper" hx-target="#tamper-result">
+      {{ csrf() }}
+      <div class="field">
+        <label for="seq">Payment to edit</label>
+        <select id="seq" name="seq">
+          {% for r in payments %}
+          <option value="{{ r.seq }}">Record {{ r.seq }}: {{ r | summary }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="confirm">Type {{ confirm }} to confirm</label>
+        <input id="confirm" name="confirm" type="text" autocomplete="off" required>
+        <span class="hint">This really edits the live database. The stream stays broken until the clean reset in the runbook.</span>
+      </div>
+      <div class="form-row"><button class="btn btn--danger" type="submit">Edit the record</button></div>
+    </form>
+    {% else %}
+    <p class="notice notice--escalate small spaced">Set ADMIN_DATABASE_URL (the superuser connection) to use this.</p>
+    {% endif %}
+    <div id="tamper-result" aria-live="polite"></div>
+  </div>
+  <div class="panel">
+    <h2>The ledger operator rewrites history</h2>
+    <p class="muted">The operator holds the log's signing key, deletes a payment, re-signs everything and asks the witnesses to cosign. Runs in a sandbox with throwaway keys; the live ledger is not touched.</p>
+    <form class="form-row" method="post" action="/demo/rogue" hx-post="/demo/rogue" hx-target="#rogue-result">
+      {{ csrf() }}
+      <button class="btn" type="submit">Run the scenario</button>
+      <span class="htmx-indicator small muted">Building two ledgers and asking the witnesses…</span>
+    </form>
+    <div id="rogue-result" aria-live="polite"></div>
+  </div>
+</section>
+{% endblock %}

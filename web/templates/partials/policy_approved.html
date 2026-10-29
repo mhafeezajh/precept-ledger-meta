@@ -1,0 +1,5 @@
+{% from "macros.html" import rid with context %}
+<div class="notice notice--allow" role="status">
+  <strong>Approved by {{ approval.body.approver }}. Gate now enforces these {{ approval.body.rules | length }} rules.</strong>
+  <span>Approval record {{ rid(approval.record_id) }}. <a href="/policy">Back to Policy</a></span>
+</div>

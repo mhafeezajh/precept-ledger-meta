@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, empty with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Payments agent</h1>
+    <p class="lede">Give payments-ops a task in plain words. Each tool call it makes goes to Gate first; a held payment waits for a supervisor on the Approvals page.</p>
+  </div>
+</header>
+
+{% if available %}
+<section class="section split">
+  <form class="panel" method="post" action="/agent/runs" hx-post="/agent/runs" hx-target="#run" hx-swap="innerHTML">
+    {{ csrf() }}
+    <div class="field">
+      <label for="task">Task</label>
+      <input id="task" name="task" type="text" maxlength="{{ max_chars }}" required autocomplete="off"
+             placeholder="Pay Northwind Supply $48,000.00 for invoice INV-4471.">
+      <span class="hint">Name a vendor and an amount. The agent looks the vendor up, pays once and tells accounts payable.</span>
+    </div>
+    <div class="form-row">
+      <button class="btn" type="submit">Start the task</button>
+      <span class="htmx-indicator small muted">Starting…</span>
+    </div>
+    <div class="form-row" data-js-only hidden>
+      <span class="small muted">Examples:</span>
+      {% for example in examples %}
+      <button class="btn btn--quiet btn--small" type="button" data-fill="task" data-value="{{ example }}">{{ example.split(" for ")[0] }}</button>
+      {% endfor %}
+    </div>
+  </form>
+  <div class="panel">
+    <h2>What Gate does</h2>
+    <ul class="points">
+      <li>A known payee up to $5,000 runs at once.</li>
+      <li>A new payee, or more than $5,000, waits for a payments supervisor.</li>
+      <li>More than $250,000, or a foreign currency, is denied outright.</li>
+    </ul>
+    <p class="small muted spaced">These are the active rules, approved on the Policy page.</p>
+  </div>
+</section>
+
+<section class="section" aria-labelledby="run-heading">
+  <h2 id="run-heading" class="visually-hidden">The current run</h2>
+  <div id="run" aria-live="polite"></div>
+</section>
+
+{% if recent %}
+<section class="section" aria-labelledby="recent-heading">
+  <div class="section-head"><h2 id="recent-heading">Earlier runs</h2><p>Kept until the console restarts</p></div>
+  <ul class="items">
+    {% for r in recent %}
+    <li class="item"><div class="item-head"><a class="item-title" href="/agent/runs/{{ r.id }}">{{ r.task }}</a><span class="item-meta">{{ "Finished" if r.finished else "Running" }}, {{ r.events | length }} steps</span></div></li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% else %}
+  {{ empty("The agent is not available", "Set MODEL_PROFILE to mock or cloud and restart the console.") }}
+{% endif %}
+{% endblock %}

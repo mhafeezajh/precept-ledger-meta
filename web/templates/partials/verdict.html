@@ -1,0 +1,6 @@
+{% from "macros.html" import rid with context %}
+{% set approved = record.body.verdict == "approve" %}
+<div class="notice notice--{{ 'allow' if approved else 'deny' }}" role="status">
+  <strong>{{ "Approved" if approved else "Rejected" }} by {{ record.body.approver }}</strong>
+  <span>{{ record.body.agent }}'s {{ record.body.tool }} {{ "can run now" if approved else "will not run" }}. The verdict is record {{ receipt.seq }}, {{ rid(record.record_id) }}.</span>
+</div>

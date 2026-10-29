@@ -1,0 +1,10 @@
+{% from "macros.html" import seal with context %}
+<div class="stack spaced" role="status">
+  {% if changed %}
+  <p class="notice notice--escalate small"><strong>Record {{ seq }} was edited in the database.</strong> The console verified the export again:</p>
+  {% else %}
+  <p class="notice notice--escalate small">Record {{ seq }} has no amount to edit; nothing changed.</p>
+  {% endif %}
+  {{ seal(proof, small=True) }}
+  <p class="small"><a href="/ledger">See it on the Ledger page</a></p>
+</div>

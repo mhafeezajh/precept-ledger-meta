@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "macros.html" import seal, badge, rid, empty, records_table with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>What the agents did, and the proof</h1>
+    <p class="lede">Every tool call by an agent goes through Gate, is decided by the bank's policy and is written to a ledger that anyone can check offline.</p>
+  </div>
+</header>
+
+<section class="section split" aria-labelledby="proof-heading">
+  <div class="panel">
+    <h2 id="proof-heading" class="visually-hidden">The ledger's proof</h2>
+    {% if proof %}
+      {{ seal(proof) }}
+      <p class="small muted spaced">Checked just now by this console, with the same checks as <code>pl-verify</code>. <a href="/ledger">See every record</a>.</p>
+    {% else %}
+      <p class="notice notice--deny"><strong>The ledger cannot be checked.</strong> {{ ledger_error }}</p>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h2>Services</h2>
+    <dl class="facts">
+      <dt>Gate</dt>
+      <dd>{% if gate %}{{ badge("allow", "Running") }} {{ gate.rules }} rules{% if gate.policy_record %}, approved in {{ rid(gate.policy_record) }}{% else %}, from the policy file{% endif %}{% else %}{{ badge("deny", "Unreachable") }} <span class="small muted">{{ gate_error }}</span>{% endif %}</dd>
+      <dt>Ledger</dt>
+      <dd>{% if ledger %}{{ badge("allow", "Running") }} checkpoints {{ ledger.checkpoint_loop }}{% else %}{{ badge("deny", "Unreachable") }} <span class="small muted">{{ ledger_error }}</span>{% endif %}</dd>
+      <dt>Held for approval</dt>
+      <dd>{% if gate %}<a href="/approvals">{{ gate.open_escalations }} waiting</a>{% else %}unknown{% endif %}</dd>
+      <dt>Approval briefs</dt>
+      <dd>{{ "Written by the model" if gate and gate.briefs else "Off" }}</dd>
+    </dl>
+  </div>
+</section>
+
+{% if state %}
+<section class="section" aria-labelledby="totals-heading">
+  <div class="section-head"><h2 id="totals-heading">Gate's decisions</h2><p>All {{ state.records | length }} records in the stream</p></div>
+  <dl class="figures">
+    <div class="figure figure--allow"><dt>Allowed</dt><dd>{{ outcomes.get("allow", 0) }}</dd></div>
+    <div class="figure figure--escalate"><dt>Held for a person</dt><dd>{{ outcomes.get("escalate", 0) }}</dd></div>
+    <div class="figure figure--deny"><dt>Denied</dt><dd>{{ outcomes.get("deny", 0) }}</dd></div>
+  </dl>
+</section>
+
+<section class="section" aria-labelledby="recent-heading">
+  <div class="section-head"><h2 id="recent-heading">Latest decisions</h2><p><a href="/ledger?kind=gate.decision">All decisions</a></p></div>
+  {% if recent %}
+    {{ records_table(recent, when) }}
+  {% else %}
+    {% call empty("No decisions yet", "Give the payments agent a task, or seed a week of history with make seed-week.") %}
+      <p class="form-row"><a class="btn" href="/agent">Give the agent a task</a></p>
+    {% endcall %}
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

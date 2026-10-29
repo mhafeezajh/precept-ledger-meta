@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge, empty, role_note with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Learner</h1>
+    <p class="lede">The ledger's own history suggests rule changes. Counts come from SQL over the verified log, and every proposal is replayed against the past week. People decide; the learner changes nothing itself.</p>
+  </div>
+</header>
+
+{% if not officer %}{{ role_note("compliance-officer") }}{% endif %}
+
+<section class="section">
+  <form class="panel" method="post" action="/learn/run" hx-post="/learn/run" hx-target="#learn-run" hx-swap="innerHTML">
+    {{ csrf() }}
+    <h2>Look for patterns in the last 7 days</h2>
+    <p class="muted">Approvals made in under 5 seconds, or by someone who approves everything, are set aside first. A pattern needs at least 20 decisions.</p>
+    {% if demo_mode %}
+    <label class="check spaced"><input type="checkbox" name="inject_fault" value="1"> Have the model overstate a count, to show it caught</label>
+    {% endif %}
+    <div class="form-row">
+      <button class="btn" type="submit">Run the learner</button>
+      <span class="htmx-indicator small muted">Counting, drafting and replaying…</span>
+    </div>
+  </form>
+  <div id="learn-run" aria-live="polite"></div>
+</section>
+
+<section class="section" aria-labelledby="proposals-heading">
+  <div class="section-head"><h2 id="proposals-heading">Proposals</h2><p>Newest first, from the ledger</p></div>
+  {% if proposals %}
+  <ul class="items">
+    {% for p in proposals %}
+    {% set needed = p.body.approvals_needed %}
+    {% set have = approvals.get(p.record_id, 0) %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/learn/proposals/{{ p.record_id }}">{{ p.body.title }}</a>
+        {% if p.body.state == "review" and have >= needed %}{{ badge("allow", "Approved") }}{% else %}{{ badge(p.body.state, {"review": "In review", "rejected": "Rejected", "blocked": "Blocked"}[p.body.state]) }}{% endif %}
+      </div>
+      <p class="item-meta">{{ p.body.direction | capitalize }}, {{ p.body.pattern.statement }}</p>
+      <p class="item-meta">{{ p.body.pattern.counts.decisions }} decisions counted. {% if p.body.state == "review" %}{{ have }} of {{ needed }} approvals.{% else %}{{ p.body.reasons[0] }}{% endif %} {{ rid(p.record_id) }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty("No proposals yet", "Run the learner over a week of decisions. To have a week, run make seed-week.") }}
+  {% endif %}
+</section>
+{% endblock %}

@@ -1140,6 +1140,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "jinja2" },
     { name = "langgraph" },
     { name = "litellm" },
     { name = "psycopg", extra = ["binary"] },
@@ -1147,6 +1148,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf" },
+    { name = "python-multipart" },
     { name = "pyyaml" },
     { name = "rfc8785" },
     { name = "uvicorn" },
@@ -1170,6 +1172,7 @@ requires-dist = [
     { name = "cryptography", specifier = "==50.0.2" },
     { name = "fastapi", specifier = "==0.162.0" },
     { name = "httpx", specifier = "==0.28.1" },
+    { name = "jinja2", specifier = "==3.1.6" },
     { name = "langgraph", specifier = "==1.2.18" },
     { name = "litellm", specifier = "==1.105.0" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
@@ -1177,6 +1180,7 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.14.1" },
     { name = "pydantic-settings", specifier = "==2.16.1" },
     { name = "pypdf", specifier = "==6.20.1" },
+    { name = "python-multipart", specifier = "==0.0.20" },
     { name = "pyyaml", specifier = "==6.0.3" },
     { name = "rfc8785", specifier = "==0.1.4" },
     { name = "uvicorn", specifier = "==0.54.0" },
@@ -1416,6 +1420,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/74/26/2fbeedb218a787a5eea551c7532cac4e009f83d689dd2faa0d0353473f86/python_dotenv-1.2.4.tar.gz", hash = "sha256:f0d53e69935a851c0dcc78f3ab7aaccd8cabef0b92382b576b824212902873c0", size = 60824, upload-time = "2026-10-01T05:36:10Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/60/d1/38f3a3405989a89ac18390803e70c6ad7c7760da4f9b83cbeca0c44a0c72/python_dotenv-1.2.4-py3-none-any.whl", hash = "sha256:42269a8a5b3fd54ffa6f3d84b18abed50064717576b4ecf03dc4a55d8aa04fdc", size = 23266, upload-time = "2026-10-01T05:36:08.633Z" },
+]
+
+[[package]]
+name = "python-multipart"
+version = "0.0.20"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/87/f44d7c9f274c7ee665a29b885ec97089ec5dc034c7f3fafa03da9e39a09e/python_multipart-0.0.20.tar.gz", hash = "sha256:8dd0cab45b8e23064ae09147625994d090fa46f5b0d1e13af944c331a7fa9d13", size = 37158, upload-time = "2024-12-16T19:45:46.972Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/45/58/38b5afbc1a800eeea951b9285d3912613f2603bdf897a4ab0f4bd7f405fc/python_multipart-0.0.20-py3-none-any.whl", hash = "sha256:8a62d3a8335e06589fe01f2a3e178cdcc632f3fbe0d492ad9ee0ec35aab1f104", size = 24546, upload-time = "2024-12-16T19:45:44.423Z" },
 ]
 
 [[package]]

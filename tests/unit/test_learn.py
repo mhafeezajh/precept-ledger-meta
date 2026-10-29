@@ -100,6 +100,11 @@ async def approve_seed_rules(gate: Gate, policy: PolicyService) -> str:
 
 @pytest.fixture
 async def week() -> Week:
+    return await seeded_week()
+
+
+async def seeded_week() -> Week:
+    """The demo week, seeded through Gate with the seed rules approved first."""
     clock = SimClock(SINCE - timedelta(hours=1))
     gate, ledger = gate_on(clock)
     policy = PolicyService(gate, None)

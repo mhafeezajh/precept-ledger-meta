@@ -1,0 +1,25 @@
+{% from "macros.html" import badge with context %}
+<div class="panel spaced" role="status">
+  <h2>Run finished</h2>
+  <p class="muted">Counted {{ result.log.size }} records under the final checkpoint{% if result.log.newer %}; {{ result.log.newer }} newer records were not final yet and were left out{% endif %}.</p>
+  {% if result.proposals %}
+  <ul class="items spaced">
+    {% for p in result.proposals %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/learn/proposals/{{ p.record.record_id }}">{{ p.record.body.title }}</a>
+        {{ badge(p.record.body.state, {"review": "In review", "rejected": "Rejected", "blocked": "Blocked"}[p.record.body.state]) }}
+      </div>
+      <p class="item-meta">{{ p.record.body.pattern.statement }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if result.skipped or result.failed %}
+  <h3 class="spaced">No proposal</h3>
+  <ul class="points small">
+    {% for s in result.skipped %}<li>{{ s.key }}: {{ s.reason }}</li>{% endfor %}
+    {% for f in result.failed %}<li>{{ f.key }}: the model's draft failed ({{ f.code }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+</div>

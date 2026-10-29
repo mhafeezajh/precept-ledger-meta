@@ -1,0 +1,10 @@
+{% from "macros.html" import rid with context %}
+<div class="notice notice--allow" role="status">
+  <strong>Approved by {{ approval.body.approver }} ({{ approval.body.approval }} of {{ approval.body.approvals_needed }})</strong>
+  {% if draft %}
+  <span>Review complete. The change is now a policy draft: <a href="/policy/drafts/{{ draft.record.record_id }}">review and approve it on the Policy page</a>. Gate does not enforce it until then.</span>
+  {% else %}
+  <span>One more compliance officer must approve. Switch person in the menu, then reload this page.</span>
+  {% endif %}
+  <span class="small">Approval record {{ rid(approval.record_id) }}</span>
+</div>

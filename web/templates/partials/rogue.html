@@ -1,0 +1,7 @@
+<div class="stack spaced" role="status">
+  <div class="notice notice--{{ 'allow' if run.caught else 'deny' }}">
+    <strong>{{ "Caught: the witnesses refused and pl-verify failed the rewritten log" if run.caught else "The scenario did not end as expected" }}</strong>
+  </div>
+  <pre><code>{% for line in run.lines %}{{ line }}
+{% endfor %}</code></pre>
+</div>

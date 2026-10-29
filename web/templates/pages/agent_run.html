@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Agent run{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="small muted"><a href="/agent">Agent</a> / run</p>
+    <h1>Agent run</h1>
+  </div>
+</header>
+<div aria-live="polite">{% include "partials/run.html" %}</div>
+{% endblock %}

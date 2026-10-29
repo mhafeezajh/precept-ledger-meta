@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% from "macros.html" import seal, records_table, empty with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Ledger</h1>
+    <p class="lede">The stream's export, verified here as an auditor would: every hash link, signature, receipt and checkpoint, and the witnesses' cosignatures.</p>
+  </div>
+  <div class="page-actions">
+    <a class="btn btn--quiet" href="/ledger" hx-boost="false">Verify again</a>
+  </div>
+</header>
+
+<section class="section">
+  <div class="panel">
+    {{ seal(proof) }}
+    {% if findings %}
+    <div class="stack">
+      <h3>What the checks found</h3>
+      <ul class="points">
+        {% for f in findings %}
+        <li><strong>{{ f.check | replace("_", " ") }}</strong>{% if f.seq %} at record {{ f.seq }}{% endif %}: {{ f.detail }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section" aria-labelledby="records-heading">
+  <div class="section-head">
+    <h2 id="records-heading">Records, newest first</h2>
+    <p>{{ total }} shown{% if kind %} of type {{ kind | type_label }}{% endif %}</p>
+  </div>
+  <nav class="filters" aria-label="Filter by record type">
+    <a href="/ledger"{% if not kind %} aria-current="true"{% endif %}>All</a>
+    {% for value, label in kinds.items() %}
+    <a href="/ledger?kind={{ value }}"{% if kind == value %} aria-current="true"{% endif %}>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <div class="section-body">
+  {% if records %}
+    {{ records_table(records, when, broken) }}
+    <nav class="pager" aria-label="Pages">
+      {% if page_number > 1 %}<a class="btn btn--quiet btn--small" href="/ledger?kind={{ kind }}&page={{ page_number - 1 }}">Newer</a>{% endif %}
+      <span class="small muted">Page {{ page_number }}</span>
+      {% if more %}<a class="btn btn--quiet btn--small" href="/ledger?kind={{ kind }}&page={{ page_number + 1 }}">Older</a>{% endif %}
+    </nav>
+  {% else %}
+    {{ empty("No records of this type", "Choose another type, or All.") }}
+  {% endif %}
+  </div>
+</section>
+{% endblock %}

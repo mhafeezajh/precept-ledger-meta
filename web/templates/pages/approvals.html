@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Approvals</h1>
+    <p class="lede">Requests Gate is holding until a person with the right role decides. Your verdict is signed and recorded before the held call can run.</p>
+  </div>
+  <p class="small muted">Deciding as {{ session.persona.label }}</p>
+</header>
+<div id="queue" hx-get="/approvals/queue" hx-trigger="every 4s, queue-changed from:body" hx-swap="innerHTML" aria-live="polite">
+  {% include "partials/queue.html" %}
+</div>
+{% endblock %}

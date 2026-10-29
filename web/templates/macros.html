@@ -1,0 +1,68 @@
+{# Components. Every page builds from these, so a change here changes the whole console. #}
+
+{% macro seal_mark(state) -%}
+<svg class="seal-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+  <circle cx="50" cy="50" r="46" fill="none" stroke="currentColor" stroke-width="2"/>
+  <circle cx="50" cy="50" r="39" fill="none" stroke="currentColor" stroke-width="6" stroke-dasharray="1.6 8.61"/>
+  <circle cx="50" cy="50" r="29" fill="currentColor" fill-opacity="0.12" stroke="currentColor" stroke-width="1.5"/>
+  {% if state == "proven" %}
+  <path d="M37 51 l9 9 l18 -20" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  {% elif state == "broken" %}
+  <path d="M40 40 L60 60 M60 40 L40 60" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round"/>
+  {% else %}
+  <path d="M50 36 V51 L60 57" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  {% endif %}
+</svg>
+{%- endmacro %}
+
+{% macro seal(s, small=False) -%}
+<div class="seal seal--{{ s.state }}{% if small %} seal--small{% endif %}" role="status">
+  {{ seal_mark(s.state) }}
+  <div>
+    <p class="seal-title">{{ s.title }}</p>
+    <p class="seal-detail">{{ s.detail }}</p>
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro badge(value, label=None) -%}
+{%- if value -%}<span class="badge badge--{{ value | tone }}">{{ label or value }}</span>{%- endif -%}
+{%- endmacro %}
+
+{% macro rid(record_id, link=True) -%}
+{%- if record_id -%}
+{%- set short = record_id[:8] ~ "…" ~ record_id[-4:] -%}
+{%- if link -%}<a class="rid" href="/ledger/records/{{ record_id }}" title="{{ record_id }}">{{ short }}</a>
+{%- else -%}<span class="rid" title="{{ record_id }}">{{ short }}</span>{%- endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{% macro empty(title, text) -%}
+<div class="empty"><h3>{{ title }}</h3><p>{{ text }}</p>{{ caller() if caller }}</div>
+{%- endmacro %}
+
+{% macro csrf() -%}<input type="hidden" name="csrf" value="{{ session.csrf }}">{%- endmacro %}
+
+{% macro role_note(role) -%}
+<p class="notice notice--escalate small">You are acting as {{ session.persona.name }}, who does not have the {{ role | replace("-", " ") }} role. Gate will refuse this. Switch person in the menu.</p>
+{%- endmacro %}
+
+{% macro records_table(records, when, broken=None) -%}
+<div class="table-wrap">
+<table>
+  <thead><tr><th scope="col" class="num">Seq</th><th scope="col">When</th><th scope="col">Record</th><th scope="col">What happened</th><th scope="col">Outcome</th><th scope="col">Id</th></tr></thead>
+  <tbody>
+  {% for r in records %}
+    <tr{% if broken and r.seq == broken %} class="is-broken"{% endif %}>
+      <td class="num">{{ r.seq }}</td>
+      <td class="nowrap">{{ when(r.ts) }}</td>
+      <td>{{ r.type | type_label }}</td>
+      <td>{{ r | summary }}</td>
+      <td>{{ badge(r | outcome) }}</td>
+      <td>{{ rid(r.record_id) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{%- endmacro %}

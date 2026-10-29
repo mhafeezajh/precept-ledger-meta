@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge with context %}
+{% block title %}Policy draft{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <p class="small muted"><a href="/policy">Policy</a> / draft {{ rid(draft.record_id) }}</p>
+    <h1>{{ rules | length }} rules from {{ body.doc.name }}</h1>
+    <p class="lede">Written by {{ body.model or body.author }}{% if body.revises %}, revising {{ rid(body.revises) }}{% endif %}{% if body.proposal_record_id %}, from learner proposal {{ rid(body.proposal_record_id) }}{% endif %}.</p>
+  </div>
+  <div class="page-actions">
+    {% if body.findings %}{{ badge("deny", body.findings | length ~ " findings") }}{% else %}{{ badge("allow", "No findings") }}{% endif %}
+  </div>
+</header>
+
+{% if body.findings %}
+<section class="section">
+  <div class="notice notice--deny">
+    <strong>Approval is refused until these are fixed</strong>
+    <ul class="points">
+      {% for f in body.findings %}<li><span class="rule-id">{{ f.rule_id }}</span> {{ f.check | replace("_", " ") }}: {{ f.detail }}</li>{% endfor %}
+    </ul>
+  </div>
+</section>
+{% endif %}
+
+<section class="section split">
+  <div class="panel">
+    <h2>Each rule beside its clause</h2>
+    {% if problem %}<p class="notice notice--deny">{{ problem }}</p>{% endif %}
+    {% for rule in rules %}
+    {% set when_text, unless_text = conditions(rule) %}
+    <div class="rule{% if rule.id in flagged %} is-flagged{% endif %}">
+      <div class="rule-head">
+        <span class="rule-id">{{ rule.id }}</span>
+        {{ badge(rule.then, rule.then ~ (" (" ~ rule.approver_role | replace("-", " ") ~ ")" if rule.approver_role else "")) }}
+        <span class="small muted">{{ rule.source.doc }}, page {{ rule.source.page }}, clause {{ rule.source.clause }}</span>
+      </div>
+      <blockquote class="quote">{{ rule.source.quote }}</blockquote>
+      <p class="conds small">When <span class="cond-list">{% for c in when_text %}<span>{{ c }}</span>{% endfor %}</span>{% if not when_text %}<span>any request</span>{% endif %}{% if unless_text %}, unless <span class="cond-list">{% for c in unless_text %}<span>{{ c }}</span>{% endfor %}</span>{% endif %}{% if rule.agent %}, for {{ rule.agent }}{% endif %}.</p>
+      <p class="small muted">{{ rule.tests | length }} fixtures</p>
+    </div>
+    {% endfor %}
+  </div>
+  <div>
+    <form class="panel" method="post" action="/policy/drafts/{{ draft.record_id }}/approve"
+          hx-post="/policy/drafts/{{ draft.record_id }}/approve" hx-target="#flash">
+      {{ csrf() }}
+      <h2>Approve</h2>
+      <p class="muted">Gate re-reads this draft from the ledger and runs every check again before it switches. From then on, every decision cites the approved set.</p>
+      <div class="form-row"><button class="btn btn--allow" type="submit">Approve and enforce</button></div>
+    </form>
+    <form class="panel" method="post" action="/policy/drafts/{{ draft.record_id }}/revisions"
+          hx-post="/policy/drafts/{{ draft.record_id }}/revisions">
+      {{ csrf() }}
+      <h2>Revise</h2>
+      <div class="field">
+        <label for="rules_yaml">Rules as YAML</label>
+        <textarea id="rules_yaml" name="rules_yaml" spellcheck="false">{{ body.rules_yaml }}</textarea>
+        <span class="hint">Saving makes a new draft that revises this one; the checks run again.</span>
+      </div>
+      <div class="form-row"><button class="btn btn--quiet" type="submit">Save as a new draft</button></div>
+    </form>
+  </div>
+</section>
+{% endblock %}

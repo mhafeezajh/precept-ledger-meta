@@ -1,0 +1,22 @@
+{% from "macros.html" import rid with context %}
+{% set held = result.accepted | length %}
+<div class="panel spaced">
+  <h2>{{ result.answer_text() }}</h2>
+  <p class="small muted spaced">{{ result.coverage() }}</p>
+  <h3 class="spaced">{{ held }} of {{ result.results | length }} claims proven</h3>
+  {% for r in result.results %}
+  <div class="claim claim--{{ 'held' if r.accepted else 'rejected' }}">
+    <span class="claim-mark" aria-hidden="true">{{ "✓" if r.accepted else "✕" }}</span>
+    <div>
+      <span class="visually-hidden">{{ "Proven:" if r.accepted else "Rejected:" }}</span>{{ r.claim.text }}
+      {% if loop.index0 == result.injected %}<span class="badge badge--escalate">planted fault</span>{% endif %}
+      <span class="small">{% for i in r.claim.record_ids %}{{ rid(i) }} {% endfor %}</span>
+      {% for why in r.reasons %}<p class="claim-why">{{ why }}</p>{% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+  {% for problem in result.summary_problems %}
+  <p class="notice notice--escalate small">The model's summary was not shown: {{ problem }}</p>
+  {% endfor %}
+  {% if result.record %}<p class="small muted spaced">Recorded as audit answer {{ rid(result.record.record_id) }}.</p>{% endif %}
+</div>
