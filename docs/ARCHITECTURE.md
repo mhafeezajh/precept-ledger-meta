@@ -48,7 +48,7 @@ Gate lets a tool call through only after the ledger returns a receipt; the verif
 | `witness/` | Independent service, own key and storage; verifies consistency and cosigns | `cryptography`, `fastapi` |
 | `anchor/` | RFC 3161 timestamp requests and offline token verification; OpenTimestamps submit, upgrade and proof reading | `asn1crypto`, `cryptography`, `httpx` (D44, D46) |
 | `verify/` (`pl-verify`) | Offline verification of an export; no network imports | stdlib, `cryptography` |
-| `gate/` | Normalizer, Cedar, decision records, write-before-effect, approval queue, MCP proxy, `@governed` decorator | `cedarpy`, `mcp` |
+| `gate/` | Normalizer, delegation credentials (checked before Cedar), Cedar, decision records, write-before-effect, approval queue, MCP proxy, `@governed` decorator | `cedarpy`, `mcp` |
 | `policy/` | PDF extraction with spans, Muse Wonder drafting, YAML to Cedar compiler, fixtures | `pypdf`, `pydantic`, `litellm` |
 | `assist/` | Approval briefs, auditor Q&A | `litellm`, `pydantic` |
 | `claims/` | Claim checker: inclusion proofs and field assertions, used by Q&A and the learner | stdlib, `cryptography` |
@@ -83,6 +83,7 @@ The ledger is a transparency log, the design behind Certificate Transparency and
 | Checkpoint | Text note: log origin, tree size, base64 root hash, signed by the log key as a signed note |
 | Producer signature | `Ed25519(producer_key, "PL-record-v1\x00" ‖ JCS(record − {seq, prev_hash, producer.sig}))` (D9, D18) |
 | Receipt | Ledger signs `"PL-receipt-v1\x00" ‖ JCS({v, alg, stream, record_id, seq, leaf_hash, chain_hash, received_at, key_id})` immediately (D11, D18); the inclusion proof follows at the next checkpoint, at most 10 seconds later in the demo |
+| Delegation credential | Principal signs `Ed25519(principal_key, "PL-delegation-v1\x00" ‖ JCS(credential))`; credential hash `SHA-256("PL-credential-v1\x00" ‖ JCS(credential))`; revocation `Ed25519(principal_key, "PL-revocation-v1\x00" ‖ JCS(revocation))`; envelope `{v, alg, key_id, sig, credential \| revocation}` (D88) |
 | Cosignature | Witness signs `"cosignature/v1\ntime " ‖ t ‖ "\n" ‖ checkpoint body` (C2SP tlog-cosignature, Ed25519, key type 0x04) after verifying a consistency proof from its last cosigned size; the line `key hash ‖ uint64_be(t) ‖ sig` is appended to the checkpoint note (D38) |
 
 The prefixes `PL-chain-v1`, `0x00` and `0x01` keep one kind of hash from ever being mistaken for another.
@@ -124,6 +125,7 @@ The one property not matched, refusal to write, does not hurt here: under write-
 | --- | --- | --- | --- |
 | Gate producer key | Gate | Local file | KMS or HSM |
 | Assist producer key (`assist-1`, signs `assist.qa`) | Auditor service | Local file | KMS or HSM |
+| Principal key (`treasury.harbor-federal`, signs delegation credentials and revocations) | The accountable business owner | Local file, used only by `make delegate` | The principal's own KMS or wallet; Gate holds only public keys (D88, D89) |
 | Log key (receipts, checkpoints) | Ledger | Local file | KMS or HSM |
 | Witness keys, one per witness | Each witness | Separate containers, one optionally on a separate cloud host | Separate organizations |
 
@@ -137,6 +139,7 @@ Three flows share one ledger; each ends in a signed record before anything chang
 
 1. The agent calls a tool through the MCP proxy or the `@governed` decorator.
 2. Gate maps the call to an action class and typed facts (amount, payee\_new, data class). Unmapped tools are denied.
+   *(As built, D88, D89: when `GATE_REQUIRE_DELEGATION=true`, Gate then checks the principal-signed delegation credential the agent presents: missing, malformed, bad signature, not issued, revoked, wrong agent, not yet valid, expired or out of scope (action class, amount, payee) denies before Cedar runs, and the decision records the credential's hash and the result.)*
 3. Cedar evaluates the active policy set: allow, deny or escalate.
 4. Gate signs the decision record and appends it. No receipt means deny. The agent-side wrapper checks Gate's signature, the receipt and the argument digest itself before the tool runs (D51).
 5. Allow: the tool runs, and a result record with the result's digest is appended.
@@ -228,6 +231,9 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | GET | `/gate/v1/escalations/{id}?wait=S` | One request, long-polled, with its verdict record (owning agent or approver) |
 | POST | `/gate/v1/escalations/{id}/verdict` | Approve or reject (approver with the required role) |
 | POST | `/gate/v1/results` | Record that a cleared tool ran, with its result digest |
+| POST | `/gate/v1/delegations` | Record a principal-signed credential as `gate.delegation.issue` (approver token; D88) |
+| POST | `/gate/v1/delegations/revocations` | Record a principal-signed revocation as `gate.delegation.revoke` (approver token; D88) |
+| GET | `/gate/v1/delegations/{id}` | A credential's state (`active`, `revoked`), folded from the ledger (D88) |
 | POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules *(as built, D73: also `GET /policy/v1/drafts/{id}`, `POST …/{id}/revisions`, `POST …/{id}/approve`, `GET /policy/v1/active`; served by `pl-gate`, compliance-officer token)* |
 | POST | `/assist/v1/ask` | Auditor question; returns checked claims |
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
@@ -248,6 +254,8 @@ Every attack below is detected by a check anyone can run offline; the last two r
 | Ledger operator | Inserts a fake Gate decision | Producer signature fails against Gate's key |
 | Ledger operator | Drops a record after giving a receipt | The receipt is signed proof of acceptance; missing inclusion proof after 10 s is provable |
 | Operator and every witness together | Rewrite and re-cosign | RFC 3161 timestamp and Bitcoin anchor of the old root no longer match |
+| Agent | Acts beyond what its principal delegated (other payees, larger amounts, after expiry or revocation) | Gate checks the principal-signed credential before Cedar and denies; the decision binds the credential hash, so who authorized each call is provable (D88) |
+| Agent | Issues its own authority | Issuing needs an approver token and the principal's signature; Gate holds only principal public keys (D88) |
 | Agent | Deletes or edits its own trail | Agent has no ledger write path except through Gate, and no delete path at all |
 | Model | Invents a record or misstates a value | Claim checker rejects: missing inclusion proof or failed field assertion |
 | Model | Drafts a wrong policy rule | Fixtures, Cedar validation and human approval |
@@ -255,6 +263,7 @@ Every attack below is detected by a check anyone can run offline; the last two r
 | Approver habits | Rubber-stamped approvals teach the learner to loosen | Fatigue filter, minimum sample, replay blocks any loosening that would allow a past rejection, two approvers to loosen |
 | Prompt injection in a policy PDF | Steers the drafter | Drafter has no tools and no write role; output is only a draft |
 | Limit | Ledger refuses to accept a record | Not prevented; Gate fails closed, so the action is blocked, never hidden |
+| Limit | Agent token and credential both stolen | The thief acts within the delegation until it is revoked; requests are not yet signed by a per-agent key (request binding), so the credential is a bearer grant (D88 gap) |
 | Limit | Gate key stolen | Forged records would verify. Mitigation: key in KMS or HSM, rotation, anomaly checks (production) |
 
 What the ledger proves: who submitted what, when, and that nothing changed afterward. It does not prove a producer told the truth; that is why Gate-originated records, made before the action ran, carry the most weight.
@@ -368,3 +377,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Components (`agent/`), Meta model usage | The agent's model picks each tool call as a structured `AgentStep` through `assist/llm.py`, not native tool calling through a LangChain model; LangGraph runs the think / act loop with tracing off; the agent skips repeated calls and stops at 8 steps; tools run against an in-memory demo bank; `Governor.run_cleared` returns the clearing records. `langgraph` added | D78, D79 |
 | 2026-10-28 | Flow E, Data model, API | Patterns are SQL over the verified export in SQLite (D80); proposals and approvals are `learn.proposal` / `learn.approve` ledger records and an approved proposal becomes a `policy.draft` for normal policy approval, with a stale-base check (D81); scope and rule sources set by code, replay blocks changes outside the pattern (D82); settled patterns skipped (D83) | D80–D83 |
 | 2026-10-28 | Components (`web/`) | The console is a client of `pl-gate` and `pl-ledger` with htmx vendored (no CDN); a persona menu stands in for sign-in (demo only); it verifies the export and each record before showing them as proven; the tamper button is a real admin edit in demo mode; adds the Agent and Attacks pages | D84–D87 |
+| 2026-10-29 | Components, Flow A, Exact formulas, Keys, API, Threat model | Gate checks a principal-signed delegation credential before Cedar (Ed25519 over `PL-delegation-v1`, hash `PL-credential-v1`, revocation `PL-revocation-v1`); issue and revoke are `gate.delegation.*` ledger records and revocation is a fold over them, with no table; decisions record `delegation`; three `/gate/v1/delegations` routes; principal key added; agent-overreach rows and the bearer-credential limit added to the threat model. Switched on in the demo with `make delegate` | D88, D89 |
