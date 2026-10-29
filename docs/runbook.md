@@ -18,6 +18,10 @@ Restart `make serve` after `make dev-keys` adds a producer (it reads `trusted.js
 
 `MODEL_PROFILE=mock` (development): briefs, audit answers and policy drafts come from `assist/mock.py`, offline and free, labelled `mock/scripted` in every record. `MODEL_PROFILE=cloud` with `META_API_KEY`: Muse Spark and Muse Wonder through the Meta Model API. Restart `make gate` after switching. See [`MODELS.md`](MODELS.md).
 
+## The console
+
+`DEMO_MODE=true make web`, then open http://127.0.0.1:8090. Every beat below can be run from its page: Policy (beat 1), Agent and Approvals (beat 2), Audit (beat 3), Ledger and Attacks (beats 4 and 5), Learner (beat 6). Choose who you act as in the menu at the bottom left: j.ortiz or m.lee to approve payments, a.chen or r.patel for policy and the learner. The tamper button needs `ADMIN_DATABASE_URL`, edits the live stream and cannot be undone without the clean reset below. Start `make web` after `make gate`.
+
 ## Demo week and beats
 
 | Step | Command | Result |

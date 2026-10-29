@@ -16,6 +16,7 @@ One page per module, written when the module is finished and kept current with t
 | [claims.md](claims.md) | The claim checker: producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers and names in text and summary; the whole export proven before an auditor query runs | Done for this step |
 | [policy.md](policy.md) | Policy PDF to clauses, Muse Wonder drafting, rule YAML compiled to Cedar and checked, review and approval as ledger records, activation in Gate (beat 1) | Done for this step: Wonder not run live yet |
 | [learn.md](learn.md) | The Policy Learner: SQL patterns over the verified export, fatigue filter, Muse Spark proposals checked against SQL and the claim checker, replay, one or two approvers, a policy draft to approve (beat 6) | Done for this step: run on the mock so far |
+| [web.md](web.md) | The console (`pl-web`): every beat in the browser, personas, CSRF and CSP, the proof seal, the agent run view, the tamper and rogue-operator buttons | Done for this step: sign-in is a persona menu (demo) |
 | [agent.md](agent.md) | The payments-ops agent: LangGraph think / act loop, Muse Spark steps as structured output, every call through `@governed`, the demo bank, `pl-agent`, beat 2 with the agent | Done for this step: Muse Spark not run on it yet |
 
 ## Where to look for what
@@ -36,6 +37,7 @@ One page per module, written when the module is finished and kept current with t
 | How to run demo beat 2 (payment held until approval) | [agent.md](agent.md) (with the agent) or [gate.md](gate.md) (scripted), "How to run and test" |
 | What the agent's model sees, and what stops it paying twice | [agent.md](agent.md), "What the model sees" and "Security and failure behaviour" |
 | How to run demo beat 6 (the ledger learns), and what stops a bad lesson | [learn.md](learn.md), "How to run and test" and "Security and failure behaviour" |
+| How to run the console, and what it trusts | [web.md](web.md), "How to run and test" and "Security and failure behaviour" |
 | Which model, mode, price and parameters each call uses | [`../MODELS.md`](../MODELS.md) |
 | What stops a brief from inventing facts or advising a verdict | [assist.md](assist.md), "Security and failure behaviour" |
 | When an auditor answer is shown as true | [claims.md](claims.md), "How it works" |
