@@ -32,12 +32,13 @@ from ledger.signing import Signer  # noqa: E402
 
 PRODUCERS = ("gate-1", "assist-1")  # assist-1 signs assist.qa audit records
 WITNESSES = ("witness-1", "witness-2", "witness-3")
-# Gate callers: (kind, name, roles). Two supervisors, so a loosening can get two approvals.
+# Gate callers: (kind, name, roles). Two compliance officers: a learned loosening needs two.
 GATE_CALLERS = (
     ("agent", "payments-ops", "-"),
     ("approver", "j.ortiz", "payments-supervisor"),
     ("approver", "m.lee", "payments-supervisor"),
     ("approver", "a.chen", "compliance-officer"),  # reviews and approves policy rules
+    ("approver", "r.patel", "compliance-officer"),  # the second approver a loosening needs
 )
 
 

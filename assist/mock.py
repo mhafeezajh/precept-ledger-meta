@@ -270,7 +270,129 @@ def _agent_step(user: str) -> dict[str, Any]:
     )
 
 
+_RULE_PREFIX = {"value.transfer": "pay", "comm.external": "email", "data.read": "read"}
+_DEFAULT_FACTS = {"amount": 100, "payee_new": False, "local_hour": 10, "local_weekday": 2}
+
+
+def _holds(value: Any, op: str, wanted: Any) -> bool:
+    if op in ("eq", "ne"):
+        return (str(value) == str(wanted)) == (op == "eq")
+    a, b = float(str(value)), float(str(wanted))
+    return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]
+
+
+def _all_hold(facts: Mapping[str, Any], conditions: list[dict[str, Any]]) -> bool:
+    return all(
+        c["field"] in facts and _holds(facts[c["field"]], c["op"], c["value"]) for c in conditions
+    )
+
+
+def _in_scope(
+    fixture: Mapping[str, Any], when: list[dict[str, Any]], unless: list[dict[str, Any]]
+) -> bool:
+    facts = {**_DEFAULT_FACTS, **fixture}
+    return _all_hold(facts, when) and not (unless and _all_hold(facts, unless))
+
+
+def _fixture(facts: Mapping[str, Any], expect: str, agent: Any = None) -> dict[str, Any]:
+    pairs = [{"field": k, "value": v} for k, v in facts.items()]
+    return {"facts": pairs, "agent": agent, "expect": expect}
+
+
+def _learned_rule(
+    active: Mapping[str, Any],
+    unless: list[dict[str, Any]],
+    moved: Mapping[str, Any],
+    when: list[dict[str, Any]],
+    scope_unless: list[dict[str, Any]],
+    then: str,
+) -> dict[str, Any]:
+    """An active rule as a replacement: extra unless conditions, and every fixture the change
+    would affect (inside the scope, expecting another outcome) moved just outside it."""
+    tests = []
+    for t in active["tests"]:
+        facts = {k: v for k, v in t.items() if k not in ("expect", "agent")}
+        if t["expect"] != then and _in_scope(facts, when, scope_unless):
+            facts = {**facts, **moved}
+        tests.append(_fixture(facts, t["expect"], t.get("agent")))
+    return {
+        "id": active["id"], "agent": active.get("agent"), "action": active["when"]["action"],
+        "when": _draft_conditions({k: v for k, v in active["when"].items() if k != "action"}),
+        "unless": _draft_conditions(active.get("unless") or {}) + unless,
+        "then": active["then"], "approver_role": active.get("approver_role"), "tests": tests,
+    }  # fmt: skip
+
+
+def _learn_claim(row: Mapping[str, Any]) -> dict[str, Any]:
+    decision_id, verdict_id = row["decision_record_id"], row["verdict_record_id"]
+    check = [
+        {"record_id": decision_id, "field": "body.decision", "op": "eq", "value": "escalate"},
+        {"record_id": verdict_id, "field": "body.verdict", "op": "eq", "value": row["verdict"]},
+        {"record_id": verdict_id, "field": "body.approver", "op": "eq", "value": row["approver"]},
+    ]
+    subject = "A request"
+    if row["amount_cents"] is not None:
+        subject = f"A payment of {_dollars(row['amount_cents'])} to {row['payee_id']}"
+        check += [{"record_id": decision_id, "field": "body.resource.amount_cents", "op": "eq",
+                   "value": row["amount_cents"]},
+                  {"record_id": decision_id, "field": "body.resource.payee_id", "op": "eq",
+                   "value": row["payee_id"]}]  # fmt: skip
+    return {"text": f"{subject} was {_PAST[row['verdict']]} by {row['approver']}.",
+            "record_ids": [decision_id, verdict_id], "assertions": check}  # fmt: skip
+
+
+def _learner_proposal(user: str) -> dict[str, Any]:
+    """Loosen: an allow rule for the scope, and the scope as an exception to every escalate
+    rule that held these requests. Tighten: a deny rule for the scope."""
+    data = json.loads(_after(user, "Pattern:\n"))
+    scope, counts, loosen = data["scope"], data["counts"], data["direction"] == "loosen"
+    when, unless = _draft_conditions(scope["when"]), _draft_conditions(scope["unless"])
+    after_hours = bool(unless)
+    inside = {c["field"]: c["value"] for c in when if c["op"] in ("eq", "lte")}
+    if after_hours:
+        inside["local_hour"] = 20
+    outside = {**inside, "local_hour": 10} if after_hours else {**inside, "local_hour": 18}
+    moved = {"local_hour": 10, "local_weekday": 2} if after_hours else {"local_hour": 18}
+    who = {True: "new", False: "known"}.get(scope["when"].get("payee_new"), "all")
+    then = "allow" if loosen else "deny"
+    hours = "after-hours" if after_hours else "business"
+    new_id = f"{_RULE_PREFIX[scope['action']]}-{who}-{hours}-{then}-01"
+    rules = [{
+        "id": new_id, "agent": scope["agent"], "action": scope["action"], "when": when,
+        "unless": unless, "then": then, "approver_role": None,
+        "tests": [_fixture(inside, then), _fixture(outside, "escalate")],
+    }]  # fmt: skip
+    for active in data["active_rules"]:
+        holds = loosen and active["then"] == "escalate" and active["id"] in data["policies_matched"]
+        touched = any(
+            t["expect"] != then
+            and _in_scope(
+                {k: v for k, v in t.items() if k not in ("expect", "agent")}, when, unless
+            )
+            for t in active["tests"]
+        )
+        if holds or touched:
+            rules.append(_learned_rule(active, when if holds else [], moved, when, unless, then))
+    claims = [_learn_claim(row) for row in data["rows"][:3]]
+    if loosen:
+        title = "Allow routine requests in this pattern without approval"
+        reason = (f"All {counts['decisions']} reviewed escalations in this scope were approved"
+                  f" ({counts['fast_dropped']} approvals made too quickly to be real reviews were"
+                  " set aside). The change lets these requests run without approval; everything"
+                  " outside the scope is still held.")  # fmt: skip
+        stated = ["decisions", "approved", "fast_dropped"]
+    else:
+        title = "Deny requests in this pattern instead of asking a supervisor"
+        reason = (f"{counts['rejected']} of {counts['decisions']} requests in this scope were"
+                  " rejected by a supervisor. The change denies them outright; the same requests"
+                  " in business hours are still held for approval.")  # fmt: skip
+        stated = ["decisions", "rejected"]
+    restated = [{"name": n, "value": counts[n]} for n in stated]
+    return {"title": title, "rules": rules, "reason": reason, "counts": restated, "claims": claims}
+
+
 _SCRIPTS: dict[str, Callable[[str], dict[str, Any]]] = {
+    "LearnerProposal": _learner_proposal,
     "AgentStep": _agent_step,
     "Brief": _brief,
     "RecordQuery": _query,

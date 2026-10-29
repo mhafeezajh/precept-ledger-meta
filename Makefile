@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-agent demo-audit demo-policy policy-pdf seed-week demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate demo-gate demo-agent demo-audit demo-policy demo-learn policy-pdf seed-week demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -79,6 +79,12 @@ demo-audit:
 demo-policy:
 	uv run python scripts/demo_policy.py $(ARGS)
 
+# demo beat 6 against make serve + make gate (a seeded week, an approved policy): the learner
+# proposes, two officers approve the loosening, one the tightening; a.chen approves each as
+# policy. ARGS="--inject-fault" (DEMO_MODE=true) shows an inflated count rejected.
+demo-learn:
+	uv run python scripts/demo_learn.py $(ARGS)
+
 # One simulated week of decisions into make serve's stream, through the real Gate code
 # (scripts/seed_week.py). ARGS="--dry-run" prints the plan only.
 seed-week:
@@ -88,7 +94,7 @@ seed-week:
 policy-pdf:
 	uv run python scripts/make_policy_pdf.py
 
-# Demo beat 5 in one process: the rogue operator rewrites history and is caught.
+# demo beat 6 in one process: the rogue operator rewrites history and is caught.
 demo-rogue:
 	uv run python scripts/demo_rogue_operator.py
 

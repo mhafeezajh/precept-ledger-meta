@@ -12,8 +12,8 @@ Patterns and counts (``COUNTS``), chosen for the demo beats:
 - ``routine_approved`` 38 and ``routine_rubber_stamp`` 6: known payees, $5,000.01-$14,999.99,
   business hours, escalated by pay-over-5k-01 and all approved; the six were approved in under
   five seconds, which the learner's fatigue filter drops. Beat 5: "38 routine escalations".
-- ``new_payee_after_hours`` 14: new payees outside business hours, 6 approved (3 over $10,000)
-  and 8 rejected. Beat 5's tightening.
+- ``new_payee_after_hours`` 20: new payees outside business hours, 6 approved (3 over $10,000)
+  and 14 rejected. Beat 5's tightening (the learner needs at least 20 decisions in a pattern).
 - ``known_after_hours_big`` 2: known payees, over $10,000, outside business hours, approved.
   With the three above, beat 3's question matches five payments.
 - ``new_payee_daytime`` 6 approved; ``small`` 70 allowed (up to $5,000, known payees);
@@ -60,9 +60,11 @@ KNOWN_PAYEES = ("acme-paper", "harbor-cleaning", "bayside-utilities", "keystone-
 NEW_PAYEES = ("northwind-supply", "coastal-freight", "granite-ledger-co", "tidewater-media",
               "summit-staffing", "lakeside-print", "redwood-analytics", "ironbridge-supply",
               "bluefin-catering", "maple-street-legal", "harborview-hvac", "copperline-it",
-              "seabright-events", "oakmont-security")  # fmt: skip  # fictional
+              "seabright-events", "oakmont-security", "pinecrest-media", "riverstone-labs",
+              "westgate-movers", "silverline-print", "foxglove-design",
+              "anchorpoint-it")  # fmt: skip  # fictional
 COUNTS = Counter({
-    "routine_approved": 38, "routine_rubber_stamp": 6, "new_payee_after_hours": 14,
+    "routine_approved": 38, "routine_rubber_stamp": 6, "new_payee_after_hours": 20,
     "known_after_hours_big": 2, "new_payee_daytime": 6, "small": 70, "over_cap": 2,
     "foreign_currency": 2, "email_internal": 10, "email_external": 5, "vendor_lookup": 8,
 })  # fmt: skip
@@ -72,6 +74,8 @@ AFTER_HOURS_NEW = (
     ("2400.00", "approve"), ("6800.00", "approve"), ("950.00", "approve"),
     ("31000.00", "reject"), ("8800.00", "reject"), ("15200.00", "reject"), ("4100.00", "reject"),
     ("57000.00", "reject"), ("2950.00", "reject"), ("19900.00", "reject"), ("7300.00", "reject"),
+    ("11400.00", "reject"), ("3650.00", "reject"), ("27800.00", "reject"), ("1875.00", "reject"),
+    ("9420.00", "reject"), ("16300.00", "reject"),
 )  # fmt: skip
 SEED = 20261028
 

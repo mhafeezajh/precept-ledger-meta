@@ -63,10 +63,10 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "PT"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist", "policy", "agent"]
+packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist", "policy", "agent", "learn"]
 
 [[tool.mypy.overrides]]
-module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*", "policy.*", "agent.*"]
+module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*", "policy.*", "agent.*", "learn.*"]
 strict = true
 
 [tool.pytest.ini_options]
@@ -81,7 +81,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims", "policy", "agent"]
+source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims", "policy", "agent", "learn"]
 # Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [

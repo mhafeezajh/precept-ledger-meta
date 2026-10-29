@@ -87,7 +87,7 @@ async def test_played_through_gate_the_week_has_what_beats_3_and_5_need() -> Non
     assert {r["verdict"] for r in routine} == {"approve"}  # no past rejection to newly allow
     assert sum(1 for r in routine if latency(r) >= 5) == 38  # the learner's "38 routine"
     after_hours_new = [r for r in rows if r["payee_new"] and r["outside_business_hours"]]
-    assert Counter(r["verdict"] for r in after_hours_new) == {"approve": 6, "reject": 8}
+    assert Counter(r["verdict"] for r in after_hours_new) == {"approve": 6, "reject": 14}
     assert len(run_query(WEEK, records, END)) == 5  # beat 3's question
     assert Counter(r["decision"] for r in rows)["deny"] == 4
     assert {r["approver"] for r in rows if r["approver"]} == {"j.ortiz", "m.lee"}

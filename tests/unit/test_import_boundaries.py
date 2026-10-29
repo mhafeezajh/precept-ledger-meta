@@ -90,8 +90,10 @@ GATE_FORBIDDEN = {"litellm", "openai", "assist", "agent", "web", "learn"}
 @pytest.mark.parametrize("path", sorted((ROOT / "gate").rglob("*.py")), ids=lambda p: p.name)
 def test_gate_decides_without_models(path: Path) -> None:
     # R2: allow, deny and escalate come from Cedar and code. Briefs live in assist/ and reach
-    # Gate through its BriefWriter port; only the composition root (pl-gate) wires one in.
-    forbidden = GATE_FORBIDDEN - {"assist"} if path.name == "server.py" else GATE_FORBIDDEN
+    # Gate through its BriefWriter port; only the composition root (pl-gate) wires one in, and
+    # serves the learner's routes next to Gate's.
+    composition = {"assist", "learn"}
+    forbidden = GATE_FORBIDDEN - composition if path.name == "server.py" else GATE_FORBIDDEN
     assert not {top(m) for m in imports_of(path)} & forbidden
 
 
@@ -122,3 +124,19 @@ def test_the_agent_has_no_ledger_write_path_and_no_model_client(path: Path) -> N
     assert not {n for n in names if n in AGENT_FORBIDDEN or top(n) in AGENT_FORBIDDEN}
     providers = ("langchain_openai", "langchain_community", "langchain_anthropic", "langchain.chat")
     assert not {n for n in names if n.startswith(providers)}
+
+
+# Counting and replay are code: no model anywhere near them (R2, skill §5). Only learn/draft.py
+# reaches a model, and nothing in learn/ can write to the ledger except through Gate.
+LEARN_FORBIDDEN = {"ledger.store", "ledger.service", "ledger.pg_store", "gate.api",
+                   "gate.server", "gate.escalations", "gate.pg_escalations", "psycopg"}  # fmt: skip
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "learn").rglob("*.py")), ids=lambda p: p.name)
+def test_the_learner_counts_and_replays_without_a_model(path: Path) -> None:
+    names = imports_of(path)
+    assert not {n for n in names if n in LEARN_FORBIDDEN or top(n) in LEARN_FORBIDDEN}
+    if path.name in ("patterns.py", "replay.py"):
+        assert not {top(n) for n in names} & {"assist", "litellm", "openai"}
+    if path.name != "draft.py":
+        assert "assist.llm" not in names

@@ -20,6 +20,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from assist.brief import BriefWriter
 from assist.llm import LlmClient, model_config
+from claims.checker import Trust
 from common.clock import SystemClock
 from common.config import Settings, load_settings
 from common.errors import ConfigError, PreceptError
@@ -32,13 +33,16 @@ from gate.decide import load_policy_set
 from gate.ledger_client import HttpLedgerClient
 from gate.normalizer import Normalizer, StaticPayees
 from gate.pg_escalations import PostgresEscalationStore
+from learn.api import ExportView, LearnSettings, install_learn_routes
+from learn.draft import LearnDrafter
+from ledger.checkpointer import origin_for
 from ledger.pg_store import PostgresStore
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing, Signer
 from policy.api import install_policy_routes
 from policy.draft import Drafter
 from policy.service import restore_active
-from verify.keys import TrustedKeys
+from verify.keys import TrustedKeys, WitnessPolicy
 
 CALLERS_FILE = "gate-callers.txt"
 logger = logging.getLogger("pl.gate.server")
@@ -136,14 +140,36 @@ def _drafter(settings: Settings) -> Drafter | None:
     return Drafter(LlmClient(config))
 
 
+def _learner(settings: Settings, gate: GateSettings, learn: LearnSettings) -> ExportView:
+    """How the learner reads the ledger: the export, verified with the auditors' keys."""
+    try:
+        trusted = TrustedKeys.from_json((settings.keys_dir / "trusted.json").read_bytes())
+        witnesses = None
+        if learn.witnessed:
+            raw = (settings.keys_dir / "witnesses.txt").read_bytes()
+            witnesses = WitnessPolicy.from_text(raw, settings.witness_quorum)
+    except (OSError, PreceptError) as exc:
+        raise ConfigError(f"learner keys: {exc}", code="config.keys") from exc
+    trust = Trust(trusted, origin_for(settings.ledger_origin, settings.ledger_stream), witnesses)
+    return ExportView(gate.ledger_url, settings.ledger_stream, trust, learn.export_timeout_seconds)
+
+
 def app_from_settings() -> FastAPI:
-    settings, gate_settings = load_settings(), GateSettings()
+    settings, gate_settings, learn = load_settings(), GateSettings(), LearnSettings()
     configure_logging(settings.log_level)
     drafter = _drafter(settings)
+    config = model_config(settings)
+    learn_drafter = None if config is None else LearnDrafter(LlmClient(config))
+    view = _learner(settings, gate_settings, learn)
+
+    def extend(app: FastAPI) -> None:
+        install_policy_routes(app, drafter, demo_mode=settings.demo_mode)
+        install_learn_routes(app, learn_drafter, view, learn, demo_mode=settings.demo_mode)
+
     return create_gate_app(
         lambda: gate_from_settings(settings, gate_settings),
         sweep_interval=gate_settings.sweep_interval_seconds,
-        extend=lambda app: install_policy_routes(app, drafter, demo_mode=settings.demo_mode),
+        extend=extend,
     )
 
 
