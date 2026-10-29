@@ -2,7 +2,7 @@
 
 Guarantees that an agent's tool call runs only after a signed decision record for that exact call has a verified ledger receipt, and, for a risky call, only after a person with the required role has approved it in another signed record. Cedar decides; no model is involved. Every error, timeout and unreachable dependency is a deny.
 
-Status: done for this step. Covers the normalizer, Cedar decisions with escalate, decision, verdict and result records, write-before-effect, the approval queue with expiry, token auth, the `/gate/v1` API (`pl-gate`), the `@governed` wrapper and demo beat 2 (`make demo-gate`). Approval briefs from `assist/` are recorded as `assist.brief` (see [`assist.md`](assist.md)). Not yet built: the MCP proxy (first on the cut list, D55), and loading the active policy set from approved `policy_rule` rows (`policy/`). · Last updated: 2026-10-28 · Tests: 163 unit across `tests/unit/test_gate_*.py`, plus 6 integration over Postgres, 4 dev-key tests and 1 import-boundary test. Coverage: `gate/decide.py`, `normalizer.py`, `auth.py`, `records.py` and `ledger_client.py` 100%; `core.py` 97%; `client.py` 97%; `api.py` 96%; `governed.py` 95%; `escalations.py` 92%. `server.py` and `pg_escalations.py` are covered by the integration tests and the live run.
+Status: done for this step. Covers delegation credentials checked before Cedar (D88, off by default with `GATE_REQUIRE_DELEGATION`), the normalizer, Cedar decisions with escalate, decision, verdict and result records, write-before-effect, the approval queue with expiry, token auth, the `/gate/v1` API (`pl-gate`), the `@governed` wrapper and demo beat 2 (`make demo-gate`). Approval briefs from `assist/` are recorded as `assist.brief` (see [`assist.md`](assist.md)). Not yet built: the MCP proxy (first on the cut list, D55), and loading the active policy set from approved `policy_rule` rows (`policy/`). · Last updated: 2026-10-29 · Tests: 185 unit across `tests/unit/test_gate_*.py` (20 of them for delegation, plus 2 delegation property tests), plus 6 integration over Postgres, 4 dev-key tests and 1 import-boundary test. Coverage: `gate/decide.py`, `normalizer.py`, `auth.py`, `records.py` and `ledger_client.py` 100%; `core.py` 97%; `api.py` 96%; `governed.py` 96%; `client.py` 95%; `delegation.py` 95%; `delegation_records.py` 94%; `escalations.py` 93%. `server.py` and `pg_escalations.py` are covered by the integration tests and the live run.
 
 Related pages: [`ledger.md`](ledger.md) (records, producer signatures, receipts), [`api.md`](api.md) (the ledger API Gate appends to), [`verify.md`](verify.md) (offline checks of the records Gate writes).
 
@@ -34,6 +34,39 @@ Does not own:
 - **Storing records.** The ledger does that and signs the receipt; Gate checks the receipt.
 
 ## How it works
+
+### Delegation credentials, before Cedar (D88)
+
+An agent must show who authorized it, for what and until when. A principal (the team or person the agent acts for) signs a credential with Ed25519:
+
+```json
+{"credential_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0", "principal_id": "treasury.harbor-federal",
+ "agent_id": "payments-ops", "action_classes": ["data.read", "value.transfer"],
+ "max_amount": "5000.00", "allowed_payees": ["acme-paper", "keystone-it"],
+ "not_before": "2026-10-29T20:14:03.112Z", "expires_at": "2026-11-28T21:14:03.112Z"}
+```
+
+1. **Issue.** An approver submits the principal's signed credential (`POST /gate/v1/delegations`). Gate verifies the signature against `KEYS_DIR/principals.json` and appends `gate.delegation.issue`. Agents cannot issue their own authority.
+2. **Present.** The agent sends the signed credential with every call (`credential` in `/decide`; `Governor(credential=...)` does it for the agent).
+3. **Check, before Cedar.** After the normalizer and before Cedar, Gate checks the credential in this order and denies on the first failure. The deny is recorded like any other, with the code, so refusals are evidence too:
+
+| Order | Code | Fails when |
+| --- | --- | --- |
+| 1 | `delegation.missing` | No credential |
+| 2 | `delegation.malformed` | Not the exact shape: unknown or missing field, `max_amount` not `"0.00"`-style, bad time, lifetime over 90 days, unknown action class |
+| 3 | `delegation.bad_signature` | Not signed by the key `principals.json` lists for `principal_id`, any byte changed, or an `alg` other than `ed25519` |
+| 4 | `delegation.not_issued` | No `gate.delegation.issue` record for this credential's hash |
+| 5 | `delegation.revoked` | A `gate.delegation.revoke` record names its hash |
+| 6 | `delegation.wrong_agent` | `agent_id` is not the calling agent |
+| 7 | `delegation.not_yet_valid`, `delegation.expired` | Gate's clock is before `not_before`, or at or after `expires_at` |
+| 8 | `delegation.out_of_scope` | The action class is not listed; for a payment, the amount is unreadable or over `max_amount`, the currency is not USD, or the payee is not listed |
+
+4. **Cedar.** Only a call inside its delegation reaches Cedar, which still decides: a delegated payment to a new payee is still held for approval.
+5. **Revoke.** The same principal signs a revocation naming the credential's id and hash (`POST /gate/v1/delegations/revocations`); Gate appends `gate.delegation.revoke`. Only the principal who granted it can take it back.
+
+There is no delegation table. `Delegations` is a fold over Gate's own issue and revoke records: rebuilt at startup by re-reading each one through the ledger API with Gate's signature and receipt checked (a record that does not verify stops startup, because skipping a revocation would revive a credential), and updated only after a new record's receipt verifies. With `GATE_REQUIRE_DELEGATION=false` (the default until the agent carries a credential) Gate behaves as before and records `delegation: null`.
+
+### Decide, record, run
 
 1. The agent calls a tool wrapped with `@governor.tool("create_payment")`. The wrapper computes the argument digest and sends `{tool, arguments}` to `POST /gate/v1/decide` with its token.
 2. Gate takes the agent's name from the token, not from the body. The normalizer maps the tool to an action class (`value.transfer`) and facts (`amount_cents`, `payee_new`, ...). An unmapped tool, bad arguments or an unreachable payee directory becomes a deny with that reason.
@@ -94,7 +127,7 @@ Escalating every payment over $5,000 is deliberate. Beat 6 needs a week of routi
 | `args_digest(arguments)` | arguments | `"sha256:<hex>"` | `gate.bad_arguments` (not I-JSON) |
 | `PolicySet(text, schema)` | Cedar text, Cedar schema | validated set with `.digest`, `.rules` | `policy.syntax`, `policy.schema`, `policy.missing_id`, `policy.bad_id`, `policy.duplicate_id`, `policy.bad_annotation`, `policy.missing_approver_role`, `policy.escalate_on_forbid`, `policy.template`, `policy.empty` |
 | `PolicySet.evaluate(agent, action, tool, facts)` | request | `Evaluation(outcome, reason, policy_ids, approver_roles)` | none: errors become a deny with `gate.policy_error` |
-| `Gate.decide(agent, tool, arguments)` | call | `GateDecision(outcome, reason, record, escalation)` | `gate.bad_request`, `gate.ledger_unavailable`, `gate.ledger_refused`, `gate.bad_receipt`, `gate.store_unavailable` |
+| `Gate.decide(agent, tool, arguments, *, credential=None)` | call, and the signed credential when delegation is on | `GateDecision(outcome, reason, record, escalation)` | `gate.bad_request`, `gate.ledger_unavailable`, `gate.ledger_refused`, `gate.bad_receipt`, `gate.store_unavailable` |
 | `Gate.verdict(escalation_id, approver, "approve"\|"reject")` | | `Receipted` verdict record | `gate.escalation_not_found`, `gate.escalation_closed`, `gate.approver_not_allowed`, `gate.bad_request`, ledger errors |
 | `Gate.status(id)`, `Gate.wait(id, seconds)` | | `Escalation` (expired first if overdue) | `gate.escalation_not_found` |
 | `Gate.record_result(agent, decision_id, ok=, digest=, error=)` | | `Receipted` result record | `gate.not_cleared`, `gate.forbidden`, `gate.record_not_found`, `gate.bad_request` |
@@ -103,13 +136,22 @@ Escalating every payment over $5,000 is deliberate. Beat 6 needs a week of routi
 | `Governor.run_cleared(tool, arguments, effect, on_hold=None)` | as `run`; `on_hold(decision)` is called once before waiting on an escalation | `Cleared(result, decision, verdict)`, the verified records that let it run (D79; used by `agent/`) | `GateDenied`, or the effect's exception |
 | `verify_receipted(item, producer_id=, producers=, log_keys=, record_type=)` | record + receipt | none | `gate.bad_record` |
 
+| `Gate.issue_delegation(signed)`, `Gate.revoke_delegation(signed)` | the principal's signed credential or revocation | the receipted `gate.delegation.issue` / `.revoke` | `delegation.malformed`, `delegation.bad_signature`, `delegation.already_issued`, `delegation.not_issued`, `delegation.revoked`, `delegation.disabled`, Gate's ledger errors |
+| `Gate.restore_delegations(records)` | the stream's raw records | how many issue and revoke records were folded | Gate's read errors (any record that does not verify) |
+| `delegation.parse_credential`, `sign_credential`, `verify_signed_credential`, `credential_hash`, `check_scope`, `sign_revocation`, `verify_revocation`, `Delegations.check` | JSON, signer, principal `KeyRing` | parsed values, hashes, `Checked(code, credential)` | `GateError` with a `delegation.*` code |
+| `Governor(..., credential=signed)` | | presents the credential with every call | |
+| `gate.server.load_principals(path)` | `principals.json` | `KeyRing` of principal keys | `config.keys` |
+
 ### HTTP (`pl-gate`, default `127.0.0.1:8070`)
 
 All routes need `Authorization: Bearer <token>` except health.
 
 | Method and path | Caller | Body | Success |
 | --- | --- | --- | --- |
-| `POST /gate/v1/decide` | agent | `{"tool", "arguments"}` | `200 {decision, reason, record, receipt, escalation}` |
+| `POST /gate/v1/decide` | agent | `{"tool", "arguments", "credential"?}` | `200 {decision, reason, record, receipt, escalation}` |
+| `POST /gate/v1/delegations` | approver | the principal's signed credential | `201 {record, receipt}` (`gate.delegation.issue`) |
+| `POST /gate/v1/delegations/revocations` | approver | the principal's signed revocation | `201 {record, receipt}` (`gate.delegation.revoke`) |
+| `GET /gate/v1/delegations/{credential_id}` | approver | | `200 {credential, credential_hash, state: active \| revoked}` |
 | `GET /gate/v1/escalations` | approver | | `200 {"escalations": [...]}` (open ones, oldest first) |
 | `GET /gate/v1/escalations/{id}?wait=0..25` | the owning agent, or an approver | | `200 {"escalation", "verdict": {record, receipt} \| null}` |
 | `POST /gate/v1/escalations/{id}/verdict` | approver | `{"verdict": "approve" \| "reject"}` | `201 {record, receipt}` |
@@ -118,12 +160,12 @@ All routes need `Authorization: Bearer <token>` except health.
 
 | Status | Codes |
 | --- | --- |
-| 400 | `gate.bad_request`, `format.*` (strict JSON: floats, duplicate keys) |
+| 400 | `gate.bad_request`, `format.*` (strict JSON: floats, duplicate keys), `delegation.malformed`, `delegation.bad_signature` |
 | 401 | `gate.unauthorized` |
 | 403 | `gate.forbidden` (wrong kind of caller, another agent's decision), `gate.approver_not_allowed` |
-| 404 | `gate.escalation_not_found` (also for another agent's escalation), `gate.record_not_found` |
-| 409 | `gate.escalation_closed`, `gate.not_cleared` |
-| 413 | `format.too_large` (body over 17 KiB) |
+| 404 | `gate.escalation_not_found` (also for another agent's escalation), `gate.record_not_found`, `delegation.not_issued`, `delegation.disabled` |
+| 409 | `gate.escalation_closed`, `gate.not_cleared`, `delegation.already_issued`, `delegation.revoked` |
+| 413 | `format.too_large` (arguments over 16 KiB, or a body over 48 KiB with its credential) |
 | 422 | `request.invalid` (`wait` out of range) |
 | 502 | `gate.ledger_refused`, `gate.bad_receipt` |
 | 503 | `gate.ledger_unavailable`, `gate.store_unavailable` |
@@ -148,6 +190,7 @@ A deny is not an HTTP error: `POST /decide` returns `200` with `decision: "deny"
   "policy_ids": ["pay-new-payee-01", "pay-over-5k-01"],
   "policy_set": "sha256:266a2d2f5f745a89a4196e05bb4477fd36604f0f4f886214313389a7e864d51e",
   "args_digest": "sha256:8937fae31df72ed2891cb2474eb2e9bcefbd28ba43c84ad42f2a84a9cbb996a2",
+  "delegation": null,
   "escalation": {"id": "01M64R6GFAXQGC1G0X7YVEWAWW", "expires_at": "2026-10-29T21:24:03.113Z",
                  "approver_roles": ["payments-supervisor"]}
 }
@@ -161,11 +204,18 @@ A deny is not an HTTP error: `POST /decide` returns `200` with `decision: "deny"
 | `policy_ids` | The `@id`s of the policies that decided, sorted |
 | `policy_set` | SHA-256 of the exact policy text in force |
 | `args_digest` | Binds the record to one exact call (formula below); `null` when the arguments are not I-JSON |
+| `delegation` | `null` when delegation is off; otherwise `{credential_id, credential_hash, principal_id, result}`, `result` being `ok` or the `delegation.*` code that denied (ids and hash are `null` when no readable credential was shown) |
 | `escalation` | Only on `escalate`: its id, expiry and required roles |
+
+So every decision binds the call to its credential hash, the policy-set hash, the typed facts Cedar saw (`resource`, Cedar-schema types) and the argument digest.
 
 `gate.verdict`: `{decision_record_id, escalation_id, verdict: "approve" | "reject" | "expire", approver (null on expire), agent, tool, action, brief_record_id}`. `brief_record_id` is the brief the approver could see, or `null`.
 
 `assist.brief`: written by `assist/`, recorded by Gate; see [`assist.md`](assist.md).
+
+`gate.delegation.issue`: `{credential (the principal's signed envelope), credential_hash, credential_id, principal_id, agent_id}`.
+
+`gate.delegation.revoke`: `{revocation (the principal's signed envelope), credential_hash, credential_id}`.
 
 `gate.result`: `{decision_record_id, verdict_record_id (null for an allow), agent, tool, outcome: "ok" | "error", result_digest, error}`. `error` is the exception's class name, never its message.
 
@@ -193,6 +243,26 @@ The app role has `SELECT, INSERT, UPDATE`. The trigger `pl_escalation_guard` ref
 | `deploy/demo/payees.json` | `{"v": 1, "known": [...]}`: payees the bank has paid before |
 
 ## Security and failure behaviour
+
+Delegation (D88), each from `tests/unit/test_gate_delegation.py`; in every deny case the tool is not called:
+
+| Attack or failure | Result | Test |
+| --- | --- | --- |
+| No credential; junk instead of one | `delegation.missing`; `delegation.malformed` | `test_each_failure_denies_before_cedar_and_the_tool_never_runs` |
+| `max_amount` widened after signing | `delegation.bad_signature` | same, and `test_a_signature_must_be_the_named_principals` |
+| Signed by another principal's key, or an unknown `alg` | `delegation.bad_signature` | `test_a_signature_must_be_the_named_principals` |
+| A validly signed credential never issued on the ledger | `delegation.not_issued` | `test_each_failure_...` |
+| Expired; revoked | `delegation.expired`; `delegation.revoked` | same |
+| Over `max_amount`, unlisted payee, unlisted action class, another agent's credential | `delegation.out_of_scope`, `delegation.wrong_agent` | same, `test_scope_is_checked_field_by_field` |
+| A revocation lost on restart | Revoked state is rebuilt from the ledger; a new Gate still denies | `test_issue_and_revoke_are_ledger_records_and_survive_a_restart` |
+| A forged issue or revoke record in the store | Restore re-reads every record with Gate's signature and receipt; one that fails stops startup | `test_a_restore_refuses_a_record_gate_did_not_sign` |
+| Another principal revokes someone else's grant; a credential issued twice | `delegation.bad_signature`; `delegation.already_issued` | `test_issue_and_revoke_...` |
+| An agent issuing its own authority | `403` (approver tokens only) | `test_the_api_issues_revokes_and_decides_with_a_credential` |
+| Any single-byte edit to a signed credential | Never verifies | `tests/property/test_delegation_properties.py` |
+
+What delegation does not protect against: a stolen principal key (rotation and key storage are the defence, as for Gate's key); a credential presented by the wrong agent's process with that agent's own token (Gate checks `agent_id` against the authenticated token, so this needs both); and expiry by a wrong clock (Gate's clock decides).
+
+The rest of Gate:
 
 | Failure or attack | What happens | Test |
 | --- | --- | --- |
@@ -240,6 +310,10 @@ What it does not protect against:
 | Policy-set digest | `"sha256:" ‖ hex(SHA-256(UTF-8 policy text))` | `gate/decide.py` |
 | Amount | `"48000.00"` or `48000` → `4800000` cents; at most 2 decimals, positive, no leading zeros or exponents | `gate/normalizer.py` |
 | Records | Ordinary v1 records signed by `gate-1` (`PL-record-v1` context); see [`ledger.md`](ledger.md) | `ledger/signing.py` |
+| Credential signature | Ed25519 over `"PL-delegation-v1\x00" ‖ JCS(credential)` by the principal's key | `gate/delegation.py` |
+| Credential hash | `"sha256:" ‖ hex(SHA-256("PL-credential-v1\x00" ‖ JCS(credential)))` (the credential only, not its signature) | `gate/delegation.py` |
+| Revocation signature | Ed25519 over `"PL-revocation-v1\x00" ‖ JCS({credential_id, credential_hash, principal_id, revoked_at})` | `gate/delegation.py` |
+| Signed envelope | `{"v": 1, "alg": "ed25519", "key_id": "ed25519:<hex SHA-256 of the public key>", "sig": "<base64>", "credential" \| "revocation": {...}}` | `gate/delegation.py` |
 
 Worked example, from the tests (`DEMO_PAYMENT` in `tests/gate_helpers.py`):
 
@@ -247,6 +321,8 @@ Worked example, from the tests (`DEMO_PAYMENT` in `tests/gate_helpers.py`):
 - `args_digest` = `sha256:8937fae31df72ed2891cb2474eb2e9bcefbd28ba43c84ad42f2a84a9cbb996a2`
 - result `{"payment_id": "pay-demo-0001", "status": "sent"}` → `result_digest` = `sha256:5868308fb3a86aeced63629a6d15a65d80e1f5e725cd53102694ab2a74677e64`
 - seed `policy_set` = `sha256:266a2d2f5f745a89a4196e05bb4477fd36604f0f4f886214313389a7e864d51e`
+
+Delegation worked example, from `tests/vectors/delegation-v1.json` (`make vectors`; key `principal-1`, TEST ONLY): the credential above signs over 327 bytes; `credential_hash` = `sha256:9fce96a6cabf1b637a6aa0b4d6a8b5520240d5f4abcf8c4aba63016793aa1cb6`; `key_id` = `ed25519:ebf8d2391f5fc85ee5d290154874b608e616275d98d4f1b62ba81526e5c16a10`; `sig` = `SG9MyzGw/wpUvyKA3kVZqXA0z9butUUYqvVclQ4dj+V2N2W/rKV3VFjVXtfUfuLLpZOW/wAd9joutes7EMRPCA==`. A property test changes every byte of the signed envelope in turn and checks it never verifies.
 
 ## How to run and test
 
@@ -287,7 +363,7 @@ Environment variables (`GATE_*`, see `.env.example`): `GATE_LEDGER_URL`, `GATE_P
 
 ## Decisions
 
-[D49](../DECISIONS.md) Cedar with escalate annotations, fail closed on any Cedar error · [D50](../DECISIONS.md) facts, cents, time zone, argument digest · [D51](../DECISIONS.md) Gate as a service; the wrapper verifies · [D52](../DECISIONS.md) escalations close once; verdict before state · [D53](../DECISIONS.md) bearer tokens per caller · [D54](../DECISIONS.md) result records · [D55](../DECISIONS.md) `cedarpy`, MCP proxy deferred, briefs in `assist/`. Also D6 (Cedar via `cedarpy`), D9 (producer signature scope), D34 (strict JSON at the boundary).
+[D88](../DECISIONS.md) delegation credentials before Cedar · [D49](../DECISIONS.md) Cedar with escalate annotations, fail closed on any Cedar error · [D50](../DECISIONS.md) facts, cents, time zone, argument digest · [D51](../DECISIONS.md) Gate as a service; the wrapper verifies · [D52](../DECISIONS.md) escalations close once; verdict before state · [D53](../DECISIONS.md) bearer tokens per caller · [D54](../DECISIONS.md) result records · [D55](../DECISIONS.md) `cedarpy`, MCP proxy deferred, briefs in `assist/`. Also D6 (Cedar via `cedarpy`), D9 (producer signature scope), D34 (strict JSON at the boundary).
 
 ## Policy activation
 
@@ -295,6 +371,9 @@ Environment variables (`GATE_*`, see `.env.example`): `GATE_LEDGER_URL`, `GATE_P
 
 ## Known gaps
 
+- **Delegation is off by default.** The agent (`agent/`), the seeded week and the console do not carry credentials yet, so `GATE_REQUIRE_DELEGATION=true` would deny all of them. Turning it on needs: a principal key and `principals.json` in `make dev-keys`, an issued credential for `payments-ops`, and `open_agent` passing it to `Governor`.
+- **The credential is not bound to the request by its own signature.** It is presented with the agent's bearer token over Gate's API, and checked against the authenticated agent; an agent-side signature over each call (the request binding the blog's "authenticity" check asks for) would need agent keys.
+- **No principal key rotation story** beyond editing `principals.json` and restarting.
 - **MCP proxy** not built (D55). Only the decorator exists.
 - **Policies are one file read at start.** Activating rules approved in `policy/` (with their hash recorded) and reloading without a restart come with that module.
 - **No compose service** for `pl-gate` yet, same as the ledger and witnesses.

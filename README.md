@@ -29,7 +29,7 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 1022 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 1046 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -103,5 +103,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `agent/` (`pl-agent`): the payments-ops agent on LangGraph (`graph.py`), Muse Spark steps as structured output (`steps.py`, `assist/prompts/agent_step.md`), the demo bank (`bank.py`, `deploy/demo/vendors.json`), wiring and CLI (`cli.py`); `Governor.run_cleared` in `gate/governed.py`; the mock's agent script; `scripts/demo_agent.py` (`make demo-agent`, demo beat 2 with the agent) |
 | Oct 28 | `learn/`: the Policy Learner (`patterns.py` SQL over the verified export and the fatigue filter, `draft.py` and `assist/prompts/learn_proposal.md`, `replay.py`, `service.py`, `api.py` at `/learn/v1` in `pl-gate`); `check_summary` names in `claims/checker.py`; `active_draft` and the stale-base check in `policy/service.py`; the mock's learner script; `scripts/demo_learn.py` (`make demo-learn`, beat 6); seed week 20 after-hours new-payee requests; `r.patel` in dev keys |
 | Oct 28 | `web/` (`pl-web`): the console (`app.py`, `nav.py`, `security.py`, `backend.py`, `views.py`, `agent_runs.py`, `demo.py`, `routes/`, `templates/`, `static/css/app.css`, `static/js/`); htmx 2.0.4 vendored; `make web` |
+| Oct 29 | `gate/delegation.py`, `gate/delegation_records.py`: principal-signed delegation credentials checked before Cedar (missing, bad signature, not issued, revoked, expired, out of scope all deny), issue and revoke as ledger records, revocation derived from the ledger; `tests/vectors/delegation-v1.json`; off by default (`GATE_REQUIRE_DELEGATION`) |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.
