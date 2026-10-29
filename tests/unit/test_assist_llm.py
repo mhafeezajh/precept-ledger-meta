@@ -201,6 +201,9 @@ async def test_reasoning_effort_is_sent_only_when_a_route_sets_it(tmp_path: Path
         "spark", Answer, MESSAGES, prompt_version="t/1"
     )
     assert fake.calls[1]["reasoning_effort"] == "low"
+    # LiteLLM 1.105.0's table lacks muse-wonder-1.0 and refused the parameter locally, live.
+    assert fake.calls[1]["allowed_openai_params"] == ["reasoning_effort"]
+    assert "allowed_openai_params" not in fake.calls[0]
 
 
 @pytest.mark.parametrize("effort", ["none", "fast", "LOW", ""])

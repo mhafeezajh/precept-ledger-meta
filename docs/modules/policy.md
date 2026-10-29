@@ -2,7 +2,7 @@
 
 Guarantees that a rule reaches Gate only after a compliance officer approved it, and that it was checked first. A rule drafted from a policy PDF reaches the reviewer as plain YAML citing its clause, with the page and character span computed by code. Code compiles it to Cedar and checks that it passes the Cedar schema, that its fixtures get the outcomes they expect from the whole rule set, that it does not allow the riskiest request on its own, and that every number in it is a number its clause states. Approval re-runs every check and refuses any draft with findings. Every draft and approval is a signed ledger record, and Gate restores the latest approval when it restarts.
 
-Status: done for this step (demo beat 1, `make demo-policy`). Drafting has run on the `mock` profile only; Muse Wonder (`muse-wonder-1.0`) has not been called yet. · Last updated: 2026-10-28 · Tests: 59 unit (`test_policy.py` 40, `test_policy_review.py` 19). Coverage: `rules.py` 97%, `compiler.py` 100%, `checks.py` 100%, `pdf.py` 98%, `draft.py` 97%, `service.py` 98%, `api.py` 100%.
+Status: done for this step (demo beat 1, `make demo-policy`). Muse Wonder (`muse-wonder-1.0`) drafted the demo policy live on 2026-10-29 in 28 s, every quote found in its clause and no check findings. · Last updated: 2026-10-29 · Tests: 62 unit (`test_policy.py` 42, `test_policy_review.py` 19 run by default, 1 live). A rule whose `action` is not a string is refused as `policy.rule_action` (found live, D90). Coverage: `rules.py` 97%, `compiler.py` 100%, `checks.py` 100%, `pdf.py` 98%, `draft.py` 97%, `service.py` 98%, `api.py` 100%.
 
 Related pages: [`gate.md`](gate.md) (how Gate evaluates and activates the set), [`assist.md`](assist.md) (the model entry point and the mock), [`../MODELS.md`](../MODELS.md), [`../DECISIONS.md`](../DECISIONS.md) D68–D75.
 
@@ -224,7 +224,6 @@ uv run python -c "from pathlib import Path; from policy.rules import parse_rules
 
 ## Known gaps
 
-- Muse Wonder not called yet: drafting ran on the `mock` profile, which returns the seed rules for clauses whose quotes match. The first live draft may need prompt changes.
 - No review web page yet (`web/`); the officer's edit is YAML over the API.
 - `gt` versus `gte` wording ("over" versus "or more") is not checked.
 - No `or` within one rule; two rules express it. `unless` covers "outside business hours".

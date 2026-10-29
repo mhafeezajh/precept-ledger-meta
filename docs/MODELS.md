@@ -16,7 +16,7 @@ Every model the project calls, with the exact IDs, parameters and limits, checke
 | Role | Model ID | Mode | Context | Price per 1M tokens (input / cached / output) | Rate limit | Used for |
 | --- | --- | --- | --- | --- | --- | --- |
 | `spark` | `muse-spark-1.3` | Standard | 1,048,576 | $1.25 / $0.15 / $4.25 | 3,000 RPM, 4,000,000 TPM per team | Approval briefs, auditor Q&A, the payments agent's steps (`agent/steps.py`), learner proposals (`learn/draft.py`); all run live on Oct 29 |
-| `wonder` | `muse-wonder-1.0` | Standard (preview; Contributor not offered) | 1,048,576 | $4.00 / $0.20 / $20.00 | 3,000 RPM, 4,000,000 TPM per team | Policy PDF → rules (`policy/draft.py`); not called live yet |
+| `wonder` | `muse-wonder-1.0` | Standard (preview; Contributor not offered) | 1,048,576 | $4.00 / $0.20 / $20.00 | 3,000 RPM, 4,000,000 TPM per team | Policy PDF → rules (`policy/draft.py`); run live on Oct 29 |
 
 Sources: [models](https://dev.meta.ai/docs/models.md), [pricing and rate limits](https://dev.meta.ai/docs/pricing-rate-limits.md). LiteLLM 1.105.0's bundled price table carries the same `muse-spark-1.3` prices; `assist/llm.py` sets `LITELLM_LOCAL_MODEL_COST_MAP=True` so LiteLLM never fetches a price table from the network at import.
 
@@ -85,6 +85,9 @@ Every model role now runs live. `MODEL_PROFILE=cloud uv run pytest -m live` pass
 | `learn_proposal/2` | `medium` | 4,991–5,090 | 3,374–13,687 | 12–110 s, most 20–60 s |
 | `agent_step/1` | `medium` | 870–1,438 | 303–849 | 2.3–3.8 s |
 | `approval_brief/2` | `medium` | 1,356 | 5,255 | 20.5 s |
+| `policy_draft/1` (Muse Wonder) | `medium` | 915 | 4,121 | 27.9 s |
+
+Muse Wonder's first live draft turned every clause of `deploy/demo/payments_policy.pdf` into rules whose quotes code found in their clauses, with no findings from the policy checks (`test_beat_1_on_muse_wonder`). Its first attempt never left the machine: LiteLLM 1.105.0's model table has no `muse-wonder-1.0`, so it refused `reasoning_effort` locally (`UnsupportedParamsError`, logged `refused`, 0 tokens). `assist/llm.py` now names the parameter in LiteLLM's `allowed_openai_params` whenever it sends it.
 
 What changed to get the learner's proposals through their checks live, and the measurements per level, are in D90.
 

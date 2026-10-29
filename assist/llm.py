@@ -115,8 +115,15 @@ class ModelConfig:
         return route
 
 
-def _effort(route: Route) -> dict[str, str]:
-    return {"reasoning_effort": route.reasoning_effort} if route.reasoning_effort else {}
+def _effort(route: Route) -> dict[str, Any]:
+    if not route.reasoning_effort:
+        return {}
+    # LiteLLM 1.105.0's model table has no muse-wonder-1.0 and refuses the parameter for it
+    # before sending; Meta documents it for both models (docs/MODELS.md, D90).
+    return {
+        "reasoning_effort": route.reasoning_effort,
+        "allowed_openai_params": ["reasoning_effort"],
+    }
 
 
 def redact(text: str) -> str:

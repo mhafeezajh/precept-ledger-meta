@@ -325,3 +325,22 @@ async def test_the_api_refuses_what_it_should(tmp_path: Path) -> None:
         assert not_utf8.status_code == 400
         anonymous = await s.http.get(f"/policy/v1/drafts/{draft_id}")
         assert anonymous.status_code == 401
+
+
+@pytest.mark.live
+async def test_beat_1_on_muse_wonder() -> None:
+    from assist.llm import model_config
+    from common.config import load_settings
+
+    config = model_config(load_settings())
+    if config is None or config.profile != "cloud":
+        pytest.skip("needs MODEL_PROFILE=cloud and META_API_KEY")
+    doc = read_pdf(PDF, NAME)
+    draft = await Drafter(LlmClient(config)).draft(doc)
+    print(to_yaml(draft.rules))
+    print([(f.rule_id, f.check, f.detail) for f in draft.report.findings])
+    assert draft.rules
+    assert draft.model == "meta/muse-wonder-1.0"
+    for rule in draft.rules:
+        assert rule.source.span is not None
+        assert doc.text[rule.source.span[0] : rule.source.span[1]] == rule.source.quote
