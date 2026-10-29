@@ -140,18 +140,25 @@ class LearnService:
         log = await self._view.proven()
         since = self._clock.now() - timedelta(days=window_days)
         window = Window(since, self._min_sample, self._fast_seconds)
-        proposals, skipped, failed = [], [], []
+        proposals, skipped, failed, live = [], [], [], []
         for pattern in find_patterns(load(log.records), window):
-            key = pattern.scope.key()
             why = pattern.skipped or self._settled(pattern, log)
-            if why is not None:
-                skipped.append({"key": key, "reason": why, "counts": pattern.counts})
+            if why is None:
+                live.append(pattern)
+            else:
+                skipped.append({"key": pattern.scope.key(), "reason": why,
+                                "counts": pattern.counts})  # fmt: skip
+        # Drafted together (each takes tens of seconds live), recorded in pattern order.
+        drafts = await asyncio.gather(
+            *(self._drafter.draft(p, rules, log, inject_fault=inject_fault) for p in live),
+            return_exceptions=True,
+        )
+        for pattern, drafted in zip(live, drafts, strict=True):
+            if isinstance(drafted, ModelOutputError):  # no proposal, not a guessed one (R4)
+                failed.append({"key": pattern.scope.key(), "code": drafted.code})
                 continue
-            try:
-                drafted = await self._drafter.draft(pattern, rules, log, inject_fault=inject_fault)
-            except ModelOutputError as exc:  # no proposal rather than a guessed one (R4)
-                failed.append({"key": key, "code": exc.code})
-                continue
+            if isinstance(drafted, BaseException):
+                raise drafted
             body = self._proposal_body(pattern, drafted, rules, log, window_days, since)
             body["base"] = {"policy_record_id": approval.record_id,
                             "draft_record_id": draft.record_id,

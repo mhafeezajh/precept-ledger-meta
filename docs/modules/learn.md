@@ -4,7 +4,7 @@
 
 Guarantees that a proposed rule change rests only on proven records and SQL counts, cannot loosen anything a person ever refused, cannot change anything outside the pattern it came from, and reaches Gate only after the required approvals and a normal policy approval. The learner proposes; it never activates, edits or deletes a rule (D8).
 
-Status: done for this step (demo beat 6, `make demo-learn`). Drafting has run on the `mock` profile only; Muse Spark has not drafted a proposal yet (live test ready). · Last updated: 2026-10-28 · Tests: 15 unit in `tests/unit/test_learn.py` (14 run by default, 1 live), plus 6 learner import-boundary checks. Coverage: `patterns.py` 100%, `api.py` 99%, `replay.py` 98%, `service.py` 97%, `draft.py` 96%.
+Status: done (demo beat 6, `make demo-learn` and the console's Learner page). Muse Spark drafts both demo proposals live, each passing every check, in 38 s for a run at `medium` reasoning effort (D90). · Last updated: 2026-10-29 · Tests: 19 unit in `tests/unit/test_learn.py` (18 run by default, 1 live), plus 6 learner import-boundary checks. Coverage: `patterns.py` 100%, `api.py` 99%, `replay.py` 98%, `service.py` 97%, `draft.py` 96%.
 
 Related pages: [`policy.md`](policy.md) (rule format, checks, policy approval), [`claims.md`](claims.md) (claim checker, proven log), [`assist.md`](assist.md) (model entry point, mock), [`../MODELS.md`](../MODELS.md), [`../DECISIONS.md`](../DECISIONS.md) D80–D83.
 
@@ -34,8 +34,8 @@ Does not own:
 
 1. A compliance officer runs the learner: `POST /learn/v1/run?window=7d`. The learner reads the stream's export from the ledger API and verifies it up to the latest final (witnessed) checkpoint. If it does not verify, nothing is counted (`learn.log_unproven`).
 2. The proven records go into an in-memory SQLite database as two tables, `decision` and `verdict`, values copied as recorded. Fixed SQL in `learn/patterns.py` joins escalations with their verdicts in the window, applies the fatigue filter and groups what is left.
-3. For each candidate, Muse Spark gets the scope (as rule conditions and in words), the SQL counts, up to 12 rows and the active rules for the action. It returns rule changes, a reason, the counts restated and claims about rows.
-4. Code sets every changed rule's source, then checks: restated counts against SQL, claims against the proven log, the reason's numbers and names, the merged set with every policy check, and replay of the whole window.
+3. For each candidate, Muse Spark gets the scope (as rule conditions and in words), the SQL counts, up to 12 rows and the active rules for the action. Each row is shown as its two records, `decision_record` and `verdict_record`, with every field under the path a claim asserts and the value that record holds; each active rule lists `fixtures_to_move`, the fixtures code found inside the scope that the change would flip (D90). It returns rule changes, a reason, the counts restated and claims about rows. Candidates are drafted concurrently and recorded in pattern order.
+4. Code sets every changed rule's source, then checks: restated counts against SQL, claims against the proven log, the reason's numbers and names (rule ids, the scope's agent and action, and the learner's own words such as `known-payee` or `fast_dropped` need no claim; payee ids and approvers do), the merged set with every policy check, and replay of the whole window.
 5. The proposal is appended as `learn.proposal`, signed by Gate, as `review`, `rejected` or `blocked`, with every reason.
 6. Officers approve: one for a tightening, two distinct ones for a loosening, never the agent's owner. Each approval is a `learn.approve` record.
 7. The last approval appends a `policy.draft`: the active rules with the change, checked again, citing the proposal and the approvals. `a.chen` approves it through the policy API and Gate enforces it from then on.
@@ -199,11 +199,9 @@ That dev stream held the earlier 14-row seed, so the tightening pattern had 15 d
 
 ## Decisions
 
-D8 (learner proposes, humans approve), D73 (policy records in the ledger), D76 (seeded week), D80 (SQL over the proven export), D81 (proposals as ledger records; the policy draft and the stale-base check), D82 (scope from code, sources set by code, what blocks), D83 (settled patterns and the seed's 20 after-hours requests).
+D8 (learner proposes, humans approve), D73 (policy records in the ledger), D76 (seeded week), D80 (SQL over the proven export), D81 (proposals as ledger records; the policy draft and the stale-base check), D82 (scope from code, sources set by code, what blocks), D83 (settled patterns and the seed's 20 after-hours requests), D90 (live: the row view, fixtures to move, the reason's vocabulary, concurrent drafting, reasoning effort).
 
 ## Known gaps
 
-- Muse Spark has not drafted a proposal yet; the live test is ready.
-- No web page yet: beat 6 runs through `make demo-learn` until `web/` exists.
 - One pattern grouping (agent, action, payee status, business hours, amount bands). Per-payee or per-amount-band patterns are not looked for.
 - The window is counted from now; a run long after `make seed-week` sees less of the seeded week.

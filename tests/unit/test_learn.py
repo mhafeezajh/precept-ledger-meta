@@ -317,6 +317,78 @@ async def test_beat_6_proposals_replayed_reviewed_and_enforced(week: Week, tmp_p
     assert types.count(APPROVE) == 2
 
 
+async def test_the_model_sees_each_row_as_its_two_records_with_the_checked_fields(
+    week: Week,
+) -> None:
+    # Live, the model asserted body.decision 'approved' on decision records: the verdict sits
+    # on its own record. Rows now show each field under the path the claim checker reads.
+    records = await week.records()
+    for pattern in (await candidates(week)).values():
+        rows = json.loads(model_input(pattern, parse_rules(SEED_YAML)).split("Pattern:\n", 1)[1])
+        for row in rows["rows"]:
+            assert set(row) == {"decision_record", "verdict_record", "seconds_to_verdict"}
+            assert row["decision_record"]["body.decision"] == "escalate"
+            for shown in (row["decision_record"], row["verdict_record"]):
+                body = body_of(records, shown["record_id"])
+                for path, value in shown.items():
+                    if path == "record_id":
+                        continue
+                    held: Any = {"body": body}
+                    for part in path.split("."):
+                        held = held[part]
+                    assert held == value, (path, value)
+            assert row["verdict_record"]["body.verdict"] in ("approve", "reject", "expire")
+
+
+async def test_code_marks_the_fixtures_a_change_would_move(week: Week) -> None:
+    # Live, the model kept a fixture the new allow rule now covers, at every reasoning effort.
+    found = await candidates(week)
+    for key, expected in ((LOOSEN, {"pay-known-payee-01": [3]}), (TIGHTEN, {})):
+        view = json.loads(model_input(found[key], parse_rules(SEED_YAML)).split("Pattern:\n")[1])
+        marked = {r["id"]: r["fixtures_to_move"] for r in view["active_rules"]
+                  if r["fixtures_to_move"]}  # fmt: skip
+        assert marked == expected
+
+
+def test_the_reason_may_use_the_learners_own_words_but_no_invented_name(week: Week) -> None:
+    from learn.draft import reason_names
+
+    scope = Scope("payments-ops", "value.transfer", False, True, 500000, 1500000)
+    words = reason_names(scope, ["pay-known-payee-01"])
+    text = (
+        "Known-payee payments in business-hours were approved; fast-dropped and "
+        "stamped_dropped approvals were set aside, unlike after-hours new-payee ones."
+    )
+    assert check_summary(text, [], names=words) == []
+    stray = check_summary(text + " One went to cobalt-freight.", [], names=words)
+    assert stray == ["names in the text that no assertion establishes: ['cobalt-freight']"]
+
+
+async def test_patterns_are_drafted_together_and_recorded_in_order(
+    week: Week, tmp_path: Path
+) -> None:
+    # Live, one draft takes about 40 s at medium effort; one after another missed the
+    # console's timeout. Records still go to the ledger in pattern order.
+    import asyncio
+
+    started: list[str] = []
+    both = asyncio.Event()
+
+    class Together(LearnDrafter):
+        async def draft(self, pattern: Pattern, *args: Any, **kwargs: Any) -> Any:
+            started.append(pattern.scope.key())
+            if len(started) == 2:
+                both.set()
+            await asyncio.wait_for(both.wait(), timeout=2)  # times out if drafted in turn
+            return await super().draft(pattern, *args, **kwargs)
+
+    route = Route(MOCK_MODEL, None, None)
+    config = ModelConfig("mock", {"mock": {"spark": route}}, 5, tmp_path / "calls.csv")
+    run = await week.service(Together(LlmClient(config))).run(OFFICER)
+    assert [p.body["direction"] for p in run.proposals] == ["loosen", "tighten"]
+    assert sorted(started) == [LOOSEN, TIGHTEN]
+
+
 async def test_an_inflated_count_rejects_the_proposal(week: Week, tmp_path: Path) -> None:
     service = week.service(mock_drafter(tmp_path))
     run = await service.run(OFFICER, inject_fault=True)

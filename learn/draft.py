@@ -21,7 +21,7 @@ only) adds 10 to the first restated count, to show that rejection on demand.
 """
 
 import json
-from collections.abc import Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -34,12 +34,16 @@ from assist.llm import LlmClient
 from claims.checker import ClaimResult, check_claims_in_log, check_summary
 from claims.log import ProvenLog
 from common.errors import PolicyError
-from learn.patterns import COUNT_NAMES, Pattern
+from learn.patterns import COUNT_NAMES, Pattern, Scope
+from learn.replay import scope_policies
+from policy.checks import FIXTURE_AGENT
 from policy.draft import ConditionOut, FixtureOut, Short
-from policy.rules import PolicyRule, rule_data, rules_from_data
+from policy.rules import PolicyRule, rule_data, rules_from_data, to_context
 
 PROMPT = Path(__file__).resolve().parent.parent / "assist" / "prompts" / "learn_proposal.md"
 LEARNED_DOC = "learner"
+_SCOPE_WORDS = ("known-payee", "new-payee", "business-hours", "after-hours", "payee_new",
+                "amount_cents", "local_hour", "local_weekday")  # fmt: skip
 MAX_ROWS = 12  # rows the model sees; the counts cover all of them
 
 
@@ -171,6 +175,48 @@ def _count_problems(stated: dict[str, int], pattern: Pattern) -> list[str]:
     ]
 
 
+def fixtures_to_move(rule: PolicyRule, pattern: Pattern) -> list[int]:
+    """Numbers of the rule's fixtures inside the scope that expect another outcome than the
+    change gives there: a replacement must move them just outside it. Live, the model missed
+    them at every reasoning effort; code knows them exactly (scope_policies, as replay uses)."""
+    covered = scope_policies(pattern.scope)
+    outcome = "allow" if pattern.direction == "loosen" else "deny"
+    moved = []
+    for i, fixture in enumerate(rule.tests, start=1):
+        agent = fixture.agent or rule.agent or FIXTURE_AGENT
+        facts = to_context(rule.action, dict(fixture.facts))
+        inside = covered.evaluate(agent, rule.action, "fixture", facts).outcome == "allow"
+        if inside and fixture.expect != outcome:
+            moved.append(i)
+    return moved
+
+
+def reason_names(scope: Scope, rule_ids: Iterable[str]) -> set[str]:
+    """Names the reason may use without a claim: the rule ids, the scope's agent and action,
+    and the learner's own vocabulary (count names, condition fields, the scope's words), in
+    both spellings. Payee ids and approvers still need an assertion (R5)."""
+    words = {*COUNT_NAMES, *_SCOPE_WORDS}
+    spelled = {w.replace("_", "-") for w in words} | {w.replace("-", "_") for w in words}
+    return {*rule_ids, scope.agent, scope.action, *spelled}
+
+
+def _row_view(row: Mapping[str, Any]) -> dict[str, Any]:
+    """One counted row as its two records, each field under the path the claim checker reads
+    and with the value the record holds: live, the model put the verdict on the decision."""
+    decision: dict[str, Any] = {"record_id": row["decision_record_id"], "body.decision": "escalate"}
+    for field in ("amount_cents", "payee_id", "payee_new", "local_hour", "local_weekday"):
+        if row[field] is not None:
+            decision[f"body.resource.{field}"] = row[field]
+    verdict: dict[str, Any] = {
+        "record_id": row["verdict_record_id"],
+        "body.verdict": row["verdict"],
+    }
+    if row["approver"] is not None:
+        verdict["body.approver"] = row["approver"]
+    return {"decision_record": decision, "verdict_record": verdict,
+            "seconds_to_verdict": row["verdict_seconds"]}  # fmt: skip
+
+
 def model_input(pattern: Pattern, base_rules: Sequence[PolicyRule]) -> str:
     scope = pattern.scope
     view = {
@@ -179,11 +225,9 @@ def model_input(pattern: Pattern, base_rules: Sequence[PolicyRule]) -> str:
                   "when": scope.when(), "unless": scope.unless()},
         "counts": pattern.counts,
         "policies_matched": pattern.policy_ids(),
-        "active_rules": [rule_data(r) for r in base_rules if r.action == scope.action],
-        "rows": [{k: row[k] for k in ("decision_record_id", "verdict_record_id", "amount_cents",
-                                      "payee_id", "payee_new", "local_hour", "local_weekday",
-                                      "verdict", "approver", "verdict_seconds")}
-                 for row in pattern.rows[:MAX_ROWS]],
+        "active_rules": [{**rule_data(r), "fixtures_to_move": fixtures_to_move(r, pattern)}
+                         for r in base_rules if r.action == scope.action],
+        "rows": [_row_view(row) for row in pattern.rows[:MAX_ROWS]],
     }  # fmt: skip
     return "Pattern:\n" + json.dumps(view, indent=1, default=str)  # model input, never hashed
 
@@ -221,7 +265,7 @@ class LearnDrafter:
             injected = f"counts.{name}"
         results = tuple(check_claims_in_log([to_claim(c) for c in answer.claims], log))
         numbers = {*pattern.counts.values(), *pattern.scope.numbers()}
-        names = {r.id for r in merged} | {pattern.scope.agent, pattern.scope.action}
+        names = reason_names(pattern.scope, [r.id for r in merged])
         reason = check_summary(answer.reason, results, numbers=numbers, names=names)
         return Drafted(
             answer, changed, merged, stated, tuple(_count_problems(stated, pattern)), results,

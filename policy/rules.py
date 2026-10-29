@@ -228,10 +228,9 @@ def _rule(raw: object, index: int) -> PolicyRule:
     rule_id = _text(raw["id"], _ID, f"{where}.id")
     where = rule_id
     when = raw["when"]
-    if not isinstance(when, dict) or when.get("action") not in FIELDS:
-        action = when.get("action") if isinstance(when, dict) else None
+    action = when.get("action") if isinstance(when, dict) else None
+    if not isinstance(action, str) or action not in FIELDS:  # a dict is unhashable: check type
         raise _bad(f"{where}: unknown action {action!r}", "policy.rule_action")
-    action = when["action"]
     then, role = raw["then"], raw.get("approver_role")
     if then not in OUTCOMES or (then == "escalate") != (role is not None):
         raise _bad(

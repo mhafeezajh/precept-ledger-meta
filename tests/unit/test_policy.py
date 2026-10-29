@@ -128,6 +128,9 @@ def test_compiling_is_deterministic_and_the_digest_is_gates() -> None:
         (one(when='{ action: value.transfer, amount: { gt: "5000.001" } }'), "policy.rule_value"),
         (one(when="{ action: value.transfer, memo: x }"), "policy.rule_field"),
         (one(when="{ action: money.burn }"), "policy.rule_action"),
+        # Live, a model wrote the action as a condition: refused, never a TypeError (R4).
+        (one(when="{ action: { eq: value.transfer } }"), "policy.rule_action"),
+        (one(when="{ action: [value.transfer] }"), "policy.rule_action"),
         (one(when="{ action: value.transfer, amount: { about: 5 } }"), "policy.rule_op"),
         (one(when="{ action: value.transfer, payee_new: { gt: true } }"), "policy.rule_op"),
         (one(when="{ action: value.transfer, payee_new: 1 }"), "policy.rule_value"),

@@ -185,6 +185,50 @@ async def test_the_onprem_profile_switches_every_route(tmp_path: Path) -> None:
     )
 
 
+async def test_reasoning_effort_is_sent_only_when_a_route_sets_it(tmp_path: Path) -> None:
+    fake = FakeCompletion('{"text": "a", "count": 1}', '{"text": "a", "count": 1}')
+    await client(tmp_path, fake).complete_structured(
+        "spark", Answer, MESSAGES, prompt_version="t/1"
+    )
+    assert "reasoning_effort" not in fake.calls[0]  # unset: the model picks its own level
+    config = ModelConfig(
+        profile="cloud",
+        routes={"cloud": {"spark": Route("meta/muse-spark-1.3", None, "k", "low")}},
+        timeout_seconds=5,
+        call_log=tmp_path / "x.csv",
+    )
+    await LlmClient(config, completion=fake, sleep=no_sleep).complete_structured(
+        "spark", Answer, MESSAGES, prompt_version="t/1"
+    )
+    assert fake.calls[1]["reasoning_effort"] == "low"
+
+
+@pytest.mark.parametrize("effort", ["none", "fast", "LOW", ""])
+def test_unknown_reasoning_efforts_are_refused(tmp_path: Path, effort: str) -> None:
+    # "none" is a 400 on Muse Spark and Wonder; anything else unknown is never guessed.
+    routes = {"cloud": {"spark": Route("meta/muse-spark-1.3", None, "k", effort)}}
+    with pytest.raises(ConfigError) as caught:
+        ModelConfig(profile="cloud", routes=routes, timeout_seconds=5, call_log=tmp_path / "x.csv")
+    assert caught.value.code == "config.reasoning_effort"
+
+
+def test_the_setting_reaches_cloud_routes_only(tmp_path: Path) -> None:
+    from assist.llm import model_config
+    from common.config import Settings
+
+    settings = Settings(_env_file=None, database_url="postgresql://x", keys_dir=tmp_path,  # type: ignore[call-arg]  # values, not env
+                        model_profile="cloud", meta_api_key="test-key", onprem_api_base="http://h/v1",
+                        onprem_model="m", model_reasoning_effort="low")  # fmt: skip
+    config = model_config(settings)
+    assert config is not None
+    assert {r.reasoning_effort for r in config.routes["cloud"].values()} == {"low"}
+    assert config.routes["onprem"]["spark"].reasoning_effort is None
+    unset = model_config(settings.model_copy(update={"model_reasoning_effort": ""}))
+    assert unset is not None
+    assert config.routes["cloud"]["spark"] != unset.routes["cloud"]["spark"]
+    assert unset.routes["cloud"]["spark"].reasoning_effort is None
+
+
 async def test_digits_that_could_be_account_numbers_never_leave(tmp_path: Path) -> None:
     fake = FakeCompletion('{"text": "a", "count": 1}')
     messages = [

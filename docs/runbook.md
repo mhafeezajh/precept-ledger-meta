@@ -16,7 +16,7 @@ Restart `make serve` after `make dev-keys` adds a producer (it reads `trusted.js
 
 ## Models
 
-`MODEL_PROFILE=mock` (development): briefs, audit answers and policy drafts come from `assist/mock.py`, offline and free, labelled `mock/scripted` in every record. `MODEL_PROFILE=cloud` with `META_API_KEY`: Muse Spark and Muse Wonder through the Meta Model API. Restart `make gate` after switching. See [`MODELS.md`](MODELS.md).
+`MODEL_PROFILE=mock` (development): briefs, audit answers and policy drafts come from `assist/mock.py`, offline and free, labelled `mock/scripted` in every record. `MODEL_PROFILE=cloud` with `META_API_KEY`: Muse Spark and Muse Wonder through the Meta Model API. Restart `make gate` after switching. Set it in `.env`, or pass it as a make argument (`make gate MODEL_PROFILE=cloud`, `make demo-agent MODEL_PROFILE=cloud`): the Makefile loads `.env`, and its values win over a variable set in front of `make`. `MODEL_REASONING_EFFORT` (default `medium`) sets how long the model thinks; at `medium` a learner run takes about 40 s and beat 2 about 35 s. See [`MODELS.md`](MODELS.md).
 
 ## The console
 

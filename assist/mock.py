@@ -324,21 +324,18 @@ def _learned_rule(
 
 
 def _learn_claim(row: Mapping[str, Any]) -> dict[str, Any]:
-    decision_id, verdict_id = row["decision_record_id"], row["verdict_record_id"]
-    check = [
-        {"record_id": decision_id, "field": "body.decision", "op": "eq", "value": "escalate"},
-        {"record_id": verdict_id, "field": "body.verdict", "op": "eq", "value": row["verdict"]},
-        {"record_id": verdict_id, "field": "body.approver", "op": "eq", "value": row["approver"]},
-    ]
+    decision, verdict = row["decision_record"], row["verdict_record"]
+    fields = ["body.decision", "body.resource.amount_cents", "body.resource.payee_id"]
+    check = [{"record_id": record["record_id"], "field": field, "op": "eq", "value": record[field]}
+             for record, names in ((decision, fields), (verdict, ["body.verdict", "body.approver"]))
+             for field in names if field in record]  # fmt: skip
     subject = "A request"
-    if row["amount_cents"] is not None:
-        subject = f"A payment of {_dollars(row['amount_cents'])} to {row['payee_id']}"
-        check += [{"record_id": decision_id, "field": "body.resource.amount_cents", "op": "eq",
-                   "value": row["amount_cents"]},
-                  {"record_id": decision_id, "field": "body.resource.payee_id", "op": "eq",
-                   "value": row["payee_id"]}]  # fmt: skip
-    return {"text": f"{subject} was {_PAST[row['verdict']]} by {row['approver']}.",
-            "record_ids": [decision_id, verdict_id], "assertions": check}  # fmt: skip
+    if "body.resource.amount_cents" in decision:
+        subject = (f"A payment of {_dollars(decision['body.resource.amount_cents'])} "
+                   f"to {decision['body.resource.payee_id']}")  # fmt: skip
+    text = f"{subject} was {_PAST[verdict['body.verdict']]} by {verdict.get('body.approver')}."
+    return {"text": text, "record_ids": [decision["record_id"], verdict["record_id"]],
+            "assertions": check}  # fmt: skip
 
 
 def _learner_proposal(user: str) -> dict[str, Any]:

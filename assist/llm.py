@@ -44,6 +44,8 @@ litellm.drop_params = False  # an unsupported parameter is an error, never silen
 M = TypeVar("M", bound=BaseModel)
 Check = Callable[[Any], list[str]]
 PROFILES = ("cloud", "onprem", "mock")
+# Meta's levels (docs/MODELS.md); "none" is a 400 on Muse Spark and Wonder, so it is not here.
+REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 CALL_LOG_FIELDS = (
     "ts", "profile", "model", "prompt_version", "prompt_sha256", "input_tokens",
     "output_tokens", "latency_ms", "outcome",
@@ -67,6 +69,7 @@ class Route:
     model: str  # LiteLLM model string, e.g. meta/muse-spark-1.3
     api_base: str | None
     api_key: str | None
+    reasoning_effort: str | None = None  # Meta's top-level parameter; None lets the model pick
 
     def __repr__(self) -> str:
         return f"Route({self.model!r}, {self.api_base!r})"  # never the key
@@ -91,6 +94,13 @@ class ModelConfig:
                         "Contributor-mode models are never used (R6)",
                         code="config.contributor_mode",
                     )
+                if route.reasoning_effort is not None and (
+                    route.reasoning_effort not in REASONING_EFFORTS
+                ):
+                    raise ConfigError(
+                        f"unknown reasoning effort {route.reasoning_effort!r}",
+                        code="config.reasoning_effort",
+                    )
                 if profile == "cloud" and not route.model.startswith("meta/"):
                     raise ConfigError(
                         "cloud routes go to the Meta Model API only", code="config.model_route"
@@ -103,6 +113,10 @@ class ModelConfig:
                 f"no {role!r} model in profile {self.profile}", code="config.model_route"
             )
         return route
+
+
+def _effort(route: Route) -> dict[str, str]:
+    return {"reasoning_effort": route.reasoning_effort} if route.reasoning_effort else {}
 
 
 def redact(text: str) -> str:
@@ -202,7 +216,7 @@ class LlmClient:
                 response = await self._completion(
                     model=route.model, messages=conversation, response_format=response_format,
                     temperature=0, api_base=route.api_base, api_key=route.api_key,
-                    timeout=self.config.timeout_seconds,
+                    timeout=self.config.timeout_seconds, **_effort(route),
                 )  # fmt: skip
                 break
             except _TRANSIENT as exc:
@@ -280,11 +294,12 @@ def model_config(settings: Settings) -> ModelConfig | None:
             settings.model_timeout_seconds, settings.model_call_log,
         )  # fmt: skip
     key = settings.meta_api_key.get_secret_value() if settings.meta_api_key else None
+    effort = settings.model_reasoning_effort or None
     onprem = Route(f"openai/{settings.onprem_model}", settings.onprem_api_base or None, None)
     routes = {
         "cloud": {
-            "spark": Route("meta/muse-spark-1.3", settings.meta_api_base, key),
-            "wonder": Route("meta/muse-wonder-1.0", settings.meta_api_base, key),
+            "spark": Route("meta/muse-spark-1.3", settings.meta_api_base, key, effort),
+            "wonder": Route("meta/muse-wonder-1.0", settings.meta_api_base, key, effort),
         },
         "onprem": {"spark": onprem},
     }
