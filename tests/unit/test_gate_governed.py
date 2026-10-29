@@ -233,3 +233,32 @@ async def test_arguments_that_are_not_i_json_never_reach_gate() -> None:
 def test_non_json_results_have_no_digest() -> None:
     assert result_digest({"ok": 0.5}) is None
     assert result_digest(PAID) == result_digest(dict(reversed(PAID.items())))
+
+
+async def test_run_cleared_returns_the_records_that_cleared_the_call() -> None:
+    r = rig()
+    tool, held = Tool(), []
+    gov = governor(LocalEndpoint(r.gate), r.clock)
+    effect = lambda: tool(**DEMO_PAYMENT)  # noqa: E731  # a one-line effect
+    call = asyncio.create_task(
+        gov.run_cleared("create_payment", DEMO_PAYMENT, effect, on_hold=held.append)
+    )
+    await approve_when_open(r)
+    cleared = await asyncio.wait_for(call, 1)
+    decision, verdict, _ = r.ledger.appended
+    assert cleared.result == PAID
+    assert cleared.decision.record_id == decision.record_id
+    assert cleared.verdict is not None
+    assert cleared.verdict.record_id == verdict.record_id
+    assert [h.record_id for h in held] == [decision.record_id]  # told once, before the wait
+
+
+async def test_run_cleared_for_an_allowed_call_has_no_verdict_and_no_hold() -> None:
+    r = rig()
+    tool, held = Tool(), []
+    gov = governor(LocalEndpoint(r.gate), r.clock)
+    cleared = await gov.run_cleared(
+        "create_payment", SMALL_PAYMENT, lambda: tool(**SMALL_PAYMENT), on_hold=held.append
+    )
+    assert (cleared.result, cleared.verdict, held) == (PAID, None, [])
+    assert cleared.decision.record_id == r.ledger.appended[0].record_id

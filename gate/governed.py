@@ -45,6 +45,15 @@ class GateDenied(GateError):
 
 
 @dataclass(frozen=True)
+class Cleared[R]:
+    """A tool's result with the verified records that let it run."""
+
+    result: R
+    decision: Receipted
+    verdict: Receipted | None  # the approval, when the decision was escalate
+
+
+@dataclass(frozen=True)
 class EscalationStatus:
     state: str
     verdict: Receipted | None
@@ -99,8 +108,20 @@ class Governor:
     async def run(
         self, tool: str, arguments: dict[str, Any], effect: Callable[[], Awaitable[T]]
     ) -> T:
+        return (await self.run_cleared(tool, arguments, effect)).result
+
+    async def run_cleared(
+        self,
+        tool: str,
+        arguments: dict[str, Any],
+        effect: Callable[[], Awaitable[T]],
+        *,
+        on_hold: Callable[[Receipted], None] | None = None,
+    ) -> Cleared[T]:
+        """``run``, also returning the records; ``on_hold`` hears of an escalation before the
+        wait for its verdict (the agent's progress display)."""
         decision = await self._decide(tool, arguments)
-        verdict = await self._clearance(decision)
+        verdict = await self._clearance(decision, on_hold)
         # Write before effect holds here: a verified decision (and verdict) receipt exists.
         log_event(logger, logging.INFO, "tool cleared", tool=tool, decision=decision.record_id,
                   verdict=None if verdict is None else verdict.record_id)  # fmt: skip
@@ -110,7 +131,7 @@ class Governor:
             await self._record(decision, ok=False, digest=None, error=type(exc).__name__)
             raise
         await self._record(decision, ok=True, digest=result_digest(result), error=None)
-        return result
+        return Cleared(result, decision, verdict)
 
     async def _decide(self, tool: str, arguments: dict[str, Any]) -> Receipted:
         try:
@@ -132,7 +153,9 @@ class Governor:
             )
         return decision
 
-    async def _clearance(self, decision: Receipted) -> Receipted | None:
+    async def _clearance(
+        self, decision: Receipted, on_hold: Callable[[Receipted], None] | None
+    ) -> Receipted | None:
         outcome = decision.body.get("decision")
         if outcome == "allow":
             return None
@@ -140,6 +163,8 @@ class Governor:
             reason = str(decision.body.get("reason", "gate.denied"))
             raise GateDenied(f"Gate denied the call ({reason})", code=reason, decision=decision)
         escalation = decision.body["escalation"]
+        if on_hold is not None:
+            on_hold(decision)
         status = await self._await_verdict(
             str(escalation["id"]), parse_ts(escalation["expires_at"]).timestamp()
         )
