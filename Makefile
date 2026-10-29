@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web demo-gate demo-agent demo-audit demo-policy demo-learn policy-pdf seed-week demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web demo-gate demo-agent demo-audit demo-policy demo-learn delegate policy-pdf seed-week demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -89,6 +89,11 @@ demo-policy:
 # policy. ARGS="--inject-fault" (DEMO_MODE=true) shows an inflated count rejected.
 demo-learn:
 	uv run python scripts/demo_learn.py $(ARGS)
+
+# Delegate payments-ops' authority as its principal (D89): sign a credential and record it in
+# Gate; the agent then presents it. ARGS=revoke takes it back, ARGS=status shows it.
+delegate:
+	uv run python scripts/delegate.py $(ARGS)
 
 # One simulated week of decisions into make serve's stream, through the real Gate code
 # (scripts/seed_week.py). ARGS="--dry-run" prints the plan only.

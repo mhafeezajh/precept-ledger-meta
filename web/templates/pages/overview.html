@@ -27,6 +27,8 @@
       <dd>{% if ledger %}{{ badge("allow", "Running") }} checkpoints {{ ledger.checkpoint_loop }}{% else %}{{ badge("deny", "Unreachable") }} <span class="small muted">{{ ledger_error }}</span>{% endif %}</dd>
       <dt>Held for approval</dt>
       <dd>{% if gate %}<a href="/approvals">{{ gate.open_escalations }} waiting</a>{% else %}unknown{% endif %}</dd>
+      <dt>Delegation</dt>
+      <dd>{% if gate and gate.delegation %}{{ badge("allow", "Required") }} every call needs a principal's credential{% elif gate %}{{ badge("neutral", "Off") }} calls are not checked for a credential{% else %}unknown{% endif %}</dd>
       <dt>Approval briefs</dt>
       <dd>{{ "Written by the model" if gate and gate.briefs else "Off" }}</dd>
     </dl>

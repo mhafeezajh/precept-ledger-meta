@@ -225,6 +225,7 @@ async def health(request: Request) -> JSONResponse:
         "policy_record": gate.policy_record_id,  # None: the policy file Gate started with
         "open_escalations": len(await gate.escalations.list_open()),
         "briefs": gate.writes_briefs,
+        "delegation": gate.delegations is not None,  # every call needs a credential (D88)
     }
     return JSONResponse(body, status_code=503 if stopped else 200)
 

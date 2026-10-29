@@ -9,10 +9,12 @@ A held payment prints its decision record and waits for an approver.
 
 import argparse
 import asyncio
+import json
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 
 import httpx
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -22,8 +24,9 @@ from agent.graph import AgentRun, PaymentsAgent, StepRecord
 from agent.steps import AgentStep, StepPlanner
 from assist.llm import LlmClient, model_config
 from common.config import Settings, load_settings
-from common.errors import ConfigError
+from common.errors import ConfigError, PreceptError
 from gate.client import HttpGateClient
+from gate.delegation import parse_signed_credential
 from gate.governed import Governor
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing
@@ -41,6 +44,9 @@ class AgentSettings(BaseSettings):
     vendors_file: Path = Path("deploy/demo/vendors.json")
     max_steps: int = 8
     gate_timeout_seconds: float = 30.0  # longer than one escalation long poll (25 s)
+    # The principal's signed delegation this agent presents with every call (D88, D89);
+    # default KEYS_DIR/credentials/<id>.json, written by make delegate. None if absent.
+    credential_file: Path | None = None
 
 
 def _keys(keys_dir: Path, agent: str) -> tuple[str, KeyRing, KeyRing]:
@@ -54,6 +60,19 @@ def _keys(keys_dir: Path, agent: str) -> tuple[str, KeyRing, KeyRing]:
     return token, gate_keys, KeyRing((LOG_KEY_OWNER, raw) for raw in trusted.log_keys)
 
 
+def load_credential(path: Path) -> dict[str, Any] | None:
+    """The saved signed credential, checked for shape (Gate checks everything else)."""
+    if not path.is_file():
+        return None
+    try:
+        envelope = json.loads(path.read_text("utf-8"))
+        parse_signed_credential(envelope)
+    except (OSError, ValueError, PreceptError) as exc:
+        raise ConfigError(f"unreadable delegation credential {path.name}",
+                          code="config.credential") from exc  # fmt: skip
+    return dict(envelope)
+
+
 @asynccontextmanager
 async def open_agent(
     settings: Settings, agent: AgentSettings | None = None
@@ -65,10 +84,12 @@ async def open_agent(
         raise ConfigError("no model for the agent: set MODEL_PROFILE=mock or a key",
                           code="config.model_profile")  # fmt: skip
     token, gate_keys, log_keys = _keys(settings.keys_dir, agent.id)
+    path = agent.credential_file or settings.keys_dir / "credentials" / f"{agent.id}.json"
+    credential = load_credential(path)
     async with httpx.AsyncClient(timeout=agent.gate_timeout_seconds) as http:
         governor = Governor(
             HttpGateClient(agent.gate_url, token, http), agent=agent.id, gate_keys=gate_keys,
-            log_keys=log_keys, producer_id=agent.gate_producer_id,
+            log_keys=log_keys, producer_id=agent.gate_producer_id, credential=credential,
         )  # fmt: skip
         bank = DemoBank(load_vendors(agent.vendors_file))
         yield PaymentsAgent(

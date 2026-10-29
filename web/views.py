@@ -20,6 +20,8 @@ TYPE_LABELS = {
     "gate.decision": "Decision",
     "gate.verdict": "Verdict",
     "gate.result": "Tool ran",
+    "gate.delegation.issue": "Delegation issued",
+    "gate.delegation.revoke": "Delegation revoked",
     "assist.brief": "Approval brief",
     "assist.qa": "Audit answer",
     "policy.draft": "Policy draft",
@@ -78,6 +80,10 @@ def summary(record: dict[str, Any]) -> str:
         return str(body.get("headline", "Approval brief"))
     if kind == "assist.qa":
         return str(body.get("question", "Audit question"))
+    if kind == "gate.delegation.issue":
+        return f"{body.get('principal_id')} delegated to {body.get('agent_id')}"
+    if kind == "gate.delegation.revoke":
+        return f"Credential {body.get('credential_id')} revoked"
     if kind == "policy.draft":
         rules = str(body.get("rules_yaml", "")).count("\n- id:") + 1
         by = body.get("author") or "drafter"

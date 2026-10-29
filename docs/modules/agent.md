@@ -2,7 +2,7 @@
 
 Guarantees that the demo agent's every tool call goes through Gate, and that the bank sees a call only after the agent has verified Gate's signed, receipted decision itself, plus an approval when the decision was escalate. The model picks the steps. It cannot reach the bank, the ledger or Gate's internals, and nothing it says can make a tool run.
 
-Status: done for this step (demo beat 2 with the real agent, `make demo-agent`). Run on the `mock` profile only; Muse Spark (`muse-spark-1.3`) has not driven it yet (a `live` test is ready). · Last updated: 2026-10-28 · Tests: 22 unit (`test_agent.py` 18, `test_agent_cli.py` 4) plus 1 `live`, 3 mock-script tests in `test_assist_mock.py`, 2 `run_cleared` tests in `test_gate_governed.py`, 4 import-boundary checks. Coverage: `steps.py` 100%, `graph.py` 98%, `bank.py` 97%, `cli.py` 89%.
+Status: done for this step (demo beat 2 with the real agent, `make demo-agent`). Run on the `mock` profile only; Muse Spark (`muse-spark-1.3`) has not driven it yet (a `live` test is ready). · Last updated: 2026-10-29 · Tests: 22 unit (`test_agent.py` 18, `test_agent_cli.py` 4) plus 1 `live`, 9 delegation tests in `test_delegation_flow.py`, 3 mock-script tests in `test_assist_mock.py`, 2 `run_cleared` tests in `test_gate_governed.py`, 4 import-boundary checks. Coverage: `steps.py` 100%, `graph.py` 98%, `bank.py` 97%, `cli.py` 89%.
 
 Related pages: [`gate.md`](gate.md) (`@governed`, decisions, escalations), [`assist.md`](assist.md) (the model entry point and the mock), [`../MODELS.md`](../MODELS.md), [`../DECISIONS.md`](../DECISIONS.md) D78–D79.
 
@@ -27,6 +27,9 @@ Does not own:
 - **Approving.** Approvers use Gate's API; the agent has an agent token only.
 
 ## How it works
+
+**Delegation (D89).** `open_agent` loads the principal's signed credential from `KEYS_DIR/credentials/<agent>.json` (`AGENT_CREDENTIAL_FILE` to override; written by `make delegate`) and gives it to `Governor`, which sends it with every call. With no file the agent presents nothing, and a Gate that requires delegation denies every call (`delegation.missing`); a malformed file stops startup (`config.credential`). The agent cannot widen the credential: the principal signed it, and Gate verifies it.
+
 
 ### Beat 2 end to end
 
@@ -115,6 +118,8 @@ The bank keeps `lookups`, `payments` and `outbox` in memory for the run. Lookups
 
 | Situation | What happens | Test |
 | --- | --- | --- |
+| No delegation credential, or a revoked one (with `GATE_REQUIRE_DELEGATION=true`) | The first call is `denied delegation.missing` / `delegation.revoked`; nothing runs, not even the vendor lookup (D88, D89) | `test_without_a_credential_nothing_runs`, `test_a_revoked_credential_stops_the_agent` |
+| A payment beyond the credential (amount, payee) | `denied delegation.out_of_scope` before the policy is asked | `test_a_payment_beyond_the_credential_is_denied_even_where_policy_would_hold` |
 | Gate unreachable | The first call is `denied gate.unreachable`; the bank never runs; the agent finishes saying so | `test_with_gate_unreachable_no_tool_runs`, `test_with_no_gate_listening_the_cli_reports_and_nothing_runs` |
 | Payment over the cap | `denied policy.forbid` at once, no escalation, no payment | `test_a_payment_over_the_cap_is_denied_without_asking_anyone` |
 | Supervisor rejects | `denied gate.rejected`; no payment, no email | `test_a_rejected_payment_is_never_made_and_the_agent_says_so` |
@@ -136,6 +141,8 @@ make serve; make gate          # in two terminals (see docs/runbook.md)
 make demo-agent                # beat 2: lookup, $48,000 held, brief, j.ortiz approves, paid, AP told
 uv run python scripts/demo_agent.py --task 'Pay Acme Paper $300,000 for invoice INV-9.'
 uv run pl-agent 'Pay Keystone IT $120 for invoice INV-2.'
+make delegate                  # with GATE_REQUIRE_DELEGATION=true: the principal delegates to the agent
+make delegate ARGS=revoke      # ...and takes it back; the agent's next call is denied
 uv run pytest -m live -s -k muse_spark tests/unit/test_agent.py   # the real model (META_API_KEY)
 ```
 
@@ -160,6 +167,7 @@ reply: Paid $48,000.00 to Northwind Supply (payment pay-01m62hghn8x1v7q6f7ybgqn5
 - D51: the agent-side wrapper verifies Gate's records itself.
 - D72: the `mock` profile.
 - D78: structured steps through `assist/llm.py`, LangGraph without LangChain models, tracing off.
+- D88, D89: the agent presents its principal's delegation credential with every call.
 - D79: step limit, repeat guard, `run_cleared`, the demo bank, the internal confirmation email.
 
 ## Known gaps

@@ -29,7 +29,7 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 1046 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 1055 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -57,6 +57,7 @@ make seed-week            # one simulated week of decisions (169 decisions, 77 v
                           # Gate, for beats 3 and 5; records are backdated, receipts keep the real time
 make demo-policy          # beat 1 against make serve + make gate DEMO_MODE=true: a bad
                           # drafted rule caught, fixed, approved, enforced
+GATE_REQUIRE_DELEGATION=true make gate; make delegate   # the principal delegates to payments-ops (ARGS=revoke)
 make demo-learn           # beat 6 after demo-policy and seed-week: the learner proposes, two officers
                           # approve the loosening, one the tightening, then each policy draft
 uv run pytest -m live -s  # real Muse Spark brief, audit answer and agent run (needs META_API_KEY)
@@ -104,5 +105,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `learn/`: the Policy Learner (`patterns.py` SQL over the verified export and the fatigue filter, `draft.py` and `assist/prompts/learn_proposal.md`, `replay.py`, `service.py`, `api.py` at `/learn/v1` in `pl-gate`); `check_summary` names in `claims/checker.py`; `active_draft` and the stale-base check in `policy/service.py`; the mock's learner script; `scripts/demo_learn.py` (`make demo-learn`, beat 6); seed week 20 after-hours new-payee requests; `r.patel` in dev keys |
 | Oct 28 | `web/` (`pl-web`): the console (`app.py`, `nav.py`, `security.py`, `backend.py`, `views.py`, `agent_runs.py`, `demo.py`, `routes/`, `templates/`, `static/css/app.css`, `static/js/`); htmx 2.0.4 vendored; `make web` |
 | Oct 29 | `gate/delegation.py`, `gate/delegation_records.py`: principal-signed delegation credentials checked before Cedar (missing, bad signature, not issued, revoked, expired, out of scope all deny), issue and revoke as ledger records, revocation derived from the ledger; `tests/vectors/delegation-v1.json`; off by default (`GATE_REQUIRE_DELEGATION`) |
+| Oct 29 | Delegation switched on: the principal `treasury.harbor-federal` in `make dev-keys`, `scripts/delegate.py` (`make delegate`, issue, revoke, status), the agent presenting its saved credential, Gate health and the console showing delegation |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

@@ -47,6 +47,12 @@
       <dt>Leaf</dt><dd>{{ found.proof.leaf_index }} of {{ found.proof.tree_size }}</dd>
       <dt>Proof</dt><dd>{{ found.proof.hashes | length }} hashes</dd>
       {% endif %}
+      {% if record.body.delegation %}
+      {% set result = record.body.delegation.result %}
+      <dt>Delegated by</dt><dd>{{ record.body.delegation.principal_id or "no readable credential" }}
+        {% if result == "ok" %}{{ badge("allow", "credential valid") }}{% else %}{{ badge("deny", "credential " ~ (result | replace("delegation.", "") | replace("_", " "))) }}{% endif %}</dd>
+      {% if record.body.delegation.credential_id %}<dt>Credential</dt><dd><span class="rid" title="{{ record.body.delegation.credential_hash }}">{{ record.body.delegation.credential_id }}</span></dd>{% endif %}
+      {% endif %}
       {% for key in ("decision_record_id", "verdict_record_id", "brief_record_id", "draft_record_id", "proposal_record_id") %}
         {% if record.body.get(key) %}<dt>{{ key | replace("_record_id", "") | replace("_", " ") | capitalize }}</dt><dd>{{ rid(record.body[key]) }}</dd>{% endif %}
       {% endfor %}

@@ -22,6 +22,10 @@ Restart `make serve` after `make dev-keys` adds a producer (it reads `trusted.js
 
 `DEMO_MODE=true make web`, then open http://127.0.0.1:8090. Every beat below can be run from its page: Policy (beat 1), Agent and Approvals (beat 2), Audit (beat 3), Ledger and Attacks (beats 4 and 5), Learner (beat 6). Choose who you act as in the menu at the bottom left: j.ortiz or m.lee to approve payments, a.chen or r.patel for policy and the learner. The tamper button needs `ADMIN_DATABASE_URL`, edits the live stream and cannot be undone without the clean reset below. Start `make web` after `make gate`.
 
+## Delegation (who authorized the agent)
+
+`make dev-keys` creates the principal `treasury.harbor-federal`. Start Gate with `GATE_REQUIRE_DELEGATION=true make gate`, then `make delegate`: the principal signs a credential for payments-ops (the six demo vendors, up to $250,000, 30 days), a.chen submits it, and Gate records `gate.delegation.issue`. The agent picks the credential up from `KEYS_DIR/credentials/payments-ops.json`. `make delegate ARGS=revoke` takes it back (every later call is denied `delegation.revoked`, also after a Gate restart); `ARGS=status` shows it. Without `GATE_REQUIRE_DELEGATION=true`, Gate ignores credentials and the beats run as before.
+
 ## Demo week and beats
 
 | Step | Command | Result |

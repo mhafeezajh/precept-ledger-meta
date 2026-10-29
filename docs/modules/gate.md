@@ -156,7 +156,7 @@ All routes need `Authorization: Bearer <token>` except health.
 | `GET /gate/v1/escalations/{id}?wait=0..25` | the owning agent, or an approver | | `200 {"escalation", "verdict": {record, receipt} \| null}` |
 | `POST /gate/v1/escalations/{id}/verdict` | approver | `{"verdict": "approve" \| "reject"}` | `201 {record, receipt}` |
 | `POST /gate/v1/results` | agent | `{"decision_record_id", "outcome": "ok" \| "error", "result_digest"?, "error"?}` | `201 {record, receipt}` |
-| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, policy_record, open_escalations, briefs}`; `503` if the sweep stopped. `policy_record` is the active `policy.approve`, or null on the policy file |
+| `GET /gate/v1/health` | anyone | | `200 {status, policy_set, rules, policy_record, open_escalations, briefs, delegation}`; `503` if the sweep stopped. `policy_record` is the active `policy.approve`, or null on the policy file |
 
 | Status | Codes |
 | --- | --- |
@@ -371,7 +371,7 @@ Environment variables (`GATE_*`, see `.env.example`): `GATE_LEDGER_URL`, `GATE_P
 
 ## Known gaps
 
-- **Delegation is off by default.** The agent (`agent/`), the seeded week and the console do not carry credentials yet, so `GATE_REQUIRE_DELEGATION=true` would deny all of them. Turning it on needs: a principal key and `principals.json` in `make dev-keys`, an issued credential for `payments-ops`, and `open_agent` passing it to `Governor`.
+- **Delegation is off by default** (`GATE_REQUIRE_DELEGATION=false`). To turn it on (D89): `make dev-keys` (the principal `treasury.harbor-federal`), `GATE_REQUIRE_DELEGATION=true make gate`, then `make delegate`; the agent presents the saved credential. `make seed-week` builds its own Gate without the check, so seeding still works.
 - **The credential is not bound to the request by its own signature.** It is presented with the agent's bearer token over Gate's API, and checked against the authenticated agent; an agent-side signature over each call (the request binding the blog's "authenticity" check asks for) would need agent keys.
 - **No principal key rotation story** beyond editing `principals.json` and restarting.
 - **MCP proxy** not built (D55). Only the decorator exists.

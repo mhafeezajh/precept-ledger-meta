@@ -5,6 +5,8 @@
   cosigner verifier keys (read by ``pl-ledger`` and ``pl-verify --witness-keys``);
 - ``log-verifiers.txt``: the log's signed-note verifier key for the stream's origin, which
   the witnesses trust (``WITNESS_LOGS_FILE``);
+- ``principals/<principal>.pem`` and ``principals.json``: the key of each principal an agent
+  acts for, which signs its delegation credentials (D88, D89), and the public keys Gate trusts;
 - ``tokens/<name>.token``, one bearer token per Gate caller (the demo agent, two
   supervisors and a compliance officer), and ``gate-callers.txt``, their hashes and roles,
   read by ``pl-gate``.
@@ -32,6 +34,7 @@ from ledger.signing import Signer  # noqa: E402
 
 PRODUCERS = ("gate-1", "assist-1")  # assist-1 signs assist.qa audit records
 WITNESSES = ("witness-1", "witness-2", "witness-3")
+PRINCIPALS = ("treasury.harbor-federal",)  # the team payments-ops acts for (D89)
 # Gate callers: (kind, name, roles). Two compliance officers: a learned loosening needs two.
 GATE_CALLERS = (
     ("agent", "payments-ops", "-"),
@@ -104,6 +107,19 @@ def ensure_gate_callers(keys_dir: Path) -> None:
     path.write_text(text)
 
 
+def ensure_principals(keys_dir: Path) -> dict[str, Signer]:
+    """Each principal's signing key, and ``principals.json`` with every public key Gate trusts.
+    Adds missing principals; never replaces or removes a listed key."""
+    (keys_dir / "principals").mkdir(mode=0o700, exist_ok=True)
+    signers = {n: _ensure_signer(keys_dir / "principals" / f"{n}.pem") for n in PRINCIPALS}
+    path = keys_dir / "principals.json"
+    data = json.loads(path.read_text()) if path.exists() else {"v": 1, "principals": {}}
+    for name, signer in signers.items():
+        data["principals"].setdefault(name, [b64encode(signer.public_key_raw)])
+    path.write_text(json.dumps(data, indent=2) + "\n")
+    return signers
+
+
 def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
     keys_dir = keys_dir.resolve()
     if keys_dir == ROOT or ROOT in keys_dir.parents:
@@ -125,6 +141,7 @@ def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
     log_verifier = NoteKey(origin, signers["log"].public_key_raw).verifier()
     _write_public(keys_dir / "log-verifiers.txt", f"{log_verifier}\n")
     ensure_gate_callers(keys_dir)
+    signers.update({f"principal {n}": s for n, s in ensure_principals(keys_dir).items()})
     return signers
 
 
@@ -136,6 +153,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("set KEYS_DIR or pass a directory")
     for name, signer in ensure_keys(Path(args.keys_dir)).items():
         print(f"{name:<10} {signer.key_id}")
+    print(f"principals: {', '.join(PRINCIPALS)} (principals.json; delegate with make delegate)")
     print(f"public keys: {Path(args.keys_dir) / 'trusted.json'}")
     print(f"gate callers: {', '.join(name for _, name, _ in GATE_CALLERS)} (tokens/<name>.token)")
     return 0
