@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "vendors": [
+    {"id": "acme-paper", "name": "Acme Paper", "email": "billing@acmepaper.example", "onboarded": "2024-03-11", "account_last4": "4410"},
+    {"id": "harbor-cleaning", "name": "Harbor Cleaning Services", "email": "accounts@harborcleaning.example", "onboarded": "2023-08-02", "account_last4": "1187"},
+    {"id": "bayside-utilities", "name": "Bayside Utilities", "email": "billing@baysideutilities.example", "onboarded": "2022-01-19", "account_last4": "9032"},
+    {"id": "keystone-it", "name": "Keystone IT", "email": "ar@keystoneit.example", "onboarded": "2024-11-05", "account_last4": "5521"},
+    {"id": "pier-logistics", "name": "Pier Logistics", "email": "invoices@pierlogistics.example", "onboarded": "2025-06-23", "account_last4": "7764"},
+    {"id": "northwind-supply", "name": "Northwind Supply", "email": "ap@northwindsupply.example", "onboarded": "2026-10-26", "account_last4": "0381"}
+  ]
+}

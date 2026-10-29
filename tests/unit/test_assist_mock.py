@@ -149,3 +149,33 @@ async def test_mock_answers_cover_every_kind_of_row(world: World, tmp_path: Path
     assert {a["field"] for a in claim["assertions"]} == {
         "body.decision", "body.tool", "body.agent", "body.verdict"
     }  # fmt: skip
+
+
+def _agent_user(task: str, steps: list[dict[str, Any]]) -> str:
+    return f"Task:\n{task}\n\nSteps so far:\n{json.dumps(steps)}"
+
+
+def test_the_mock_agent_finishes_when_it_cannot_tell_who_or_how_much() -> None:
+    step = mock._agent_step(_agent_user("Summarise last week's emails.", []))
+    assert step["tool"] == "finish"
+    assert "can only pay vendors" in step["reply"]
+
+
+def test_the_mock_agent_does_not_guess_between_vendors() -> None:
+    lookup = {"n": 1, "tool": "lookup_vendor", "arguments": {"query": "supply"}, "outcome": "ok",
+              "result": {"vendors": [{"id": "a"}, {"id": "b"}]}}  # fmt: skip
+    step = mock._agent_step(_agent_user("Pay Supply $10 now.", [lookup]))
+    assert step["tool"] == "finish"
+    assert "2 vendors matched" in step["reply"]
+
+
+def test_the_mock_agent_reports_an_email_that_failed() -> None:
+    vendor = {"id": "acme-paper", "name": "Acme Paper"}
+    steps = [
+        {"tool": "lookup_vendor", "outcome": "ok", "result": {"vendors": [vendor]}},
+        {"tool": "create_payment", "outcome": "ok", "result": {"payment_id": "pay-1"}},
+        {"tool": "send_email", "outcome": "denied", "code": "gate.rejected"},
+    ]
+    step = mock._agent_step(_agent_user("Pay Acme Paper $120.", steps))
+    assert step["reply"] == ("Paid $120.00 to Acme Paper (payment pay-1, no invoice given) but"
+                             " could not email accounts payable.")  # fmt: skip

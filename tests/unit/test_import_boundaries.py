@@ -108,3 +108,17 @@ def test_litellm_is_imported_only_by_the_model_entry_point() -> None:
         if {top(m) for m in imports_of(path)} & {"litellm", "openai", "anthropic"}
     }
     assert importers == {"assist/llm.py"}
+
+
+# The agent reaches the bank only through gate.governed and the ledger only through Gate's API:
+# no store, no ledger service, no Gate internals, and no LangChain model client (R6).
+AGENT_FORBIDDEN = {"ledger.store", "ledger.service", "ledger.pg_store", "gate.core", "gate.api",
+                   "gate.server", "gate.escalations", "gate.pg_escalations", "psycopg"}  # fmt: skip
+
+
+@pytest.mark.parametrize("path", sorted((ROOT / "agent").rglob("*.py")), ids=lambda p: p.name)
+def test_the_agent_has_no_ledger_write_path_and_no_model_client(path: Path) -> None:
+    names = imports_of(path)
+    assert not {n for n in names if n in AGENT_FORBIDDEN or top(n) in AGENT_FORBIDDEN}
+    providers = ("langchain_openai", "langchain_community", "langchain_anthropic", "langchain.chat")
+    assert not {n for n in names if n.startswith(providers)}

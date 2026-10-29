@@ -11,6 +11,7 @@ dependencies = [
     "cryptography==50.0.2",
     "fastapi==0.162.0",
     "httpx==0.28.1",
+    "langgraph==1.2.18",
     "litellm==1.105.0",
     "psycopg-pool==3.3.3",
     "psycopg[binary]==3.3.6",
@@ -28,6 +29,7 @@ pl-export = "ledger.export_cli:main"
 pl-ledger = "ledger.server:main"
 pl-witness = "witness.server:main"
 pl-gate = "gate.server:main"
+pl-agent = "agent.cli:main"
 
 [dependency-groups]
 dev = [
@@ -61,10 +63,10 @@ select = ["E", "F", "W", "I", "B", "UP", "S", "BLE", "RUF", "SIM", "PT"]
 
 [tool.mypy]
 python_version = "3.12"
-packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist", "policy"]
+packages = ["common", "ledger", "merkle", "verify", "witness", "claims", "gate", "anchor", "assist", "policy", "agent"]
 
 [[tool.mypy.overrides]]
-module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*", "policy.*"]
+module = ["common.*", "ledger.*", "merkle.*", "verify.*", "witness.*", "claims.*", "gate.*", "anchor.*", "policy.*", "agent.*"]
 strict = true
 
 [tool.pytest.ini_options]
@@ -79,7 +81,7 @@ addopts = "-m 'not integration and not live'"
 
 [tool.coverage.run]
 branch = true
-source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims", "policy"]
+source = ["common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist", "claims", "policy", "agent"]
 # Postgres modules, pl-export and the servers: make test-integration and the live smoke
 # run. verify/__main__.py: a subprocess test.
 omit = [

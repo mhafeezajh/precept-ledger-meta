@@ -1,9 +1,9 @@
 """Demo beat 2 against running servers: Gate holds a $48,000 payment until a supervisor approves.
 
 Needs ``pl-ledger`` (``make serve``) and ``pl-gate`` (``make gate``) running, and the dev
-tokens in ``KEYS_DIR/tokens/``. The payment tool here is a stand-in that prints; the LangGraph
-agent replaces this script in the agent module. Run: ``make demo-gate`` (add ``--manual`` to
-approve yourself with curl instead of as j.ortiz automatically).
+tokens in ``KEYS_DIR/tokens/``. The payment tool here is a stand-in that prints;
+``scripts/demo_agent.py`` runs the same beat with the LangGraph agent. Run: ``make demo-gate``
+(add ``--manual`` to approve yourself with curl instead of as j.ortiz automatically).
 """
 
 import argparse

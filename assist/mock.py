@@ -201,7 +201,77 @@ def _draft(user: str) -> dict[str, Any]:
     return {"rules": rules}
 
 
+AP_EMAIL = "accounts-payable@harborfederal.example"  # as in assist/prompts/agent_step.md
+_PAY_TASK = re.compile(rf"\bpay (.+?) {_AMOUNT}", re.IGNORECASE)
+
+
+def _agent_step(user: str) -> dict[str, Any]:
+    """payments-ops: look the vendor up, pay it once, tell accounts payable, then finish."""
+    task = _after(user, "Task:\n").split("\n\nSteps so far:", 1)[0].strip()
+    done = {s["tool"]: s for s in json.loads(_after(user, "Steps so far:\n") or "[]")}
+
+    def step(tool: str, note: str, args: dict[str, Any] | None = None) -> dict[str, Any]:
+        out: dict[str, Any] = {
+            "note": note,
+            "tool": tool,
+            "lookup_vendor": None,
+            "create_payment": None,
+            "send_email": None,
+            "reply": "",
+        }
+        out[tool if args is not None else "reply"] = args if args is not None else note
+        return out
+
+    pay = _PAY_TASK.search(task)
+    if pay is None:
+        return step("finish", "I can only pay vendors; the task does not name a vendor and amount.")
+    name, cents = pay.group(1).strip(), _cents(pay.group(2))
+    invoice = re.search(r"\bINV-[A-Za-z0-9-]*[A-Za-z0-9]", task)
+    memo = f"Invoice {invoice.group(0)}" if invoice else ""
+    if "lookup_vendor" not in done:
+        return step("lookup_vendor", f"Find {name} in the vendor directory.", {"query": name})
+    lookup = done["lookup_vendor"]
+    vendors = (lookup.get("result") or {}).get("vendors", [])
+    if lookup["outcome"] != "ok" or len(vendors) != 1:
+        why = lookup.get("code") or f"{len(vendors)} vendors matched {name!r}"
+        return step("finish", f"I did not pay anyone: the vendor lookup failed ({why}).")
+    vendor = vendors[0]
+    if "create_payment" not in done:
+        args = {
+            "payee_id": vendor["id"],
+            "amount": f"{cents // 100}.{cents % 100:02d}",
+            "currency": "USD",
+            "memo": memo,
+        }
+        return step("create_payment", f"Pay {vendor['name']} {_dollars(cents)}.", args)
+    payment = done["create_payment"]
+    if payment["outcome"] != "ok":
+        return step(
+            "finish",
+            f"The payment of {_dollars(cents)} to {vendor['name']} was not"
+            f" made: {payment['outcome']} ({payment.get('code')}).",
+        )
+    paid = payment["result"]["payment_id"]
+    if "send_email" not in done:
+        body = (
+            f"Paid {_dollars(cents)} to {vendor['name']} ({vendor['id']}). {memo}. Payment {paid}."
+        )
+        args = {"to": [AP_EMAIL], "subject": f"Payment sent: {vendor['name']}", "body": body}
+        return step("send_email", "Tell accounts payable.", args)
+    told = (
+        "and told accounts payable"
+        if done["send_email"]["outcome"] == "ok"
+        else ("but could not email accounts payable")
+    )
+    return step(
+        "finish",
+        f"Paid {_dollars(cents)} to {vendor['name']} (payment {paid},"
+        f" {memo or 'no invoice given'}) {told}.",
+    )
+
+
 _SCRIPTS: dict[str, Callable[[str], dict[str, Any]]] = {
+    "AgentStep": _agent_step,
     "Brief": _brief,
     "RecordQuery": _query,
     "AuditorAnswer": _answer,
