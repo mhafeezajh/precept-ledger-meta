@@ -1,0 +1,56 @@
+{
+  "warning": "TEST ONLY key (tests/keys/test-keys.json)",
+  "signer": "principal-1",
+  "credential": {
+    "credential_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0",
+    "principal_id": "treasury.harbor-federal",
+    "agent_id": "payments-ops",
+    "action_classes": [
+      "data.read",
+      "value.transfer"
+    ],
+    "max_amount": "5000.00",
+    "allowed_payees": [
+      "acme-paper",
+      "keystone-it"
+    ],
+    "not_before": "2026-10-29T20:14:03.112Z",
+    "expires_at": "2026-11-28T21:14:03.112Z"
+  },
+  "signing_payload_hex": "504c2d64656c65676174696f6e2d7631007b22616374696f6e5f636c6173736573223a5b22646174612e72656164222c2276616c75652e7472616e73666572225d2c226167656e745f6964223a227061796d656e74732d6f7073222c22616c6c6f7765645f706179656573223a5b2261636d652d7061706572222c226b657973746f6e652d6974225d2c2263726564656e7469616c5f6964223a2230314a4236583751324d395a4b33543856344e35523653375730222c22657870697265735f6174223a22323032362d31312d32385432313a31343a30332e3131325a222c226d61785f616d6f756e74223a22353030302e3030222c226e6f745f6265666f7265223a22323032362d31302d32395432303a31343a30332e3131325a222c227072696e636970616c5f6964223a2274726561737572792e686172626f722d6665646572616c227d",
+  "credential_hash": "sha256:9fce96a6cabf1b637a6aa0b4d6a8b5520240d5f4abcf8c4aba63016793aa1cb6",
+  "signed": {
+    "v": 1,
+    "alg": "ed25519",
+    "key_id": "ed25519:ebf8d2391f5fc85ee5d290154874b608e616275d98d4f1b62ba81526e5c16a10",
+    "sig": "SG9MyzGw/wpUvyKA3kVZqXA0z9butUUYqvVclQ4dj+V2N2W/rKV3VFjVXtfUfuLLpZOW/wAd9joutes7EMRPCA==",
+    "credential": {
+      "credential_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0",
+      "principal_id": "treasury.harbor-federal",
+      "agent_id": "payments-ops",
+      "action_classes": [
+        "data.read",
+        "value.transfer"
+      ],
+      "max_amount": "5000.00",
+      "allowed_payees": [
+        "acme-paper",
+        "keystone-it"
+      ],
+      "not_before": "2026-10-29T20:14:03.112Z",
+      "expires_at": "2026-11-28T21:14:03.112Z"
+    }
+  },
+  "revocation": {
+    "v": 1,
+    "alg": "ed25519",
+    "key_id": "ed25519:ebf8d2391f5fc85ee5d290154874b608e616275d98d4f1b62ba81526e5c16a10",
+    "sig": "xQr+mqmo6mn0xXpXQElgYJ7QskicB4e1n5JmkXCSd93kpKXSt1fQ+nQLqknE+s2LQz8uUsQYPc9T55bVnSnpAw==",
+    "revocation": {
+      "credential_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0",
+      "credential_hash": "sha256:9fce96a6cabf1b637a6aa0b4d6a8b5520240d5f4abcf8c4aba63016793aa1cb6",
+      "principal_id": "treasury.harbor-federal",
+      "revoked_at": "2026-10-30T09:00:00.000Z"
+    }
+  }
+}

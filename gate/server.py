@@ -6,6 +6,7 @@ Gate-specific settings are ``GATE_*`` variables (see ``.env.example``); ``DATABA
 ``KEYS_DIR`` and ``LEDGER_STREAM`` are shared with the ledger.
 """
 
+import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -30,12 +31,14 @@ from gate.auth import Callers
 from gate.core import BriefWriter as BriefPort
 from gate.core import Gate
 from gate.decide import load_policy_set
+from gate.delegation import Delegations
 from gate.ledger_client import HttpLedgerClient
 from gate.normalizer import Normalizer, StaticPayees
 from gate.pg_escalations import PostgresEscalationStore
 from learn.api import ExportView, LearnSettings, install_learn_routes
 from learn.draft import LearnDrafter
 from ledger.checkpointer import origin_for
+from ledger.format import b64decode
 from ledger.pg_store import PostgresStore
 from ledger.receipts import LOG_KEY_OWNER
 from ledger.signing import KeyRing, Signer
@@ -63,6 +66,9 @@ class GateSettings(BaseSettings):
     sweep_interval_seconds: float = 5.0
     ledger_timeout_seconds: float = 5.0
     briefs: bool = True  # approval briefs from Muse Spark, when a model is configured
+    # D88: every call must present a principal's issued, unrevoked, in-scope credential.
+    # Off until the agent carries one; principal keys come from KEYS_DIR/principals.json.
+    require_delegation: bool = False
     host: str = "127.0.0.1"
     port: int = 8070
 
@@ -82,6 +88,24 @@ def load_gate_keys(keys_dir: Path, producer_id: str) -> tuple[Signer, KeyRing, C
         raise ConfigError(f"{producer_id}.pem is not listed in trusted.json", code="config.keys")
     log_keys = KeyRing((LOG_KEY_OWNER, raw) for raw in trusted.log_keys)
     return signer, log_keys, callers
+
+
+PRINCIPALS_FILE = "principals.json"
+
+
+def load_principals(path: Path) -> KeyRing:
+    """``{"v": 1, "principals": {"<principal_id>": ["<base64 Ed25519 public key>", ...]}}``."""
+    try:
+        data = json.loads(path.read_text("utf-8"))
+        if data.get("v") != 1 or not isinstance(data.get("principals"), dict):
+            raise ValueError("expected {v: 1, principals: {...}}")
+        return KeyRing(
+            (principal, b64decode(key, size=32, field="principal key"))
+            for principal, keys in data["principals"].items()
+            for key in keys
+        )
+    except (OSError, ValueError, AttributeError, PreceptError) as exc:
+        raise ConfigError(f"cannot load {path.name}: {exc}", code="config.keys") from exc
 
 
 def _timezone(name: str) -> ZoneInfo:
@@ -108,6 +132,9 @@ async def gate_from_settings(
     http = httpx.AsyncClient(timeout=gate.ledger_timeout_seconds)
     config = model_config(settings) if gate.briefs else None
     briefs: BriefPort | None = None if config is None else BriefWriter(LlmClient(config), history)
+    delegations = None
+    if gate.require_delegation:
+        delegations = Delegations(load_principals(settings.keys_dir / PRINCIPALS_FILE))
     log_event(logger, logging.INFO, "gate starting", briefs=config is not None,
               profile=settings.model_profile)  # fmt: skip
     try:
@@ -123,9 +150,12 @@ async def gate_from_settings(
             clock=clock,
             approval_timeout=timedelta(seconds=gate.approval_timeout_seconds),
             briefs=briefs,
+            delegations=delegations,
         )
         # The latest approved policy set replaces the file Gate starts with (D74).
         await restore_active(service, history)
+        if delegations is not None:  # issued and revoked state, from the ledger only (D88)
+            await service.restore_delegations(await history.read_raw(settings.ledger_stream))
         yield service, callers
     finally:
         await http.aclose()

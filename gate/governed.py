@@ -62,7 +62,9 @@ class EscalationStatus:
 class GateEndpoint(Protocol):
     """Gate as the agent sees it. ``gate.client.HttpGateClient`` is the real one."""
 
-    async def decide(self, tool: str, arguments: dict[str, Any]) -> Receipted: ...
+    async def decide(
+        self, tool: str, arguments: dict[str, Any], *, credential: dict[str, Any] | None = None
+    ) -> Receipted: ...
 
     async def wait(self, escalation_id: str, timeout_seconds: float) -> EscalationStatus: ...
 
@@ -82,8 +84,11 @@ class Governor:
         producer_id: str = "gate-1",
         clock: Clock | None = None,
         monotonic: Callable[[], float] = time.monotonic,
+        credential: dict[str, Any] | None = None,
     ) -> None:
         self._endpoint = endpoint
+        # The principal's signed delegation this agent presents with every call (D88).
+        self.credential = credential
         self.agent = agent
         self._gate_keys = gate_keys
         self._log_keys = log_keys
@@ -136,7 +141,11 @@ class Governor:
     async def _decide(self, tool: str, arguments: dict[str, Any]) -> Receipted:
         try:
             expected_digest = args_digest(arguments)
-            decision = await self._endpoint.decide(tool, arguments)
+            decision = await (
+                self._endpoint.decide(tool, arguments)
+                if self.credential is None
+                else self._endpoint.decide(tool, arguments, credential=self.credential)
+            )
         except GateDenied:
             raise
         except PreceptError as exc:

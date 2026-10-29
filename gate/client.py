@@ -49,10 +49,13 @@ class HttpGateClient:
         except FormatError as exc:
             raise GateError("Gate response is not JSON", code="gate.bad_response") from exc
 
-    async def decide(self, tool: str, arguments: dict[str, Any]) -> Receipted:
-        data = await self._call(
-            "POST", "/gate/v1/decide", body={"tool": tool, "arguments": arguments}
-        )
+    async def decide(
+        self, tool: str, arguments: dict[str, Any], *, credential: dict[str, Any] | None = None
+    ) -> Receipted:
+        body: dict[str, Any] = {"tool": tool, "arguments": arguments}
+        if credential is not None:
+            body["credential"] = credential
+        data = await self._call("POST", "/gate/v1/decide", body=body)
         if not isinstance(data, dict):
             raise GateError("unexpected decision response", code="gate.bad_response")
         return Receipted.from_json({"record": data.get("record"), "receipt": data.get("receipt")})

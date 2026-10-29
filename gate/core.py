@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -19,7 +20,9 @@ from common.clock import Clock, format_ts
 from common.errors import GateError, PreceptError
 from common.ids import is_ulid, new_ulid
 from common.logging import log_event
+from gate import delegation_records
 from gate.decide import Evaluation, Outcome, PolicySet
+from gate.delegation import Delegations
 from gate.escalations import APPROVED, EXPIRED, OPEN, REJECTED, Escalation, EscalationStore
 from gate.ledger_client import LedgerClient
 from gate.normalizer import Normalizer, args_digest
@@ -77,6 +80,7 @@ class Gate:
         clock: Clock,
         approval_timeout: timedelta,
         briefs: BriefWriter | None = None,
+        delegations: Delegations | None = None,
     ) -> None:
         self.producer_id = producer_id
         self._signer = signer
@@ -94,13 +98,20 @@ class Gate:
         self._closed: dict[str, asyncio.Event] = {}
         self._briefs = briefs
         self._brief_tasks: set[asyncio.Task[None]] = set()
+        # D88: when set, every call must carry an issued, unrevoked, in-scope credential.
+        self.delegations = delegations
+        self._delegation_lock = asyncio.Lock()  # one issue or revoke at a time
 
     # --- decisions -----------------------------------------------------------------------
 
-    async def decide(self, agent: str, tool: str, arguments: dict[str, Any]) -> GateDecision:
+    async def decide(
+        self, agent: str, tool: str, arguments: dict[str, Any], *, credential: object = None
+    ) -> GateDecision:
         if not _NAME.fullmatch(agent) or not _TOOL.fullmatch(tool):
             raise GateError("invalid agent or tool name", code="gate.bad_request")
-        evaluation, action, facts, digest = await self._evaluate(agent, tool, arguments)
+        evaluation, action, facts, digest, delegated = await self._evaluate(
+            agent, tool, arguments, credential
+        )
         now = self._clock.now()
         body: dict[str, Any] = {
             "agent": agent,
@@ -112,6 +123,7 @@ class Gate:
             "policy_ids": list(evaluation.policy_ids),
             "policy_set": self.policies.digest,
             "args_digest": digest,
+            "delegation": delegated,  # credential id, hash, principal and result (D88)
         }
         escalation = None
         if evaluation.outcome is Outcome.ESCALATE:
@@ -139,16 +151,26 @@ class Gate:
         return GateDecision(evaluation.outcome, evaluation.reason, record, escalation)
 
     async def _evaluate(
-        self, agent: str, tool: str, arguments: dict[str, Any]
-    ) -> tuple[Evaluation, str | None, dict[str, Any], str | None]:
-        """Cedar's evaluation, or a deny with the normalizer's code. Never raises GateError."""
+        self, agent: str, tool: str, arguments: dict[str, Any], credential: object
+    ) -> tuple[Evaluation, str | None, dict[str, Any], str | None, dict[str, Any] | None]:
+        """Cedar's evaluation, or a deny with the normalizer's or the delegation's code, decided
+        before Cedar runs (D88). Never raises GateError."""
         try:
             digest = args_digest(arguments)
             normalized = await self._normalizer.normalize(tool, arguments)
         except GateError as exc:  # recorded as a deny: refusals are evidence too
-            return Evaluation.deny(exc.code), None, {}, None
-        evaluation = self.policies.evaluate(agent, normalized.action, tool, normalized.facts)
-        return evaluation, normalized.action, normalized.facts, digest
+            return Evaluation.deny(exc.code), None, {}, None, None
+        action, facts = normalized.action, normalized.facts
+        delegated = None
+        if self.delegations is not None:
+            checked = self.delegations.check(
+                credential, agent=agent, action=action, facts=facts, now=self._clock.now()
+            )
+            delegated = checked.record()
+            if checked.code is not None:  # Cedar never sees a call nobody authorized
+                return Evaluation.deny(checked.code), action, facts, digest, delegated
+        evaluation = self.policies.evaluate(agent, action, tool, facts)
+        return evaluation, action, facts, digest, delegated
 
     async def _open(self, escalation: Escalation) -> None:
         try:
@@ -191,6 +213,23 @@ class Gate:
     async def read_record(self, record_id: str, record_type: str) -> Receipted:
         """A Gate record from the ledger, checked against Gate's key and its receipt."""
         return await self._read(record_id, record_type)
+
+    # --- delegation credentials (D88) -----------------------------------------------------
+
+    async def issue_delegation(self, value: object) -> Receipted:
+        """Record a principal's signed credential (``gate.delegation.issue``)."""
+        async with self._delegation_lock:
+            return await delegation_records.issue(self, value)
+
+    async def revoke_delegation(self, value: object) -> Receipted:
+        """Record a principal's signed revocation (``gate.delegation.revoke``)."""
+        async with self._delegation_lock:
+            return await delegation_records.revoke(self, value)
+
+    async def restore_delegations(self, records: Sequence[dict[str, Any]]) -> int:
+        """Rebuild issued and revoked state from the ledger's records (startup)."""
+        async with self._delegation_lock:
+            return await delegation_records.restore(self, records)
 
     def activate(self, policies: PolicySet, approval_record_id: str) -> None:
         """Decide with ``policies`` from now on. Only an approved set is activated (D74)."""

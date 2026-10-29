@@ -21,11 +21,11 @@ from gate.auth import AGENT, APPROVER, Caller, Callers
 from gate.core import Approver, Gate
 from gate.escalations import Escalation
 from gate.normalizer import MAX_ARGUMENT_BYTES
-from ledger.format import parse_json_strict
+from ledger.format import canonical_bytes, parse_json_strict
 
 logger = logging.getLogger("pl.gate.api")
 
-MAX_BODY_BYTES = MAX_ARGUMENT_BYTES + 1024
+MAX_BODY_BYTES = MAX_ARGUMENT_BYTES + 32 * 1024  # room for a delegation credential (D88)
 MAX_WAIT_SECONDS = 25.0
 
 _STATUS_BY_CODE = {
@@ -39,6 +39,12 @@ _STATUS_BY_CODE = {
     "gate.not_cleared": 409,
     "policy.not_clean": 409,
     "policy.stale_base": 409,
+    "delegation.malformed": 400,
+    "delegation.bad_signature": 400,
+    "delegation.already_issued": 409,
+    "delegation.not_issued": 404,
+    "delegation.revoked": 409,
+    "delegation.disabled": 404,
     "learn.forbidden": 403,
     "learn.owner": 403,
     "learn.not_reviewable": 409,
@@ -91,10 +97,16 @@ async def _json_object(
 
 async def decide(request: Request) -> JSONResponse:
     agent = _caller(request, AGENT)
-    body = await _json_object(request, frozenset({"tool", "arguments"}))
+    body = await _json_object(request, frozenset({"tool", "arguments"}), frozenset({"credential"}))
     if not isinstance(body["tool"], str) or not isinstance(body["arguments"], dict):
         raise GateError("tool must be a string and arguments an object", code="gate.bad_request")
-    decision = await _gate(request).decide(agent.name, body["tool"], body["arguments"])
+    if (
+        len(canonical_bytes(body["arguments"])) > MAX_ARGUMENT_BYTES
+    ):  # the credential has its own room
+        raise FormatError("arguments are too large", code="format.too_large")
+    decision = await _gate(request).decide(
+        agent.name, body["tool"], body["arguments"], credential=body.get("credential")
+    )
     escalation = None if decision.escalation is None else decision.escalation.to_json()
     return JSONResponse(
         {
@@ -104,6 +116,38 @@ async def decide(request: Request) -> JSONResponse:
             "escalation": escalation,
         }
     )
+
+
+async def issue_delegation(request: Request) -> JSONResponse:
+    """A principal's signed credential, submitted by an approver; agents cannot issue (D88)."""
+    _caller(request, APPROVER)
+    record = await _gate(request).issue_delegation(await _json_any(request))
+    return JSONResponse(record.to_json(), status_code=201)
+
+
+async def revoke_delegation(request: Request) -> JSONResponse:
+    _caller(request, APPROVER)
+    record = await _gate(request).revoke_delegation(await _json_any(request))
+    return JSONResponse(record.to_json(), status_code=201)
+
+
+async def delegation_status(credential_id: str, request: Request) -> dict[str, Any]:
+    _caller(request, APPROVER)
+    delegations = _gate(request).delegations
+    found = None if delegations is None else delegations.find(credential_id)
+    if found is None:
+        raise GateError("no issued credential with this id", code="gate.record_not_found")
+    signed, revoked = found
+    return {"credential": signed.to_json(), "credential_hash": signed.hash,
+            "state": "revoked" if revoked else "active"}  # fmt: skip
+
+
+async def _json_any(request: Request) -> object:
+    raw = await read_limited(request, MAX_BODY_BYTES)
+    try:
+        return parse_json_strict(raw)
+    except FormatError as exc:
+        raise GateError("request body is not strict JSON", code="delegation.malformed") from exc
 
 
 async def _with_brief(gate: Gate, escalation: Escalation) -> dict[str, Any]:
@@ -233,6 +277,9 @@ def create_gate_app(
     )
     app.add_api_route("/gate/v1/results", record_result, methods=["POST"])
     app.add_api_route("/gate/v1/health", health, methods=["GET"])
+    app.add_api_route("/gate/v1/delegations", issue_delegation, methods=["POST"])
+    app.add_api_route("/gate/v1/delegations/revocations", revoke_delegation, methods=["POST"])
+    app.add_api_route("/gate/v1/delegations/{credential_id}", delegation_status, methods=["GET"])
 
     @app.exception_handler(PreceptError)
     async def precept_error(request: Request, exc: PreceptError) -> JSONResponse:

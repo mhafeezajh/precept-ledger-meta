@@ -96,8 +96,10 @@ class LocalEndpoint:
         self.gate = gate
         self.agent = agent
 
-    async def decide(self, tool: str, arguments: dict[str, Any]) -> Receipted:
-        decision = await self.gate.decide(self.agent, tool, arguments)
+    async def decide(
+        self, tool: str, arguments: dict[str, Any], *, credential: dict[str, Any] | None = None
+    ) -> Receipted:
+        decision = await self.gate.decide(self.agent, tool, arguments, credential=credential)
         return Receipted.from_json(decision.record.to_json())
 
     async def wait(self, escalation_id: str, timeout_seconds: float) -> EscalationStatus:

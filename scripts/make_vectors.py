@@ -30,6 +30,7 @@ from merkle.proofs import root_hash  # noqa: E402
 OUT = ROOT / "tests" / "vectors" / "ledger-v1.json"
 CHECKPOINT_OUT = ROOT / "tests" / "vectors" / "checkpoint-v1.json"
 COSIGNATURE_OUT = ROOT / "tests" / "vectors" / "cosignature-v1.json"
+DELEGATION_OUT = ROOT / "tests" / "vectors" / "delegation-v1.json"
 COSIGN_TIME = 1793300000  # 2026-10-28T19:33:20Z, fixed so the vectors are deterministic
 STREAM = "harbor-federal/decisions"
 ORIGIN = f"precept-ledger.local/{STREAM}"
@@ -175,6 +176,38 @@ def build_cosignature() -> dict[str, Any]:
     }
 
 
+def build_delegation() -> dict[str, Any]:
+    """A delegation credential (D88): its signed bytes, hash, envelope and a revocation."""
+    from gate.delegation import (
+        Revocation,
+        credential_hash,
+        credential_payload,
+        parse_credential,
+        sign_credential,
+        sign_revocation,
+    )
+
+    principal = seed("principal-1")
+    credential = parse_credential({
+        "credential_id": "01JB6X7Q2M9ZK3T8V4N5R6S7W0", "principal_id": "treasury.harbor-federal",
+        "agent_id": "payments-ops", "action_classes": ["data.read", "value.transfer"],
+        "max_amount": "5000.00", "allowed_payees": ["acme-paper", "keystone-it"],
+        "not_before": "2026-10-29T20:14:03.112Z", "expires_at": "2026-11-28T21:14:03.112Z",
+    })  # fmt: skip
+    digest = credential_hash(credential)
+    revocation = Revocation(credential.credential_id, digest, credential.principal_id,
+                            "2026-10-30T09:00:00.000Z")  # fmt: skip
+    return {
+        "warning": "TEST ONLY key (tests/keys/test-keys.json)",
+        "signer": "principal-1",
+        "credential": credential.to_json(),
+        "signing_payload_hex": credential_payload(credential).hex(),
+        "credential_hash": digest,
+        "signed": sign_credential(principal, credential).to_json(),
+        "revocation": sign_revocation(principal, revocation).to_json(),
+    }
+
+
 def write(path: Path, data: dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"wrote {path.relative_to(ROOT)}")
@@ -184,3 +217,4 @@ if __name__ == "__main__":
     write(OUT, build())
     write(CHECKPOINT_OUT, build_checkpoint())
     write(COSIGNATURE_OUT, build_cosignature())
+    write(DELEGATION_OUT, build_delegation())
