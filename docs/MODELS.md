@@ -44,6 +44,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs it (`claims/query.py`) over the proven log |
 | `assist/prompts/policy_draft.md` | `policy_draft/1` | `wonder` | `policy.draft.DraftRules` | Quote must be inside the cited clause and rules must parse (retry); then `policy.checks` for the reviewer; approval re-checks |
 | `assist/prompts/agent_step.md` | `agent_step/1` | `spark` | `agent.steps.AgentStep` | `check_step`: exactly the chosen tool's arguments, a reply on finish (retry); then Gate decides every call and the governor verifies its records (D78) |
+| `assist/prompts/learn_proposal.md` | `learn_proposal/1` | `spark` | `learn.draft.LearnerProposal` | Rule shape, the scope's action, record ids in the pattern, counts once (retry); then sources set by code, counts = SQL, `claims.checker`, reason text, policy checks, replay (no retry; D82) |
 | `assist/prompts/auditor_answer.md` | `auditor_answer/2` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` checks every claim against the proven log, and the summary against the accepted claims |
 
 ## Call log
@@ -64,6 +65,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | `RecordQuery` | Keywords: payment or email, approved or rejected, "over $X", "under $X", "approved by a.b", "to payee-id", "outside business hours", "today", "this week", "last N days" |
 | `AuditorAnswer` | One claim per row (at most 12) with assertions on amount (first, so `--inject-fault` changes it), payee, decision, verdict and approver |
 | `AgentStep` | payments-ops: look up the vendor named in "pay <vendor> $<amount>", pay it once with the invoice as memo, email accounts payable, finish; finishes early, saying why, on no or several vendors, or on a denied, rejected or failed call |
+| `LearnerProposal` | Loosen: an allow rule for the scope, the scope added to the `unless` of each escalate rule that held these requests, and any active fixture the change would affect moved just outside the scope. Tighten: a deny rule for the scope. Claims on the first three rows; counts restated from the input |
 | `DraftRules` | For each clause it is given, the seed rule (`deploy/policies/harbor-federal.yaml`) written for that clause, if the seed's quote is in it |
 
 Any other schema is refused (`model.refused`). Development runs on `mock`; switch to `cloud` for live runs and the video.

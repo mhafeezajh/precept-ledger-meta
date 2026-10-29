@@ -169,7 +169,7 @@ Three flows share one ledger; each ends in a signed record before anything chang
 
 The learner proposes rule changes from the ledger's own history; it never changes a rule itself.
 
-1. SQL queries over the ledger find patterns in escalations, approvals, rejections and denials, grouped by action, amount band, vendor status, time of day and approver. Counts come only from SQL.
+1. SQL queries over the ledger *(as built, D80: over the verified export loaded into SQLite)* find patterns in escalations, approvals, rejections and denials, grouped by action, amount band, vendor status, time of day and approver. Counts come only from SQL.
 2. A fatigue filter drops approvals that look like rubber-stamping: decided in under 5 seconds, or an approver with 100% approval over a large sample. Patterns with fewer than 20 decisions are skipped.
 3. Muse Spark turns each surviving pattern into a proposal: a YAML rule, fixtures, and a plain-English reason that cites record IDs and states its counts as assertions.
 4. The claim checker verifies every cited record's inclusion proof and that the stated counts match the SQL results. Any mismatch rejects the proposal.
@@ -207,7 +207,7 @@ One PostgreSQL 16 database holds the ledger and the app state; ledger tables acc
 | `anchor` | stream, tree\_size, kind (`rfc3161`, `ots`), source, status (`verified`, `pending`, `confirmed`), token, digest | Insert only; an upgraded OpenTimestamps proof is a new `confirmed` row (D47) |
 | `policy_rule` | id, version, status, yaml, cedar, source\_span, approver | Versions kept *(as built, D73: not a table; `policy.draft` and `policy.approve` ledger records)* |
 | `escalation` | id, stream, decision\_record\_id, agent, tool, action, approver\_roles, opened\_at, expires\_at, state, approver, verdict\_record\_id, decided\_at, brief\_record\_id | App state. Closes once from `open`; the brief attaches once; a trigger refuses other edits and deletes (D52, D58) |
-| `learner_proposal` | id, direction (`tighten`, `loosen`), yaml, cited\_record\_ids, counts, replay\_result, state, approvers | State guarded; every transition also a ledger record |
+| `learner_proposal` | id, direction (`tighten`, `loosen`), yaml, cited\_record\_ids, counts, replay\_result, state, approvers | State guarded; every transition also a ledger record *(as built, D81: not a table; `learn.proposal` and `learn.approve` ledger records)* |
 
 Witnesses keep their own state (last cosigned size and root) in their own storage, never in the ledger's database.
 
@@ -231,7 +231,7 @@ Witnesses keep their own state (last cosigned size and root) in their own storag
 | POST | `/policy/v1/drafts` | Upload a PDF; returns draft rules *(as built, D73: also `GET /policy/v1/drafts/{id}`, `POST …/{id}/revisions`, `POST …/{id}/approve`, `GET /policy/v1/active`; served by `pl-gate`, compliance-officer token)* |
 | POST | `/assist/v1/ask` | Auditor question; returns checked claims |
 | POST | `/learn/v1/run?window=7d` | Run the learner; returns checked, replayed proposals |
-| POST | `/learn/v1/proposals/{id}/approve` | Approve a proposal (two distinct approvers for loosening) |
+| POST | `/learn/v1/proposals/{id}/approve` | Approve a proposal (two distinct approvers for loosening) *(as built, D81: also `GET /learn/v1/proposals/{id}`; served by `pl-gate`, compliance-officer token; the last approval returns a `policy.draft` to approve through `/policy/v1`)* |
 
 The offline CLI: `pl-verify export.tar --keys keys.json --witness-keys witnesses.txt --quorum 2 --tsa-roots roots.pem` checks the chain, every producer signature, every receipt, every checkpoint signature, consistency between checkpoints, the witness quorum, and the timestamp tokens, with no network access.
 
@@ -366,3 +366,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Flow B, example policy YAML (kickoff 2.4) | Rule YAML gains `quote` in `source` (span computed by code later), optional `unless` and `agent`, fixture `agent`; amounts stay in dollars in YAML and compile to `amount_cents`. Checks: schema, whole-set fixtures, untested and one-sided rules, allows everything (riskiest-request probe), clause numbers. `pyyaml` added | D68-D70 |
 | 2026-10-28 | Flow B steps 1, 2, 4, 5; Data model; API | PDF read with pypdf, spans computed by code from the model's clause and quote; drafts and approvals are `gate-1`-signed `policy.draft` / `policy.approve` ledger records, not a `policy_rule` table; approval re-checks and refuses findings; Gate activates on approval and restores the latest approval at startup; `/policy/v1` routes in `pl-gate`; compliance-officer role | D73-D75 |
 | 2026-10-28 | Components (`agent/`), Meta model usage | The agent's model picks each tool call as a structured `AgentStep` through `assist/llm.py`, not native tool calling through a LangChain model; LangGraph runs the think / act loop with tracing off; the agent skips repeated calls and stops at 8 steps; tools run against an in-memory demo bank; `Governor.run_cleared` returns the clearing records. `langgraph` added | D78, D79 |
+| 2026-10-28 | Flow E, Data model, API | Patterns are SQL over the verified export in SQLite (D80); proposals and approvals are `learn.proposal` / `learn.approve` ledger records and an approved proposal becomes a `policy.draft` for normal policy approval, with a stale-base check (D81); scope and rule sources set by code, replay blocks changes outside the pattern (D82); settled patterns skipped (D83) | D80–D83 |

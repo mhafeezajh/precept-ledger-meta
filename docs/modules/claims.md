@@ -84,8 +84,8 @@ flowchart TD
 | `resolve(record, path)` | dotted path from `body`, `producer`, `type`, `ts`, `record_id`, `seq` or `stream`; up to 7 parts | `(found, value)` |
 | `prove_log(bundle, trust)` | `verify.bundle.Bundle` | `ProvenLog(stream, size, root, records, newer)` or why not |
 | `check_claims_in_log(claims, log)` | claims, `ProvenLog` | `ClaimResult` per claim |
-| `check_summary(summary, results, numbers=())` | summary text, the claim results, counts from code | list of problems |
-| `unbacked_names(text, assertions)` | | names not established |
+| `check_summary(summary, results, numbers=(), names=())` | summary text, the claim results, counts from code, ids code supplied (rule ids); digits inside a supplied id are not read as numbers | list of problems |
+| `unbacked_names(text, assertions, names=())` | | names not established |
 | `Query(...)`, `run_query(query, records, now)`, `build_rows(records)` | proven records | every matching row, newest first (the caller cuts to `MAX_ROWS` = 50) |
 
 Comparison rules: `eq`/`ne` need the same JSON type (`true` is not `1`, `1` is not `"1"`), and objects and lists are not comparable. `gt`/`gte`/`lt`/`lte` need two integers; anything else is "cannot compare", which rejects. Paths never index into lists and never leave the record.

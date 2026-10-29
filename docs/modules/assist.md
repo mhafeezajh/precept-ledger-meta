@@ -13,8 +13,9 @@ Owns:
 | Part | File |
 | --- | --- |
 | The only model entry point: routes, profiles, structured output, retries, redaction, call log | `assist/llm.py` |
-| The `mock` profile: scripted answers for development, labelled `mock/scripted` (briefs, queries, answers, policy drafts, agent steps) | `assist/mock.py` |
+| The `mock` profile: scripted answers for development, labelled `mock/scripted` (briefs, queries, answers, policy drafts, agent steps, learner proposals) | `assist/mock.py` |
 | The agent step prompt (the planner itself is in [`agent.md`](agent.md)) | `assist/prompts/agent_step.md` |
+| The learner proposal prompt (the drafter is in [`learn.md`](learn.md)) | `assist/prompts/learn_proposal.md` |
 | Brief context from the ledger, `Brief` schema, grounding checks, `BriefWriter` | `assist/brief.py` |
 | The brief prompt, versioned | `assist/prompts/approval_brief.md` |
 | Auditor Q&A: query, rows, answer, claim check, `assist.qa` | `assist/auditor.py`, `assist/prompts/auditor_query.md`, `assist/prompts/auditor_answer.md` |

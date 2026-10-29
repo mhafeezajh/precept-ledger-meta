@@ -17,7 +17,7 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `policy/` | Done for this step (demo beat 1, `make demo-policy`). Policy PDF to clauses with spans (pypdf), Muse Wonder drafting (run on the mock so far), YAML rules compiled to Cedar and checked (schema, fixtures, allows everything, numbers not in the clause), review as signed ledger records, approval that re-checks and refuses findings, Gate activation and restore at startup | [`docs/modules/policy.md`](docs/modules/policy.md) |
 | `assist/` | Done for this step. `assist/llm.py`, the only model entry point (Muse Spark via LiteLLM, Standard mode only, structured output, one checked retry, call log); approval briefs recorded as `assist.brief`; auditor Q&A (beat 3, `make demo-audit`) recorded as `assist.qa`; run live against the Meta Model API on Oct 28 (beats 2 and 3) | [`docs/modules/assist.md`](docs/modules/assist.md), [`docs/MODELS.md`](docs/MODELS.md) |
 | `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, or the whole export proven up to the final checkpoint; the auditor's query run in code over that proven prefix; exact assertions; numbers and names in claims and the summary backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
-| `learn/` | Not started | |
+| `learn/` | Done for this step (demo beat 6, `make demo-learn`). Policy Learner served by `pl-gate` at `/learn/v1`: SQL patterns over the verified export, fatigue filter, Muse Spark proposals (run on the mock so far) checked against SQL and the claim checker, replay that blocks past rejections and out-of-pattern changes, one or two compliance officers, then a normal policy approval | [`docs/modules/learn.md`](docs/modules/learn.md) |
 | `agent/` (`pl-agent`) | Done for this step (demo beat 2 with the agent, `make demo-agent`). payments-ops on LangGraph: Muse Spark picks each step as structured output through `assist/llm.py`, every tool call goes through `@governed` and Gate, repeated calls skipped, 8-step limit, in-memory demo bank. Run on the mock so far | [`docs/modules/agent.md`](docs/modules/agent.md) |
 | `web/` | Not started | |
 
@@ -29,7 +29,7 @@ Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
 ```sh
 uv sync
-make check              # lint, strict types, 968 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 987 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -52,12 +52,14 @@ make demo-agent         # demo beat 2 with the LangGraph agent: lookup, $48,000 
 uv run pl-agent 'Pay Keystone IT $120 for invoice INV-2.'   # one task for the agent
 make demo-audit         # demo beat 3: examiner's question, each claim proven or rejected (needs
                         # META_API_KEY); ARGS="--inject-fault" shows a wrong claim caught
-make seed-week            # one simulated week of decisions (163 decisions, 71 verdicts) through
+make seed-week            # one simulated week of decisions (169 decisions, 77 verdicts) through
                           # Gate, for beats 3 and 5; records are backdated, receipts keep the real time
 make demo-policy          # beat 1 against make serve + make gate DEMO_MODE=true: a bad
                           # drafted rule caught, fixed, approved, enforced
+make demo-learn           # beat 6 after demo-policy and seed-week: the learner proposes, two officers
+                          # approve the loosening, one the tightening, then each policy draft
 uv run pytest -m live -s  # real Muse Spark brief, audit answer and agent run (needs META_API_KEY)
-# MODEL_PROFILE=mock in .env: briefs, audit answers, policy drafts and agent steps come from assist/mock.py, offline and
+# MODEL_PROFILE=mock in .env: briefs, audit answers, policy drafts, agent steps and learner proposals come from assist/mock.py, offline and
 # free, labelled mock/scripted; MODEL_PROFILE=cloud for the live Meta Model API (D72)
 make ots-upgrade        # hours after submission: record the confirmed Bitcoin proof
 ```
@@ -98,5 +100,6 @@ Every line of code in this repository was written during the building period.
 | Oct 28 | `policy/pdf.py`, `policy/draft.py`, `policy/service.py`, `policy/api.py`, `assist/prompts/policy_draft.md`, `deploy/demo/payments_policy.pdf`, `scripts/make_policy_pdf.py`, `scripts/demo_policy.py` (`make demo-policy`, demo beat 1); compliance officer `a.chen` in `scripts/dev_keys.py` |
 | Oct 28 | `scripts/seed_week.py` (`make seed-week`): one simulated week of decisions through the real Gate code; `pl-export` now includes cosignatures and anchors |
 | Oct 28 | `agent/` (`pl-agent`): the payments-ops agent on LangGraph (`graph.py`), Muse Spark steps as structured output (`steps.py`, `assist/prompts/agent_step.md`), the demo bank (`bank.py`, `deploy/demo/vendors.json`), wiring and CLI (`cli.py`); `Governor.run_cleared` in `gate/governed.py`; the mock's agent script; `scripts/demo_agent.py` (`make demo-agent`, demo beat 2 with the agent) |
+| Oct 28 | `learn/`: the Policy Learner (`patterns.py` SQL over the verified export and the fatigue filter, `draft.py` and `assist/prompts/learn_proposal.md`, `replay.py`, `service.py`, `api.py` at `/learn/v1` in `pl-gate`); `check_summary` names in `claims/checker.py`; `active_draft` and the stale-base check in `policy/service.py`; the mock's learner script; `scripts/demo_learn.py` (`make demo-learn`, beat 6); seed week 20 after-hours new-payee requests; `r.patel` in dev keys |
 
-Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, and picks the payments agent's steps, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.
+Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

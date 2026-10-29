@@ -109,8 +109,10 @@ Clause numbers (`clause_numbers`): amounts and counts as written (`$5,000` is 50
 | `rules_from_data(raw)`, `rule_data(rule)`, `to_yaml(rules)` | parsed data; rules | rules; plain data; YAML that parses back to equal rules | as `parse_rules` |
 | `read_pdf(data, name)` | PDF bytes | `Document(name, sha256, pages, text, clauses)`, `.clause(id)`, `.locate(id, quote)` | `policy.pdf_unreadable`, `pdf_too_large`, `pdf_encrypted`, `pdf_no_clauses`, `pdf_duplicate_clause` |
 | `Drafter(llm).draft(document, inject_fault=False)` | | `Draft(document, rules, report, model, prompt_version, injected)` | `ModelOutputError` |
-| `PolicyService(gate, drafter)`: `.submit(pdf, name, officer, inject_fault=)`, `.revise(draft_id, yaml, officer)`, `.approve(draft_id, officer)` | | receipted `policy.draft` / `policy.approve` | `policy.forbidden`, `policy.no_drafter`, `policy.not_clean`, Gate's ledger errors |
+| `PolicyService(gate, drafter)`: `.submit(pdf, name, officer, inject_fault=)`, `.revise(draft_id, yaml, officer)`, `.approve(draft_id, officer)` | | receipted `policy.draft` / `policy.approve` | `policy.forbidden`, `policy.no_drafter`, `policy.not_clean`, `policy.stale_base`, Gate's ledger errors |
 | `restore_active(gate, history)` | | the restored record id or None | `policy.digest`, Gate's read errors |
+| `active_draft(gate)` | | the active `policy.approve` and the `policy.draft` it approved, verified, or None | Gate's read errors |
+| `draft_body(yaml, report, doc, **about)` | | a `policy.draft` body (used by the learner, D81) | |
 
 HTTP (every route needs an approver token with the `compliance-officer` role; responses are `{record, receipt}`):
 
@@ -119,7 +121,7 @@ HTTP (every route needs an approver token with the `compliance-officer` role; re
 | POST | `/policy/v1/drafts?name=&inject_fault=` | PDF bytes (≤ 5 MiB) | 201 `policy.draft` | 400 `policy.pdf_*`, 403 (role; `inject_fault` without `DEMO_MODE=true`), 413, 503 `policy.no_drafter` |
 | GET | `/policy/v1/drafts/{id}` | | 200 | 404 |
 | POST | `/policy/v1/drafts/{id}/revisions` | YAML (≤ 256 KiB) | 201 `policy.draft` | 400 `policy.yaml`, `policy.rule_*` |
-| POST | `/policy/v1/drafts/{id}/approve` | | 201 `policy.approve` | 409 `policy.not_clean` |
+| POST | `/policy/v1/drafts/{id}/approve` | | 201 `policy.approve` | 409 `policy.not_clean`, `policy.stale_base` (a learner draft built on a set that is no longer active, D81) |
 | GET | `/policy/v1/active` | | `{policy_set, rules, policy_record}` | |
 
 `GET /gate/v1/health` also reports `policy_record` (None while Gate runs on its policy file).

@@ -22,13 +22,14 @@ Restart `make serve` after `make dev-keys` adds a producer (it reads `trusted.js
 
 | Step | Command | Result |
 | --- | --- | --- |
-| Seed | `make seed-week` | 163 decisions and 71 verdicts dated across the past week, through the real Gate code (D76) |
+| Seed | `make seed-week` | 169 decisions and 77 verdicts dated across the past week, through the real Gate code (D76) |
 | Beat 1 | `make demo-policy` | The policy PDF drafted into eight rules; the planted $50,000 rule flagged; approval refused; fixed; approved; Gate switches to the approved set |
 | Beat 2 | `make demo-agent` | The payments-ops agent (LangGraph) looks up Northwind Supply (allowed), pays $48,000 (held; brief; j.ortiz approves; paid), emails accounts payable (allowed). `ARGS="--manual"` to approve yourself; `uv run python scripts/demo_agent.py --task 'Pay Acme Paper $300,000 for invoice INV-9.'` shows a denial |
 | Beat 2 (scripted) | `make demo-gate` | Without the agent: $120 runs; $48,000 to a new payee waits for the brief and j.ortiz's approval; $300,000 denied |
 | Beat 3 | `make demo-audit`, then `ARGS="--inject-fault"` | On a clean seeded stream, five proven payments over $10,000 approved outside business hours; with the fault, one claim rejected with its reason |
 | Beat 4 | `uv run pl-export --out export.tar` then `uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt" --quorum 2` | `RESULT OK`; after an admin edit of one row, the first broken record is named |
 | Beat 5 | `make demo-rogue` | The operator rewrites history; witnesses refuse; `pl-verify` catches it |
+| Beat 6 | `make demo-learn`, `ARGS="--inject-fault"` | After beat 1 and the seed: the learner proposes loosening 38 routine known-payee escalations (6 rubber-stamp approvals set aside; replay: 44 escalations removed, 0 past rejections allowed) and denying after-hours new-payee payments (20, 14 rejected); a.chen and r.patel approve the loosening, a.chen the tightening, and a.chen approves each policy draft. With the fault, an inflated count is rejected. Needs `make dev-keys` once for r.patel |
 
 Seeded records are backdated by design: their receipts carry the real arrival time. With `--tsa-roots` and timestamps on, `pl-verify` reports them as `late_timestamp`, which is the backdating check working. Keep `TSAS` empty while seeding if the recording should show `RESULT OK` with timestamps.
 
