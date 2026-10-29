@@ -100,6 +100,7 @@ Escalating every payment over $5,000 is deliberate. Beat 6 needs a week of routi
 | `Gate.record_result(agent, decision_id, ok=, digest=, error=)` | | `Receipted` result record | `gate.not_cleared`, `gate.forbidden`, `gate.record_not_found`, `gate.bad_request` |
 | `Gate.expire_due()` | | number expired | store errors |
 | `Governor(endpoint, agent=, gate_keys=, log_keys=)` `.tool(name)` | async tool taking keyword arguments | the wrapped tool | `GateDenied(code, decision)` |
+| `Governor.run_cleared(tool, arguments, effect, on_hold=None)` | as `run`; `on_hold(decision)` is called once before waiting on an escalation | `Cleared(result, decision, verdict)`, the verified records that let it run (D79; used by `agent/`) | `GateDenied`, or the effect's exception |
 | `verify_receipted(item, producer_id=, producers=, log_keys=, record_type=)` | record + receipt | none | `gate.bad_record` |
 
 ### HTTP (`pl-gate`, default `127.0.0.1:8070`)

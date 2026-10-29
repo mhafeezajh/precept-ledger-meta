@@ -15,7 +15,7 @@ Every model the project calls, with the exact IDs, parameters and limits, checke
 
 | Role | Model ID | Mode | Context | Price per 1M tokens (input / cached / output) | Rate limit | Used for |
 | --- | --- | --- | --- | --- | --- | --- |
-| `spark` | `muse-spark-1.3` | Standard | 1,048,576 | $1.25 / $0.15 / $4.25 | 3,000 RPM, 4,000,000 TPM per team | Approval briefs (now); auditor Q&A, learner proposals, demo agent (later) |
+| `spark` | `muse-spark-1.3` | Standard | 1,048,576 | $1.25 / $0.15 / $4.25 | 3,000 RPM, 4,000,000 TPM per team | Approval briefs, auditor Q&A, the payments agent's steps (`agent/steps.py`; run on the mock so far); learner proposals (later) |
 | `wonder` | `muse-wonder-1.0` | Standard (preview; Contributor not offered) | 1,048,576 | $4.00 / $0.20 / $20.00 | 3,000 RPM, 4,000,000 TPM per team | Policy PDF → rules (`policy/draft.py`); not called live yet |
 
 Sources: [models](https://dev.meta.ai/docs/models.md), [pricing and rate limits](https://dev.meta.ai/docs/pricing-rate-limits.md). LiteLLM 1.105.0's bundled price table carries the same `muse-spark-1.3` prices; `assist/llm.py` sets `LITELLM_LOCAL_MODEL_COST_MAP=True` so LiteLLM never fetches a price table from the network at import.
@@ -43,6 +43,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | `assist/prompts/approval_brief.md` | `approval_brief/2` | `spark` | `assist.brief.Brief` | `check_brief`: cited ids in the context, a citation per point, no numbers outside the context, no verdict advice |
 | `assist/prompts/auditor_query.md` | `auditor_query/1` | `spark` | `assist.auditor.RecordQuery` | Schema only; code runs it (`claims/query.py`) over the proven log |
 | `assist/prompts/policy_draft.md` | `policy_draft/1` | `wonder` | `policy.draft.DraftRules` | Quote must be inside the cited clause and rules must parse (retry); then `policy.checks` for the reviewer; approval re-checks |
+| `assist/prompts/agent_step.md` | `agent_step/1` | `spark` | `agent.steps.AgentStep` | `check_step`: exactly the chosen tool's arguments, a reply on finish (retry); then Gate decides every call and the governor verifies its records (D78) |
 | `assist/prompts/auditor_answer.md` | `auditor_answer/2` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` checks every claim against the proven log, and the summary against the accepted claims |
 
 ## Call log
@@ -62,6 +63,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | `Brief` | Points from the context: payee history, amount against the largest cleared payment and median, after hours, matched policies |
 | `RecordQuery` | Keywords: payment or email, approved or rejected, "over $X", "under $X", "approved by a.b", "to payee-id", "outside business hours", "today", "this week", "last N days" |
 | `AuditorAnswer` | One claim per row (at most 12) with assertions on amount (first, so `--inject-fault` changes it), payee, decision, verdict and approver |
+| `AgentStep` | payments-ops: look up the vendor named in "pay <vendor> $<amount>", pay it once with the invoice as memo, email accounts payable, finish; finishes early, saying why, on no or several vendors, or on a denied, rejected or failed call |
 | `DraftRules` | For each clause it is given, the seed rule (`deploy/policies/harbor-federal.yaml`) written for that clause, if the seed's quote is in it |
 
 Any other schema is refused (`model.refused`). Development runs on `mock`; switch to `cloud` for live runs and the video.

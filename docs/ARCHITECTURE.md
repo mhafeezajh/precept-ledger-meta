@@ -183,7 +183,7 @@ Every model output passes through a deterministic check before it can change any
 | Model | Job | Output | Checked by |
 | --- | --- | --- | --- |
 | Muse Wonder | Policy PDF to YAML rules | Rules with source spans and fixtures | Compiler, schema, fixtures, human approval |
-| Muse Spark 1.3 | Demo payments agent | Tool calls | Gate and Cedar |
+| Muse Spark 1.3 | Demo payments agent | Tool calls *(as built, D78: one structured `AgentStep` per step through `assist/llm.py`)* | Gate and Cedar |
 | Muse Spark 1.3 | Approval brief | What is unusual, citing record IDs | Record IDs must exist; brief never decides |
 | Muse Spark 1.3 | Auditor Q&A | Claims with record IDs and field assertions | Claim checker: Merkle inclusion proof + field match |
 | Muse Spark 1.3 | Policy Learner proposals | Rule, fixtures, reason with cited records and counts | Claim checker, history replay, one or two human approvers |
@@ -365,3 +365,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Flow C, `claims/` | The export is verified up to the final checkpoint before any question is answered; the query moves to `claims/query.py` and runs over the proven prefix; names in claim text and the summary are checked; `claims/` also imports `verify.bundle` and `verify.checks` | D65-D67 |
 | 2026-10-28 | Flow B, example policy YAML (kickoff 2.4) | Rule YAML gains `quote` in `source` (span computed by code later), optional `unless` and `agent`, fixture `agent`; amounts stay in dollars in YAML and compile to `amount_cents`. Checks: schema, whole-set fixtures, untested and one-sided rules, allows everything (riskiest-request probe), clause numbers. `pyyaml` added | D68-D70 |
 | 2026-10-28 | Flow B steps 1, 2, 4, 5; Data model; API | PDF read with pypdf, spans computed by code from the model's clause and quote; drafts and approvals are `gate-1`-signed `policy.draft` / `policy.approve` ledger records, not a `policy_rule` table; approval re-checks and refuses findings; Gate activates on approval and restores the latest approval at startup; `/policy/v1` routes in `pl-gate`; compliance-officer role | D73-D75 |
+| 2026-10-28 | Components (`agent/`), Meta model usage | The agent's model picks each tool call as a structured `AgentStep` through `assist/llm.py`, not native tool calling through a LangChain model; LangGraph runs the think / act loop with tracing off; the agent skips repeated calls and stops at 8 steps; tools run against an in-memory demo bank; `Governor.run_cleared` returns the clearing records. `langgraph` added | D78, D79 |

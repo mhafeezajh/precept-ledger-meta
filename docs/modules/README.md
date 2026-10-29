@@ -15,6 +15,7 @@ One page per module, written when the module is finished and kept current with t
 | [assist.md](assist.md) | `assist/llm.py` (the only model entry point), Muse Spark approval briefs, auditor Q&A (beat 3) | Done for this step: run live on Oct 28 |
 | [claims.md](claims.md) | The claim checker: producer signature, witnessed checkpoint, inclusion proof, exact assertions, numbers and names in text and summary; the whole export proven before an auditor query runs | Done for this step |
 | [policy.md](policy.md) | Policy PDF to clauses, Muse Wonder drafting, rule YAML compiled to Cedar and checked, review and approval as ledger records, activation in Gate (beat 1) | Done for this step: Wonder not run live yet |
+| [agent.md](agent.md) | The payments-ops agent: LangGraph think / act loop, Muse Spark steps as structured output, every call through `@governed`, the demo bank, `pl-agent`, beat 2 with the agent | Done for this step: Muse Spark not run on it yet |
 
 ## Where to look for what
 
@@ -31,7 +32,8 @@ One page per module, written when the module is finished and kept current with t
 | How to run demo beat 5 (rogue operator) | [witness.md](witness.md), "How to run and test" |
 | How a TSA token is checked, and what stops backdating | [anchor.md](anchor.md), "Interfaces" and "Formulas and formats" |
 | Why a tool call was allowed, denied or held, and what proves it | [gate.md](gate.md), "How it works" and "Data" |
-| How to run demo beat 2 (payment held until approval) | [gate.md](gate.md), "How to run and test" |
+| How to run demo beat 2 (payment held until approval) | [agent.md](agent.md) (with the agent) or [gate.md](gate.md) (scripted), "How to run and test" |
+| What the agent's model sees, and what stops it paying twice | [agent.md](agent.md), "What the model sees" and "Security and failure behaviour" |
 | Which model, mode, price and parameters each call uses | [`../MODELS.md`](../MODELS.md) |
 | What stops a brief from inventing facts or advising a verdict | [assist.md](assist.md), "Security and failure behaviour" |
 | When an auditor answer is shown as true | [claims.md](claims.md), "How it works" |
