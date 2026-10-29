@@ -54,7 +54,7 @@ def _require_officer(officer: Officer) -> None:
         raise PolicyError(f"needs the {OFFICER_ROLE} role", code="policy.forbidden")
 
 
-def _draft_body(
+def draft_body(
     yaml_text: str, report: PolicyCheck, doc: dict[str, Any], **about: Any
 ) -> dict[str, Any]:
     return {
@@ -84,7 +84,7 @@ class PolicyService:
         document = read_pdf(pdf, name)
         draft = await self._drafter.draft(document, inject_fault=inject_fault)
         doc = {"name": document.name, "sha256": document.sha256, "pages": document.pages}
-        body = _draft_body(
+        body = draft_body(
             to_yaml(draft.rules), draft.report, doc, model=draft.model,
             prompt_version=draft.prompt_version, injected=draft.injected, revises=None,
             author=officer.name,
@@ -96,7 +96,7 @@ class PolicyService:
         _require_officer(officer)
         earlier = await self._gate.read_record(draft_id, DRAFT)
         rules = parse_rules(yaml_text)
-        body = _draft_body(
+        body = draft_body(
             to_yaml(rules), check_rules(rules), earlier.body["doc"], model=None,
             prompt_version=None, injected=None, revises=draft_id, author=officer.name,
         )  # fmt: skip
@@ -105,6 +105,12 @@ class PolicyService:
     async def approve(self, draft_id: str, officer: Officer) -> Receipted:
         _require_officer(officer)
         draft = await self._gate.read_record(draft_id, DRAFT)
+        base = draft.body.get("base_policy_record")
+        if base is not None and base != self._gate.policy_record_id:
+            # A learner draft is the active set plus a change; approving it once another set
+            # is active would silently undo that set (D81).
+            raise PolicyError("the draft was built on a set that is no longer active",
+                              code="policy.stale_base")  # fmt: skip
         rules = parse_rules(draft.body["rules_yaml"])
         report = check_rules(rules)  # never the stored findings
         if not report.ok or report.digest is None:
@@ -123,6 +129,15 @@ class PolicyService:
         approval = await self._gate.append_record(APPROVE, body)
         self._gate.activate(policies, approval.record_id)
         return approval
+
+
+async def active_draft(gate: Gate) -> tuple[Receipted, Receipted] | None:
+    """The active ``policy.approve`` and the ``policy.draft`` it approved, both verified, or
+    None while Gate runs on its policy file."""
+    if gate.policy_record_id is None:
+        return None
+    approval = await gate.read_record(gate.policy_record_id, APPROVE)
+    return approval, await gate.read_record(approval.body["draft_record_id"], DRAFT)
 
 
 def _schema() -> str:

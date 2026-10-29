@@ -38,6 +38,16 @@ _STATUS_BY_CODE = {
     "gate.escalation_closed": 409,
     "gate.not_cleared": 409,
     "policy.not_clean": 409,
+    "policy.stale_base": 409,
+    "learn.forbidden": 403,
+    "learn.owner": 403,
+    "learn.not_reviewable": 409,
+    "learn.already_approved": 409,
+    "learn.no_active_policy": 409,
+    "learn.base_mismatch": 409,
+    "learn.no_model": 503,
+    "learn.log_unproven": 503,
+    "learn.ledger_unavailable": 503,
     "policy.forbidden": 403,
     "policy.no_drafter": 503,
     "policy.pdf_too_large": 413,
@@ -52,7 +62,7 @@ _STATUS_BY_CODE = {
 def status_for(exc: PreceptError) -> int:
     if exc.code in _STATUS_BY_CODE:
         return _STATUS_BY_CODE[exc.code]
-    return 400 if exc.code.startswith(("format.", "policy.")) else 500
+    return 400 if exc.code.startswith(("format.", "policy.", "learn.")) else 500
 
 
 def _gate(request: Request) -> Gate:

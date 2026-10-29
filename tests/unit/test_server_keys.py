@@ -37,7 +37,7 @@ def test_dev_keys_add_missing_callers_and_keep_listed_ones(tmp_path: Path) -> No
     path.write_text(older)  # a file from before the compliance officer existed
     ensure_gate_callers(tmp_path)
     assert path.read_text().startswith(older)
-    assert path.read_text().splitlines() == lines
+    assert sorted(path.read_text().splitlines()) == sorted(lines)  # re-added at the end
 
 
 def test_dev_keys_refuse_the_repository() -> None:

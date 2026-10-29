@@ -63,6 +63,12 @@ class ModelOutputError(PreceptError):
     code = "model.bad_output"
 
 
+class LearnError(PreceptError):
+    """The Policy Learner refused to run, propose or record an approval. Nothing changes."""
+
+    code = "learn.invalid"
+
+
 class WitnessError(PreceptError):
     """A witness refused a checkpoint, or could not be asked. Never counts as a cosignature.
 

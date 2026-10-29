@@ -200,22 +200,34 @@ def _backed_names(assertions: Iterable[Assertion]) -> set[str]:
     return {v.lower() for v in values} | {n for v in values for n in _names(v)}
 
 
-def unbacked_names(text: str, assertions: Iterable[Assertion]) -> list[str]:
-    """Name-like tokens in ``text`` that no assertion's string value establishes."""
-    return sorted(_names(text) - _backed_names(assertions))
+def unbacked_names(
+    text: str, assertions: Iterable[Assertion], names: Iterable[str] = ()
+) -> list[str]:
+    """Name-like tokens in ``text`` that no assertion's string value establishes, and that are
+    not among ``names`` (ids code supplied, such as rule ids)."""
+    return sorted(_names(text) - _backed_names(assertions) - {n.lower() for n in names})
 
 
 def _text_problems(
-    text: str, assertions: Sequence[Assertion], numbers: Iterable[int] = ()
+    text: str,
+    assertions: Sequence[Assertion],
+    numbers: Iterable[int] = (),
+    names: Iterable[str] = (),
 ) -> list[str]:
-    problems = []
-    unbacked = sorted(_numbers(text) - _backed_numbers(assertions) - {Decimal(n) for n in numbers})
+    problems: list[str] = []
+    names = list(names)
+    scrubbed = text  # digits inside a supplied id (pay-over-5k-01) are not numbers it states
+    for name in sorted(names, key=len, reverse=True):
+        scrubbed = re.sub(re.escape(name), " ", scrubbed, flags=re.IGNORECASE)
+    unbacked = sorted(
+        _numbers(scrubbed) - _backed_numbers(assertions) - {Decimal(n) for n in numbers}
+    )
     if unbacked:
         problems.append(
             f"numbers in the text that no assertion establishes: {[str(n) for n in unbacked]}"
         )
-    if names := unbacked_names(text, assertions):
-        problems.append(f"names in the text that no assertion establishes: {names}")
+    if stray := unbacked_names(text, assertions, names):
+        problems.append(f"names in the text that no assertion establishes: {stray}")
     return problems
 
 
@@ -278,9 +290,14 @@ def check_claims_in_log(claims: Sequence[Claim], log: "ProvenLog") -> list[Claim
 
 
 def check_summary(
-    summary: str, results: Sequence[ClaimResult], *, numbers: Iterable[int] = ()
+    summary: str,
+    results: Sequence[ClaimResult],
+    *,
+    numbers: Iterable[int] = (),
+    names: Iterable[str] = (),
 ) -> list[str]:
     """Problems with a summary: it may state only numbers and names that accepted claims
-    assert, plus ``numbers`` code computed (a row count, a log size)."""
+    assert, plus ``numbers`` code computed (a row count, a log size) and ``names`` code
+    supplied (rule ids)."""
     held = [a for r in results if r.accepted for a in r.claim.assertions]
-    return _text_problems(summary, held, numbers)
+    return _text_problems(summary, held, numbers, names)
