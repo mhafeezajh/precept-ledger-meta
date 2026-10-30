@@ -17,13 +17,13 @@
 <a class="skip" href="#main">Skip to content</a>
 <div class="shell">
   <aside class="rail">
-    <a class="brand" href="/" aria-label="Precept Ledger, Harbor Federal: overview">
+    <a class="brand" href="/" aria-label="Precept Ledger {{ app_title }}, Harbor Federal: home">
       <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true" focusable="false">
         <rect x="1" y="1" width="32" height="32" rx="7" fill="currentColor"/>
         <path class="brand-lines" d="M8 11h18M8 17h12M8 23h8" stroke-width="2.4" stroke-linecap="round"/>
         <path class="brand-lines" d="M20 23l2.6 2.6L27 20" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <span><span class="brand-name">Precept Ledger</span><span class="brand-bank">Harbor Federal</span></span>
+      <span><span class="brand-name">Precept Ledger</span><span class="brand-bank">Harbor Federal · {{ app_title }}</span></span>
     </a>
     <nav aria-label="Main">
       {% for group, pages in nav %}
@@ -38,6 +38,11 @@
       {% endfor %}
     </nav>
     <div class="rail-foot">
+      {% if app_name == "approvals" %}
+      <a class="rail-switch" href="{{ console_url }}/">Open the Console</a>
+      {% else %}
+      <a class="rail-switch" href="{{ approvals_url }}/">Open Approvals</a>
+      {% endif %}
       <button class="btn btn--quiet btn--small theme-toggle" type="button" data-theme-toggle hidden data-js-only>Theme: follow system</button>
     </div>
   </aside>

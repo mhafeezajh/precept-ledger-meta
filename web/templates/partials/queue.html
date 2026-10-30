@@ -24,8 +24,8 @@
         <p class="muted">No brief yet. Decide from the decision record, or wait a few seconds.</p>
       {% endif %}
     </div>
-    <form class="item-actions" method="post" action="/approvals/{{ e.id }}/verdict"
-          hx-post="/approvals/{{ e.id }}/verdict" hx-target="#flash" hx-swap="innerHTML">
+    <form class="item-actions" method="post" action="/escalations/{{ e.id }}/verdict"
+          hx-post="/escalations/{{ e.id }}/verdict" hx-target="#flash" hx-swap="innerHTML">
       {{ csrf() }}
       <button class="btn btn--allow" type="submit" name="verdict" value="approve">Approve</button>
       <button class="btn btn--deny" type="submit" name="verdict" value="reject">Reject</button>
@@ -34,5 +34,5 @@
   {% endfor %}
 </ul>
 {% else %}
-  {{ empty("Nothing is waiting", "When Gate holds a request, it appears here within a few seconds. Try a payment over $5,000 on the Agent page.") }}
+  {{ empty("Nothing is waiting", "When Gate holds a request, it appears here within a few seconds. Try a payment over $5,000 with Run the agent in the Console.") }}
 {% endif %}

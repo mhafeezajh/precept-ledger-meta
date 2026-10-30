@@ -194,6 +194,13 @@ pre {
 }
 
 .rail-foot { margin-top: auto; display: grid; gap: var(--space-3); }
+/* The way to the other app: the Console and Approvals are separate apps (D94). */
+.rail-switch {
+  display: block; padding: var(--space-2) var(--space-3); border: 1px solid var(--rule);
+  border-radius: var(--radius-control); color: var(--ink-2); text-decoration: none; font-size: var(--step--1);
+}
+.rail-switch::after { content: " →"; }
+.rail-switch:hover { background: var(--sunken); color: var(--ink); }
 /* Who you are acting as: on every page, above the content. */
 .topbar {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2) var(--space-4);

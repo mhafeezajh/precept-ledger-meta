@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "macros.html" import badge, rid, empty with context %}
+{% block content %}
+<header class="page-head">
+  <div>
+    <h1>Waiting for you</h1>
+    <p class="lede">Everything Gate is holding until a person with the right role signs. Your verdict is signed and recorded before anything happens.</p>
+  </div>
+</header>
+
+<section class="section" aria-labelledby="payments-heading">
+  <div class="section-head"><h2 id="payments-heading">Payments held</h2><p>Needs a payments supervisor</p></div>
+  <div id="queue" hx-get="/queue" hx-trigger="every 4s, queue-changed from:body" hx-swap="innerHTML" aria-live="polite">
+    {% include "partials/queue.html" %}
+  </div>
+</section>
+
+<section class="section" aria-labelledby="rules-heading">
+  <div class="section-head"><h2 id="rules-heading">Rule changes</h2><p>Needs a compliance officer; a loosening needs two</p></div>
+  {% if drafts or suggestions %}
+  <ul class="items">
+    {% for d in drafts %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/policy/drafts/{{ d.record_id }}">{{ d | summary }}</a>
+        {{ badge("escalate", "Policy draft") }}
+      </div>
+      <p class="item-meta">{{ when(d.ts) }}, from {{ d.body.doc.name }}{% if d.body.proposal_record_id %} (a learner suggestion that completed its review){% endif %}. Approving makes Gate enforce it. {{ rid(d.record_id) }}</p>
+    </li>
+    {% endfor %}
+    {% for p in suggestions %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/learn/proposals/{{ p.record_id }}">{{ p.body.title }}</a>
+        {{ badge("escalate", approvals.get(p.record_id, 0) ~ " of " ~ p.body.approvals_needed ~ " approvals") }}
+      </div>
+      <p class="item-meta">{{ p.body.direction | capitalize }}, suggested by the learner: {{ p.body.pattern.statement }} Based on {{ p.body.pattern.counts.decisions }} past decisions. {{ rid(p.record_id) }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty("No rule changes are waiting", "Drafts and learner suggestions appear here once they pass their checks.") }}
+  {% endif %}
+</section>
+{% endblock %}

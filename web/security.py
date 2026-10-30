@@ -22,6 +22,9 @@ from starlette.responses import Response
 from web.backend import Persona, WebError
 
 COOKIE = "pl_session"
+# Browsers share cookies across ports on one host, so each app names its own session cookie;
+# otherwise switching windows would read the other app's cookie and reset the persona (D94).
+COOKIES = {"console": COOKIE, "approvals": "pl_approvals_session"}
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
@@ -74,14 +77,16 @@ class SecurityMiddleware(BaseHTTPMiddleware):
     """Attach the session (issuing one for the default persona if needed), refuse unsafe
     requests without the session's CSRF token, and set the security headers."""
 
-    def __init__(self, app: object, sessions: Sessions, *, secure_cookie: bool) -> None:
+    def __init__(
+        self, app: object, sessions: Sessions, *, secure_cookie: bool, cookie: str = COOKIE
+    ) -> None:
         super().__init__(app)  # type: ignore[arg-type]  # Starlette's ASGIApp type
-        self._sessions, self._secure = sessions, secure_cookie
+        self._sessions, self._secure, self._cookie = sessions, secure_cookie, cookie
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
-        cookie = request.cookies.get(COOKIE)
+        cookie = request.cookies.get(self._cookie)
         session = self._sessions.read(cookie)
         issued = None
         if session is None:
@@ -99,7 +104,7 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         return response
 
     def set_cookie(self, response: Response, value: str) -> None:
-        response.set_cookie(COOKIE, value, httponly=True, samesite="strict",
+        response.set_cookie(self._cookie, value, httponly=True, samesite="strict",
                             secure=self._secure, path="/")  # fmt: skip
 
 

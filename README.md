@@ -19,7 +19,7 @@ Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowle
 | `claims/` | Done for this step. Claim checker: producer signature, witnessed checkpoint and inclusion proof per cited record, or the whole export proven up to the final checkpoint; the auditor's query run in code over that proven prefix; exact assertions; numbers and names in claims and the summary backed by assertions | [`docs/modules/claims.md`](docs/modules/claims.md) |
 | `learn/` | Done for this step (demo beat 6, `make demo-learn`). Policy Learner served by `pl-gate` at `/learn/v1`: SQL patterns over the verified export, fatigue filter, Muse Spark proposals (run on the mock so far) checked against SQL and the claim checker, replay that blocks past rejections and out-of-pattern changes, one or two compliance officers, then a normal policy approval | [`docs/modules/learn.md`](docs/modules/learn.md) |
 | `agent/` (`pl-agent`) | Done for this step (demo beat 2 with the agent, `make demo-agent`). payments-ops on LangGraph: Muse Spark picks each step as structured output through `assist/llm.py`, every tool call goes through `@governed` and Gate, repeated calls skipped, 8-step limit, in-memory demo bank. Run on the mock so far | [`docs/modules/agent.md`](docs/modules/agent.md) |
-| `web/` (`pl-web`) | Done for this step (every beat in the browser, `make web`). Server-rendered console with htmx vendored, strict CSP, CSRF, persona menu (demo stand-in for sign-in), the proof seal from its own verification, live agent runs, the tamper and rogue-operator buttons in demo mode | [`docs/modules/web.md`](docs/modules/web.md) |
+| `web/` (`pl-web`, `pl-approvals`) | Done for this step (every beat in the browser, `make web` + `make approvals`). Two apps from one codebase (D94): the Approvals inbox where people sign, and the Console. Server-rendered with htmx vendored, strict CSP, CSRF, persona menu (demo stand-in for sign-in), the proof seal from its own verification, live agent runs, the tamper and rogue-operator buttons in demo mode | [`docs/modules/web.md`](docs/modules/web.md) |
 
 ## How to run what works now
 
@@ -45,7 +45,8 @@ uv run pl-export --out export.tar
 uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEYS_DIR/witnesses.txt" \
   --tsa-roots deploy/tsa/roots.pem
 make gate               # Gate on 127.0.0.1:8070 in front of the ledger (policies: deploy/policies/)
-DEMO_MODE=true make web # the console on http://127.0.0.1:8090: every beat in the browser
+DEMO_MODE=true make web # the Console on http://127.0.0.1:8090: agent, rules, learner, audit, ledger, attacks
+make approvals          # the Approvals app on http://127.0.0.1:8094: everything waiting for a signature
 make demo-gate          # demo beat 2, scripted: $48,000 to a new payee is held until j.ortiz approves;
                         # with META_API_KEY set, Muse Spark's brief is shown first
 make demo-agent         # demo beat 2 with the LangGraph agent: lookup, $48,000 held, brief, j.ortiz
@@ -109,6 +110,7 @@ Every line of code in this repository was written during the building period.
 | Oct 29 | The live model switch: `MODEL_REASONING_EFFORT` in `assist/llm.py`; the learner's rows as their two records, `fixtures_to_move`, its own vocabulary in the reason check and concurrent drafting (`learn/draft.py`, `learn/service.py`, prompt `learn_proposal/2`); a non-string rule action refused in `policy/rules.py`. Live suite and beat 2 run on Muse Spark; beat 1's first live draft on Muse Wonder (`test_beat_1_on_muse_wonder`) |
 | Oct 29 | Clean reset and the demo run live on Muse Spark and Muse Wonder (beats 1, 2, 3, 4, 6, D91): timeouts never retried and the SDK's hidden retries off (`assist/llm.py`), `learn.draft.held_by` (the active rules that hold the requests now), prompt `learn_proposal/3` and its structure check |
 | Oct 30 | Faster audits: a per-call `reasoning_effort` in `assist/llm.py`, the auditor at `minimal` (21 s instead of 40–47 s, every claim still checked; D92) |
+| Oct 30 | The web UI split into two apps (D94): the Approvals app (`pl-approvals`, `make approvals`), an inbox of held payments, policy drafts and learner suggestions to sign, plus what you decided; the Console keeps operating and proving and can no longer approve. Each app mounts only its own routes and has its own session cookie |
 | Oct 30 | The console streamlined (D93): the menu in story order with plain page names, who you are acting as at the top of every page with a one-click switch, rules in force shown to everyone from the verified ledger, current state before compact history, out-of-date suggestions marked, example audit questions |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

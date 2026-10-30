@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web demo-gate demo-agent demo-audit demo-policy demo-learn delegate policy-pdf seed-week demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web approvals demo-gate demo-agent demo-audit demo-policy demo-learn delegate policy-pdf seed-week demo-rogue ots-upgrade
 
 check: lint typecheck test secrets
 
@@ -64,6 +64,11 @@ gate: db-schema
 # adds the Attacks page; ADMIN_DATABASE_URL enables its tamper button.
 web:
 	uv run pl-web
+
+# The Approvals app (pl-approvals) on 127.0.0.1:8094: the inbox where people sign held
+# payments, policy drafts and learner suggestions. It mounts no drafting, admin or attack route.
+approvals:
+	uv run pl-approvals
 
 # Demo beat 2 against make serve + make gate: a $48,000 payment held until j.ortiz approves.
 demo-gate:

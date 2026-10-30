@@ -1,7 +1,9 @@
 """Policy: draft rules from the policy PDF, read each beside its clause, fix, approve (beat 1).
 
-Drafting, checks and approval all happen in ``pl-gate`` (``/policy/v1``) under the chosen
-persona's token; Gate refuses anyone without the compliance-officer role.
+Drafting and revising are in the Console (``router``); approving is in the Approvals app
+(``review``), D94. Both show a draft beside its clauses. The work happens in ``pl-gate``
+(``/policy/v1``) under the chosen persona's token; Gate refuses anyone without the
+compliance-officer role.
 """
 
 from pathlib import Path
@@ -16,7 +18,8 @@ from web import views
 from web.app import console, done, is_htmx, render
 from web.backend import WebError
 
-router = APIRouter(prefix="/policy")
+router = APIRouter(prefix="/policy")  # the Console
+review = APIRouter(prefix="/policy")  # the Approvals app
 DEMO_PDF = Path(__file__).resolve().parents[2] / "deploy" / "demo" / "payments_policy.pdf"
 OFFICER_ROLE = "compliance-officer"
 
@@ -67,6 +70,7 @@ async def submit(
 
 
 @router.get("/drafts/{draft_id}", response_class=HTMLResponse)
+@review.get("/drafts/{draft_id}", response_class=HTMLResponse)
 async def draft_page(request: Request, draft_id: str) -> HTMLResponse:
     persona = request.state.session.persona
     found = await console(request).backend.policy_draft(persona, draft_id)
@@ -87,8 +91,8 @@ async def revise(request: Request, draft_id: str, rules_yaml: str = Form(...)) -
     return _go(request, f"/policy/drafts/{revised['record']['record_id']}")
 
 
-@router.post("/drafts/{draft_id}/approve")
+@review.post("/drafts/{draft_id}/approve")
 async def approve(request: Request, draft_id: str) -> Response:
     persona = request.state.session.persona
     approval = await console(request).backend.approve_policy(persona, draft_id)
-    return done(request, "partials/policy_approved.html", "/policy", approval=approval["record"])
+    return done(request, "partials/policy_approved.html", "/", approval=approval["record"])

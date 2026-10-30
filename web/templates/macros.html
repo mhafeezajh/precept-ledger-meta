@@ -32,7 +32,7 @@
 {% macro rid(record_id, link=True) -%}
 {%- if record_id -%}
 {%- set short = record_id[:8] ~ "…" ~ record_id[-4:] -%}
-{%- if link -%}<a class="rid" href="/ledger/records/{{ record_id }}" title="{{ record_id }}">{{ short }}</a>
+{%- if link -%}<a class="rid" href="{{ record_base }}/ledger/records/{{ record_id }}" title="{{ record_id }}">{{ short }}</a>
 {%- else -%}<span class="rid" title="{{ record_id }}">{{ short }}</span>{%- endif -%}
 {%- endif -%}
 {%- endmacro %}

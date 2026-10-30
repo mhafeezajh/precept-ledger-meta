@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% from "macros.html" import csrf, rid, badge with context %}
+{% from "macros.html" import csrf, rid, badge, role_note with context %}
 {% block title %}Policy draft{% endblock %}
 {% block content %}
 <header class="page-head">
   <div>
-    <p class="small muted"><a href="/policy">Policy</a> / draft {{ rid(draft.record_id) }}</p>
+    <p class="small muted"><a href="/{% if app_name == 'console' %}policy{% endif %}">{{ "Rules in force" if app_name == "console" else "Waiting for you" }}</a> / draft {{ rid(draft.record_id) }}</p>
     <h1>{{ rules | length }} rules from {{ body.doc.name }}</h1>
     <p class="lede">Written by {{ body.model or body.author }}{% if body.revises %}, revising {{ rid(body.revises) }}{% endif %}{% if body.proposal_record_id %}, from learner proposal {{ rid(body.proposal_record_id) }}{% endif %}.</p>
   </div>
@@ -43,6 +43,14 @@
     {% endfor %}
   </div>
   <div>
+    {% if app_name == "approvals" %}
+    {% if "compliance-officer" not in session.persona.roles %}{{ role_note("compliance-officer", "approve rules") }}{% endif %}
+    {% if body.findings %}
+    <div class="panel">
+      <h2>Approve</h2>
+      <p class="muted">Gate refuses a draft with findings. Fix it in the <a href="{{ console_url }}/policy/drafts/{{ draft.record_id }}">Console</a>; the fixed draft comes back here.</p>
+    </div>
+    {% else %}
     <form class="panel" method="post" action="/policy/drafts/{{ draft.record_id }}/approve"
           hx-post="/policy/drafts/{{ draft.record_id }}/approve" hx-target="#flash">
       {{ csrf() }}
@@ -50,6 +58,12 @@
       <p class="muted">Gate re-reads this draft from the ledger and runs every check again before it switches. From then on, every decision cites the approved set.</p>
       <div class="form-row"><button class="btn btn--allow" type="submit">Approve and enforce</button></div>
     </form>
+    {% endif %}
+    {% else %}
+    <div class="panel">
+      <h2>Approve</h2>
+      <p class="muted">{% if body.findings %}Fix the findings first: save a revision below, and the checks run again.{% else %}A compliance officer approves it in the <a href="{{ approvals_url }}/policy/drafts/{{ draft.record_id }}">Approvals app</a>.{% endif %} Gate re-reads the draft from the ledger and runs every check again before it switches.</p>
+    </div>
     <form class="panel" method="post" action="/policy/drafts/{{ draft.record_id }}/revisions"
           hx-post="/policy/drafts/{{ draft.record_id }}/revisions">
       {{ csrf() }}
@@ -61,6 +75,7 @@
       </div>
       <div class="form-row"><button class="btn btn--quiet" type="submit">Save as a new draft</button></div>
     </form>
+    {% endif %}
   </div>
 </section>
 {% endblock %}

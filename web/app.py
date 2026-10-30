@@ -1,6 +1,10 @@
-"""``pl-web``: the Precept Ledger console (FastAPI, Jinja, htmx), for every demo beat.
+"""``pl-web`` and ``pl-approvals``: the Precept Ledger web apps (FastAPI, Jinja, htmx).
 
-The console is a client of ``pl-gate`` and ``pl-ledger`` like any other: it decides nothing,
+One codebase builds two apps (D94). The Console operates and proves (agent, drafting, learner,
+audit, ledger, attacks); the Approvals app is the inbox where people sign, and mounts nothing
+else, so an approver's session cannot reach a drafting, admin or attack route at all.
+
+Each app is a client of ``pl-gate`` and ``pl-ledger`` like any other: it decides nothing,
 signs nothing for Gate or the log, and shows as proven only what it verified itself
 (``web.backend``). Pages are server-rendered; htmx swaps fragments for actions and live
 updates, and every action also works as a plain form post. See ``docs/modules/web.md``.
@@ -32,12 +36,12 @@ from ledger.checkpointer import origin_for
 from verify.keys import TrustedKeys, WitnessPolicy
 from web import views
 from web.backend import Backend, WebError, load_personas
-from web.nav import current, navigation
-from web.security import COOKIE, SecurityMiddleware, Sessions
+from web.nav import APPROVALS, CONSOLE, TITLES, current, navigation
+from web.security import COOKIES, SecurityMiddleware, Sessions
 
 HERE = Path(__file__).resolve().parent
 logger = logging.getLogger("pl.web")
-STATIC_VERSION = "3"  # bump when static files change, for cache busting
+STATIC_VERSION = "4"  # bump when static files change, for cache busting
 
 
 class WebSettings(BaseSettings):
@@ -46,7 +50,10 @@ class WebSettings(BaseSettings):
     )
 
     host: str = "127.0.0.1"  # localhost only: the console acts with real Gate tokens
-    port: int = 8090
+    port: int = 8090  # the Console
+    approvals_port: int = 8094  # the Approvals app
+    console_url: str = "http://127.0.0.1:8090"  # for links between the two apps
+    approvals_url: str = "http://127.0.0.1:8094"
     gate_url: str = "http://127.0.0.1:8070"
     ledger_url: str = "http://127.0.0.1:8080"
     default_persona: str = "j.ortiz"
@@ -72,6 +79,7 @@ class Console:
     settings: Settings | None = None  # for features that build their own clients (agent, audit)
     web: WebSettings = field(default_factory=WebSettings)
     extras: dict[str, Any] = field(default_factory=dict)  # feature state (agent runs, ...)
+    app: str = CONSOLE  # which of the two apps this is
 
     @property
     def backend(self) -> Backend:
@@ -94,12 +102,18 @@ def console(request: Request) -> Console:
 
 def render(request: Request, name: str, status: int = 200, **values: Any) -> HTMLResponse:
     c = console(request)
-    page = current(request.url.path)
+    page = current(request.url.path, c.app)
     base = {
         "session": request.state.session,
         "personas": c.sessions.personas,
-        "nav": navigation(demo_mode=c.demo_mode),
+        "nav": navigation(c.app, demo_mode=c.demo_mode),
         "page": page,
+        "app_name": c.app,
+        "app_title": TITLES[c.app],
+        "console_url": c.web.console_url,
+        "approvals_url": c.web.approvals_url,
+        # record links go to the Console's ledger pages; the Approvals app has none
+        "record_base": c.web.console_url if c.app == APPROVALS else "",
         "demo_mode": c.demo_mode,
         "static_version": STATIC_VERSION,
         "when": lambda ts: views.local_time(ts, c.zone),
@@ -142,23 +156,28 @@ async def choose_persona(request: Request) -> Response:
     c = console(request)
     response = RedirectResponse(str(form.get("back") or "/"), status_code=303)
     if name in c.sessions.personas:
-        response.set_cookie(COOKIE, c.sessions.issue(name), httponly=True, samesite="strict",
-                            secure=c.web.secure_cookie, path="/")  # fmt: skip
+        response.set_cookie(COOKIES[c.app], c.sessions.issue(name), httponly=True,
+                            samesite="strict", secure=c.web.secure_cookie, path="/")  # fmt: skip
     return response
 
 
 def create_web_app(made: Console, *, lifespan: Any = None) -> FastAPI:
     from web.routes import agent, approvals, audit, demo, learn, ledger, overview, policy
 
-    app = FastAPI(title="Precept Ledger", docs_url=None, redoc_url=None, openapi_url=None,
-                  lifespan=lifespan)  # fmt: skip
+    routers = {  # each app mounts only its own routes (D94)
+        CONSOLE: (overview.router, agent.router, policy.router, learn.router, ledger.router,
+                  audit.router, demo.router),
+        APPROVALS: (approvals.router, policy.review, learn.review),
+    }[made.app]  # fmt: skip
+    app = FastAPI(title=f"Precept Ledger {TITLES[made.app]}", docs_url=None, redoc_url=None,
+                  openapi_url=None, lifespan=lifespan)  # fmt: skip
     app.state.console = made
     app.add_middleware(SecurityMiddleware, sessions=made.sessions,
-                       secure_cookie=made.web.secure_cookie)  # fmt: skip
+                       secure_cookie=made.web.secure_cookie, cookie=COOKIES[made.app])  # fmt: skip
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.add_api_route("/session/persona", choose_persona, methods=["POST"])
-    for module in (overview, approvals, agent, policy, learn, ledger, audit, demo):
-        app.include_router(module.router)
+    for router in routers:
+        app.include_router(router)
     app.add_exception_handler(PreceptError, _web_error)
     app.add_exception_handler(Exception, _web_error)
     return app
@@ -218,7 +237,7 @@ def _features(settings: Settings, web: WebSettings, trust: Trust) -> dict[str, A
     return extras
 
 
-def app_from_settings() -> FastAPI:
+def app_from_settings(app: str = CONSOLE) -> FastAPI:
     settings, web = load_settings(), WebSettings()
     configure_logging(settings.log_level)
     personas = load_personas(settings.keys_dir)
@@ -245,12 +264,23 @@ def app_from_settings() -> FastAPI:
         settings.demo_mode,
         settings,
         web,
-        _features(settings, web, trust),
+        _features(settings, web, trust) if app == CONSOLE else {},  # no agent, auditor or admin
+        app,
     )
     return create_web_app(made, lifespan=lifespan)
+
+
+def approvals_from_settings() -> FastAPI:
+    return app_from_settings(APPROVALS)
 
 
 def main() -> None:
     web = WebSettings()
     uvicorn.run("web.app:app_from_settings", factory=True, host=web.host, port=web.port,
                 log_config=None, access_log=False)  # fmt: skip
+
+
+def approvals_main() -> None:
+    web = WebSettings()
+    uvicorn.run("web.app:approvals_from_settings", factory=True, host=web.host,
+                port=web.approvals_port, log_config=None, access_log=False)  # fmt: skip

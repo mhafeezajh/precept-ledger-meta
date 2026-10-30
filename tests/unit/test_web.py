@@ -1,6 +1,7 @@
-"""The console (web/), against the real thing: the ledger API with three witnesses, a real
-pl-gate app (Gate, policy and learner routes) writing to it, and the console in front of both,
-all in process. Pages are fetched as a browser would, with the session cookie and CSRF token."""
+"""The two web apps (web/), against the real thing: the ledger API with three witnesses, a real
+pl-gate app (Gate, policy and learner routes) writing to it, and the Console and the Approvals
+app in front of both, all in process. Pages are fetched as a browser would, with the session
+cookie and CSRF token."""
 
 import asyncio
 import re
@@ -42,8 +43,8 @@ from web import demo, views
 from web.agent_runs import AgentRuns
 from web.app import Console, WebSettings, create_web_app
 from web.backend import Backend, Persona, WebError, load_personas
-from web.nav import current, navigation
-from web.security import COOKIE, CSP, Sessions
+from web.nav import APPROVALS, current, navigation
+from web.security import COOKIE, COOKIES, CSP, Sessions
 
 TOKENS = {  # TEST ONLY
     "j.ortiz": ("approver", "payments-supervisor", "test-only-web-ortiz"),
@@ -73,21 +74,32 @@ class Stack:
     svc: Any
     ledger: httpx.AsyncClient
     console: Console
-    web: httpx.AsyncClient
+    web: httpx.AsyncClient  # the Console
+    approvals: Console
+    inbox: httpx.AsyncClient  # the Approvals app
     csrf: str = ""
+    inbox_csrf: str = ""
 
     async def start(self) -> None:
-        page = await self.web.get("/ledger")
-        found = _CSRF.search(page.text)
-        assert found is not None, page.text[:500]
-        self.csrf = found.group(1)
+        self.csrf = await _csrf_of(self.web, "/ledger")
+        self.inbox_csrf = await _csrf_of(self.inbox, "/decided")
 
-    async def post(self, path: str, *, htmx: bool = True, **kwargs: Any) -> httpx.Response:
-        headers = {"x-csrf-token": self.csrf, **({"hx-request": "true"} if htmx else {})}
-        return await self.web.post(path, headers=headers, **kwargs)
+    async def post(
+        self, path: str, *, htmx: bool = True, inbox: bool = False, **kwargs: Any
+    ) -> httpx.Response:
+        csrf, client = (self.inbox_csrf, self.inbox) if inbox else (self.csrf, self.web)
+        headers = {"x-csrf-token": csrf, **({"hx-request": "true"} if htmx else {})}
+        return await client.post(path, headers=headers, **kwargs)
 
     async def checkpoint(self) -> None:
         await publish(self.svc)
+
+
+async def _csrf_of(client: httpx.AsyncClient, path: str) -> str:
+    page = await client.get(path)
+    found = _CSRF.search(page.text)
+    assert found is not None, page.text[:500]
+    return found.group(1)
 
 
 async def _fake_rogue() -> demo.RogueRun:
@@ -143,16 +155,22 @@ async def _on_ledger(
         sessions = Sessions(b"test-only-session-secret", approvers, "j.ortiz")
         extras = {"agent_runs": AgentRuns(agent), "audit": ask, "rogue": _fake_rogue}
         made = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), extras)
-        app = create_web_app(made)
-        transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
-        async with httpx.AsyncClient(transport=transport, base_url="http://web") as web:
-            s = Stack(r, svc, ledger, made, web)
+        signing = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), {}, APPROVALS)
+        transport = httpx.ASGITransport(app=create_web_app(made), raise_app_exceptions=False)
+        inbox_transport = httpx.ASGITransport(app=create_web_app(signing),
+                                              raise_app_exceptions=False)  # fmt: skip
+        async with (
+            httpx.AsyncClient(transport=transport, base_url="http://web") as web,
+            httpx.AsyncClient(transport=inbox_transport, base_url="http://inbox") as inbox,
+        ):
+            s = Stack(r, svc, ledger, made, web, signing, inbox)
             await s.start()
             yield s
 
 
-async def switch(s: Stack, persona: str) -> None:
-    response = await s.post("/session/persona", htmx=False, data={"persona": persona, "back": "/"})
+async def switch(s: Stack, persona: str, *, inbox: bool = False) -> None:
+    response = await s.post("/session/persona", htmx=False, inbox=inbox,
+                            data={"persona": persona, "back": "/"})  # fmt: skip
     assert response.status_code == 303
     await s.start()  # a new session has a new CSRF token
 
@@ -221,6 +239,40 @@ def test_navigation_hides_attacks_outside_demo_mode() -> None:
     assert current("/learn/proposals/x").path == "/learn"  # type: ignore[union-attr]
     assert current("/").path == "/"
     assert current("/nowhere") is None
+    signing = navigation(APPROVALS, demo_mode=True)  # no attacks, drafting or ledger pages
+    assert [(g, [p.title for p in pages]) for g, pages in signing] == [
+        ("Decide", ["Waiting for you", "Decided"])
+    ]
+    assert current("/decided", APPROVALS).title == "Decided"  # type: ignore[union-attr]
+    assert current("/approvals") is None  # moved to the Approvals app (D94)
+
+
+def _draft(record_id: str, *, revises: str | None = None, findings: int = 0) -> dict[str, Any]:
+    body = {"revises": revises, "findings": [{"rule_id": "r"}] * findings}
+    return {"type": "policy.draft", "record_id": record_id, "body": body}
+
+
+def test_the_inbox_lists_drafts_ready_to_approve() -> None:
+    approval = {"type": "policy.approve", "record_id": "A1", "body": {}}
+    newest_first = [
+        _draft("D4", revises="D3"),  # the fixed revision: ready
+        _draft("D3", findings=1),  # revised since, and Gate would refuse it anyway
+        _draft("D2", findings=1),  # findings: fixed in the Console, not approved here
+        approval,
+        _draft("D1"),  # older than the rules in force
+    ]
+    assert [d["record_id"] for d in views.drafts_to_approve(newest_first, approval)] == ["D4"]
+    assert [d["record_id"] for d in views.drafts_to_approve(newest_first, None)] == ["D4", "D1"]
+
+
+def test_decided_lists_only_this_persons_signatures() -> None:
+    records = [
+        {"type": "gate.verdict", "record_id": "V1", "body": {"approver": "j.ortiz"}},
+        {"type": "gate.verdict", "record_id": "V2", "body": {"approver": "m.lee"}},
+        {"type": "policy.approve", "record_id": "P1", "body": {"approver": "j.ortiz"}},
+        {"type": "gate.decision", "record_id": "G1", "body": {"approver": "j.ortiz"}},
+    ]
+    assert [r["record_id"] for r in views.decided_by(records, "j.ortiz")] == ["V1", "P1"]
 
 
 def test_sessions_are_signed_and_bound_to_a_known_persona() -> None:
@@ -282,19 +334,42 @@ async def test_every_page_is_safe_by_default(tmp_path: Path) -> None:
             "/static/vendor/htmx-2.0.4.min.js",
         ):
             assert (await s.web.get(path)).status_code == 200
-        for path in (
-            "/",
-            "/approvals",
-            "/agent",
-            "/policy",
-            "/learn",
-            "/ledger",
-            "/audit",
-            "/demo",
-        ):
+        for path in ("/", "/agent", "/policy", "/learn", "/ledger", "/audit", "/demo"):
             response = await s.web.get(path)
             assert response.status_code == 200, (path, response.text[:300])
             assert 'aria-current="page"' in response.text
+        for path in ("/", "/decided"):
+            response = await s.inbox.get(path)
+            assert response.status_code == 200, (path, response.text[:300])
+            assert 'aria-current="page"' in response.text
+            assert response.headers["content-security-policy"] == CSP
+
+
+async def test_each_app_serves_only_its_own_routes(tmp_path: Path) -> None:
+    # The Approvals app mounts no drafting, learner run, ledger, audit, agent or attack route,
+    # and the Console cannot sign: separation of duties by what is mounted (D94).
+    async with stack(tmp_path) as s:
+        for path in ("/agent", "/policy", "/learn", "/ledger", "/audit", "/demo", "/approvals"):
+            assert (await s.inbox.get(path)).status_code == 404, path
+        for path in ("/policy/drafts", "/learn/run", "/agent/runs", "/audit/ask",
+                     "/demo/tamper", "/policy/drafts/x/revisions"):  # fmt: skip
+            assert (await s.post(path, inbox=True, data={})).status_code == 404, path
+        for path in ("/escalations/x/verdict", "/policy/drafts/x/approve",
+                     "/learn/proposals/x/approve"):  # fmt: skip
+            assert (await s.post(path, data={"verdict": "approve"})).status_code == 404, path
+        for path in ("/approvals", "/decided", "/queue"):
+            assert (await s.web.get(path)).status_code == 404, path
+        console_page = await s.web.get("/")
+        inbox_page = await s.inbox.get("/")
+        assert "Open Approvals" in console_page.text
+        assert "Open the Console" in inbox_page.text
+        assert "Harbor Federal · Approvals" in inbox_page.text
+        # Cookies ignore ports: each app has its own, so one never resets the other's persona.
+        assert COOKIES["approvals"] != COOKIE
+        fresh = httpx.ASGITransport(app=s.inbox._transport.app)  # type: ignore[attr-defined]
+        async with httpx.AsyncClient(transport=fresh, base_url="http://inbox") as anew:
+            issued = (await anew.get("/decided")).headers["set-cookie"]
+        assert issued.startswith(COOKIES["approvals"] + "=")
 
 
 async def test_the_overview_and_ledger_show_the_proof(tmp_path: Path) -> None:
@@ -324,23 +399,26 @@ async def test_a_supervisor_approves_a_held_payment(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         held = await s.rig.gate.decide(AGENT, "create_payment", DEMO_PAYMENT)
         assert held.escalation is not None
-        queue = await s.web.get("/approvals/queue")
-        assert "payments-ops wants to run create_payment" in queue.text
-        await switch(s, "a.chen")  # the wrong role: Gate refuses, the console says so
-        refused = await s.post(
-            f"/approvals/{held.escalation.id}/verdict", data={"verdict": "approve"}
-        )
+        inbox = await s.inbox.get("/")
+        assert "payments-ops wants to run create_payment" in inbox.text
+        assert "No rule changes are waiting" in inbox.text
+        verdict = f"/escalations/{held.escalation.id}/verdict"
+        await switch(s, "a.chen", inbox=True)  # the wrong role: Gate refuses, the app says so
+        refused = await s.post(verdict, inbox=True, data={"verdict": "approve"})
         assert refused.status_code == 403
         assert refused.headers["hx-retarget"] == "#flash"
         assert "gate.approver_not_allowed" in refused.text
-        await switch(s, "j.ortiz")
-        bad = await s.post(f"/approvals/{held.escalation.id}/verdict", data={"verdict": "maybe"})
+        await switch(s, "j.ortiz", inbox=True)
+        bad = await s.post(verdict, inbox=True, data={"verdict": "maybe"})
         assert bad.status_code == 400
-        done = await s.post(f"/approvals/{held.escalation.id}/verdict", data={"verdict": "approve"})
+        done = await s.post(verdict, inbox=True, data={"verdict": "approve"})
         assert done.status_code == 200
         assert "Approved by j.ortiz" in done.text
         assert done.headers["hx-trigger"] == "queue-changed"
-        assert "Nothing is waiting" in (await s.web.get("/approvals/queue")).text
+        assert "Nothing is waiting" in (await s.inbox.get("/queue")).text
+        decided = await s.inbox.get("/decided")
+        assert "create_payment by payments-ops: approve by j.ortiz" in decided.text
+        assert "http://127.0.0.1:8090/ledger/records/" in decided.text  # proof is in the Console
 
 
 async def test_beat_1_in_the_console(tmp_path: Path) -> None:
@@ -360,8 +438,12 @@ async def test_beat_1_in_the_console(tmp_path: Path) -> None:
         assert "clause number" in draft.text
         assert "amount up to $50,000" in draft.text
         draft_id = draft_path.rsplit("/", 1)[1]
-        refused = await s.post(f"/policy/drafts/{draft_id}/approve")
+        assert "Fix the findings first" in draft.text
+        assert "Approve and enforce" not in draft.text  # the Console does not sign
+        await switch(s, "a.chen", inbox=True)
+        refused = await s.post(f"/policy/drafts/{draft_id}/approve", inbox=True)
         assert refused.status_code == 409
+        assert "No rule changes are waiting" in (await s.inbox.get("/")).text  # findings
         yaml_text = (await s.console.backend.policy_draft(PERSONAS["a.chen"], draft_id))["record"]
         fixed = yaml_text["body"]["rules_yaml"].replace("lte: 50000", "lte: 5000")
         revised = await s.post(f"/policy/drafts/{draft_id}/revisions", htmx=False,
@@ -370,7 +452,15 @@ async def test_beat_1_in_the_console(tmp_path: Path) -> None:
         clean = await s.web.get(revised.headers["location"])
         assert "No findings" in clean.text
         revision_id = revised.headers["location"].rsplit("/", 1)[1]
-        approved = await s.post(f"/policy/drafts/{revision_id}/approve")
+        assert f"http://127.0.0.1:8094/policy/drafts/{revision_id}" in clean.text
+        await s.checkpoint()
+        inbox = await s.inbox.get("/")
+        assert f'href="/policy/drafts/{revision_id}"' in inbox.text
+        assert "Policy draft" in inbox.text
+        review = await s.inbox.get(f"/policy/drafts/{revision_id}")
+        assert "Approve and enforce" in review.text
+        assert "Save as a new draft" not in review.text  # revising is in the Console
+        approved = await s.post(f"/policy/drafts/{revision_id}/approve", inbox=True)
         assert approved.status_code == 200
         assert "Gate now enforces these 8 rules" in approved.text
         assert s.rig.gate.policy_record_id is not None
@@ -409,7 +499,11 @@ async def test_a_proposal_page_shows_counts_claims_replay_and_review(tmp_path: P
 
         s.console.backend.proposal = proposal  # type: ignore[method-assign]
         await switch(s, "a.chen")
-        page = await s.web.get(f"/learn/proposals/{loosen.record_id}")
+        console_page = await s.web.get(f"/learn/proposals/{loosen.record_id}")
+        assert "Approve in the Approvals app" in console_page.text
+        assert "Approve as a.chen" not in console_page.text
+        await switch(s, "a.chen", inbox=True)
+        page = await s.inbox.get(f"/learn/proposals/{loosen.record_id}")
         assert page.status_code == 200, page.text[:400]
         text = page.text
         assert "Allow routine requests in this pattern without approval" in text
@@ -497,10 +591,11 @@ async def test_the_console_says_when_gate_is_down(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         down = httpx.AsyncClient(base_url="http://127.0.0.1:9", timeout=0.5)
         s.console.backend_ = Backend(down, s.ledger, stream=STREAM, trust=TRUST, personas=PERSONAS)
+        s.approvals.backend_ = s.console.backend_
         page = await s.web.get("/")
         assert page.status_code == 200
         assert "Unreachable" in page.text
-        approvals = await s.web.get("/approvals")
+        approvals = await s.inbox.get("/")
         assert approvals.status_code == 503
         assert "Gate is not reachable" in approvals.text
         await down.aclose()
@@ -524,7 +619,7 @@ async def test_pl_web_wires_itself_from_the_dev_keys(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from scripts.dev_keys import ensure_keys
-    from web.app import app_from_settings
+    from web.app import app_from_settings, approvals_from_settings
 
     keys = tmp_path / "keys"
     ensure_keys(keys)
@@ -550,6 +645,12 @@ async def test_pl_web_wires_itself_from_the_dev_keys(
         assert page.status_code == 200
         assert page.text.count("Unreachable") == 2  # Gate and the ledger, both down
         assert "Attacks" in page.text
+    signing = approvals_from_settings()
+    assert signing.state.console.app == APPROVALS
+    assert signing.state.console.extras == {}  # no agent runner, auditor or admin connection
+    paths = {getattr(r, "path", "") for r in signing.routes}
+    assert "/agent" not in paths
+    assert "/demo" not in paths
     monkeypatch.setenv("KEYS_DIR", str(tmp_path / "nowhere"))
     with pytest.raises(WebError):
         app_from_settings()
@@ -560,7 +661,7 @@ def test_a_suggestion_drafted_against_replaced_rules_is_out_of_date() -> None:
     # approval would fail Gate's stale-base check (D81), so it is shown as out of date.
     from collections import Counter
 
-    from web.routes.learn import _status
+    _status = views.proposal_status
 
     def proposal(state: str, base: str, needed: int = 1) -> dict[str, Any]:
         body = {"state": state, "approvals_needed": needed, "base": {"policy_record_id": base}}

@@ -1,11 +1,11 @@
 """Learner: proposals from the ledger's history, their evidence and their review (beat 6).
 
-Runs and approvals happen in ``pl-gate`` (``/learn/v1``) under the chosen persona's token.
-A loosening needs two compliance officers, a tightening one; the approval that completes a
-review returns a policy draft, approved on the Policy page like any other.
+Runs are in the Console (``router``); approvals are in the Approvals app (``review``), D94.
+Both happen in ``pl-gate`` (``/learn/v1``) under the chosen persona's token. A loosening needs
+two compliance officers, a tightening one; the approval that completes a review returns a
+policy draft, approved in the Approvals app like any other.
 """
 
-from collections import Counter
 from typing import Any
 
 from fastapi import APIRouter, Form, Request
@@ -15,7 +15,8 @@ from policy.rules import parse_rules
 from web import views
 from web.app import console, done, render
 
-router = APIRouter(prefix="/learn")
+router = APIRouter(prefix="/learn")  # the Console
+review = APIRouter(prefix="/learn")  # the Approvals app
 REPLAY_LABELS = (
     ("escalations_removed", "holds no longer needed"),
     ("new_denials", "requests now denied"),
@@ -30,32 +31,13 @@ REPLAY_LABELS = (
 async def learn_page(request: Request) -> HTMLResponse:
     state = await console(request).backend.ledger_state()
     proposals = [r for r in state.records if r.get("type") == "learn.proposal"]
-    approvals = Counter(
-        str(r["body"].get("proposal_record_id"))
-        for r in state.records
-        if r.get("type") == "learn.approve"
-    )
+    approvals = views.proposal_approvals(state.records)
     officer = "compliance-officer" in request.state.session.persona.roles
     approval, _ = views.in_force(state.records)
-    states = {p["record_id"]: _status(p, approvals, approval) for p in proposals}
+    states = {p["record_id"]: views.proposal_status(p, approvals, approval) for p in proposals}
     waiting = [p for p in proposals if states[p["record_id"]] == "waiting"]
     return render(request, "pages/learn.html", waiting=waiting, history=proposals[:20],
                   states=states, approvals=approvals, officer=officer)  # fmt: skip
-
-
-def _status(
-    proposal: dict[str, Any], approvals: Counter[str], approval: dict[str, Any] | None
-) -> str:
-    """waiting, approved, out_of_date (drafted against a policy since replaced: approving it
-    would fail Gate's stale-base check, D81), rejected or blocked."""
-    body = proposal["body"]
-    if body.get("state") != "review":
-        return str(body.get("state"))
-    if approvals.get(proposal["record_id"], 0) >= body.get("approvals_needed", 1):
-        return "approved"
-    base = (body.get("base") or {}).get("policy_record_id")
-    current = approval["record_id"] if approval else None
-    return "waiting" if base == current else "out_of_date"
 
 
 @router.post("/run")
@@ -80,6 +62,7 @@ def _proposal_view(found: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.get("/proposals/{proposal_id}", response_class=HTMLResponse)
+@review.get("/proposals/{proposal_id}", response_class=HTMLResponse)
 async def proposal_page(request: Request, proposal_id: str) -> HTMLResponse:
     persona = request.state.session.persona
     found = await console(request).backend.proposal(persona, proposal_id)
@@ -87,7 +70,7 @@ async def proposal_page(request: Request, proposal_id: str) -> HTMLResponse:
                   **_proposal_view(found))  # fmt: skip
 
 
-@router.post("/proposals/{proposal_id}/approve")
+@review.post("/proposals/{proposal_id}/approve")
 async def approve(request: Request, proposal_id: str) -> Response:
     persona = request.state.session.persona
     result = await console(request).backend.approve_proposal(persona, proposal_id)

@@ -38,7 +38,7 @@
 <section class="section">
   <details class="panel"{% if not approval %} open{% endif %}>
     <summary>Draft new rules from a policy PDF</summary>
-    {% if not officer %}{{ role_note("compliance-officer", "draft and approve rules") }}{% endif %}
+    {% if not officer %}{{ role_note("compliance-officer", "draft rules") }}{% endif %}
     <form method="post" action="/policy/drafts" enctype="multipart/form-data"
           hx-post="/policy/drafts" hx-encoding="multipart/form-data">
       {{ csrf() }}

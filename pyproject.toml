@@ -33,6 +33,7 @@ pl-witness = "witness.server:main"
 pl-gate = "gate.server:main"
 pl-agent = "agent.cli:main"
 pl-web = "web.app:main"
+pl-approvals = "web.app:approvals_main"
 
 [dependency-groups]
 dev = [

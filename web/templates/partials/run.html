@@ -13,7 +13,7 @@
       <p class="step-call">{{ e.tool }} {{ e.arguments | tojson }}</p>
       {% if e.note %}<p class="step-why">{{ e.note }}</p>{% endif %}
       {% if e.state == "held" %}
-      <p class="notice notice--escalate small">Waiting for a payments supervisor. <a href="/approvals">Open Approvals</a> as j.ortiz or m.lee to decide.</p>
+      <p class="notice notice--escalate small">Waiting for a payments supervisor. <a href="{{ approvals_url }}/">Open Approvals</a> as j.ortiz or m.lee to decide.</p>
       {% endif %}
       <p class="small muted">
         {% if e.decision_record_id %}Decision {{ rid(e.decision_record_id) }}{% endif %}

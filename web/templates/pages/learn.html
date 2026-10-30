@@ -10,10 +10,10 @@
   </div>
 </header>
 
-{% if not officer %}{{ role_note("compliance-officer", "run the learner or approve a change") }}{% endif %}
+{% if not officer %}{{ role_note("compliance-officer", "run the learner") }}{% endif %}
 
 <section class="section" aria-labelledby="waiting-heading">
-  <div class="section-head"><h2 id="waiting-heading">Waiting for a decision</h2><p>A loosening needs two compliance officers, a tightening one</p></div>
+  <div class="section-head"><h2 id="waiting-heading">Waiting for a decision</h2><p>Approved in the <a href="{{ approvals_url }}/">Approvals app</a>. A loosening needs two compliance officers, a tightening one</p></div>
   {% if waiting %}
   <ul class="items">
     {% for p in waiting %}

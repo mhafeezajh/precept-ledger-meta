@@ -5,6 +5,7 @@ seal is built only from the console's own verification of the export (``verify_b
 """
 
 import base64
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -176,3 +177,56 @@ def in_force(records: Sequence[dict[str, Any]]) -> tuple[dict[str, Any] | None, 
         return approval, list(parse_rules(str((draft or {}).get("body", {}).get("rules_yaml", ""))))
     except PolicyError:  # shown as no rules, never as rules that were not approved (R4)
         return approval, []
+
+
+# --- the Approvals app: what waits for a signature, and what a person already signed --------
+
+DECISION_TYPES = ("gate.verdict", "policy.approve", "learn.approve")
+
+
+def proposal_approvals(records: Sequence[dict[str, Any]]) -> Counter[str]:
+    """Approvals given so far, by learner proposal."""
+    return Counter(
+        str(r["body"].get("proposal_record_id"))
+        for r in records
+        if r.get("type") == "learn.approve"
+    )
+
+
+def proposal_status(
+    proposal: dict[str, Any], approvals: Counter[str], approval: dict[str, Any] | None
+) -> str:
+    """waiting, approved, out_of_date (drafted against a policy since replaced: approving it
+    would fail Gate's stale-base check, D81), rejected or blocked."""
+    body = proposal["body"]
+    if body.get("state") != "review":
+        return str(body.get("state"))
+    if approvals.get(proposal["record_id"], 0) >= body.get("approvals_needed", 1):
+        return "approved"
+    base = (body.get("base") or {}).get("policy_record_id")
+    current = approval["record_id"] if approval else None
+    return "waiting" if base == current else "out_of_date"
+
+
+def drafts_to_approve(
+    records: Sequence[dict[str, Any]], approval: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    """Policy drafts a compliance officer can approve now: newer than the rules in force, not
+    revised since, and without findings (Gate refuses those; they are fixed in the Console).
+    ``records`` is newest first."""
+    newer: list[dict[str, Any]] = []
+    for record in records:
+        if approval is not None and record.get("record_id") == approval["record_id"]:
+            break
+        if record.get("type") == "policy.draft":
+            newer.append(record)
+    revised = {d["body"].get("revises") for d in newer}
+    return [d for d in newer if d["record_id"] not in revised and not d["body"].get("findings")]
+
+
+def decided_by(records: Sequence[dict[str, Any]], name: str) -> list[dict[str, Any]]:
+    """Verdicts and approvals signed by ``name``, newest first."""
+    return [
+        r for r in records
+        if r.get("type") in DECISION_TYPES and (r.get("body") or {}).get("approver") == name
+    ]  # fmt: skip

@@ -6,7 +6,7 @@
 {% set have = approvals | length %}
 <header class="page-head">
   <div>
-    <p class="small muted"><a href="/learn">Learner</a> / proposal {{ rid(record.record_id) }}</p>
+    <p class="small muted"><a href="/{% if app_name == 'console' %}learn{% endif %}">{{ "Suggested changes" if app_name == "console" else "Waiting for you" }}</a> / suggestion {{ rid(record.record_id) }}</p>
     <h1>{{ body.title }}</h1>
     <p class="lede">{{ body.pattern.statement }}</p>
   </div>
@@ -91,12 +91,14 @@
   </div>
   <div class="panel">
     <h2>Review</h2>
-    <p class="muted">{{ "A loosening needs two different compliance officers, and never the agent's owner." if body.direction == "loosen" else "A tightening needs one compliance officer." }} The last approval creates a policy draft, approved on the Policy page like any other.</p>
+    <p class="muted">{{ "A loosening needs two different compliance officers, and never the agent's owner." if body.direction == "loosen" else "A tightening needs one compliance officer." }} The last approval creates a policy draft, approved like any other.</p>
     <ul class="points spaced">
       {% for a in approvals %}<li>Approved by {{ a.body.approver }} ({{ a.body.approval }} of {{ a.body.approvals_needed }}) {{ rid(a.record_id) }}</li>{% else %}<li class="muted">No approvals yet.</li>{% endfor %}
     </ul>
-    {% if body.state == "review" and have < needed %}
-    {% if "compliance-officer" not in session.persona.roles %}{{ role_note("compliance-officer") }}{% endif %}
+    {% if body.state == "review" and have < needed and app_name == "console" %}
+    <p class="spaced"><a class="btn btn--quiet" href="{{ approvals_url }}/learn/proposals/{{ record.record_id }}">Approve in the Approvals app</a></p>
+    {% elif body.state == "review" and have < needed %}
+    {% if "compliance-officer" not in session.persona.roles %}{{ role_note("compliance-officer", "approve a change") }}{% endif %}
     <form class="form-row" method="post" action="/learn/proposals/{{ record.record_id }}/approve"
           hx-post="/learn/proposals/{{ record.record_id }}/approve" hx-target="#flash">
       {{ csrf() }}
