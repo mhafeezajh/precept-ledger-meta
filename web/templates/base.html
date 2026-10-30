@@ -38,23 +38,23 @@
       {% endfor %}
     </nav>
     <div class="rail-foot">
-      <form class="persona" method="post" action="/session/persona">
-        {{ csrf() }}
-        <input type="hidden" name="back" value="{{ request.url.path }}">
-        <label for="persona">Acting as</label>
-        <div class="persona-row">
-          <select id="persona" name="persona" data-autosubmit>
-            {% for name, p in personas.items() %}
-            <option value="{{ name }}"{% if name == session.persona.name %} selected{% endif %}>{{ p.label }}</option>
-            {% endfor %}
-          </select>
-          <button class="btn btn--quiet btn--small" type="submit" data-no-js>Switch</button>
-        </div>
-      </form>
       <button class="btn btn--quiet btn--small theme-toggle" type="button" data-theme-toggle hidden data-js-only>Theme: follow system</button>
     </div>
   </aside>
   <main id="main" class="content" tabindex="-1">
+    <form class="topbar" method="post" action="/session/persona" aria-label="Who you are acting as">
+      {{ csrf() }}
+      <input type="hidden" name="back" value="{{ request.url.path }}">
+      <span class="topbar-who">You are <strong>{{ session.persona.name }}</strong>{% if session.persona.roles %}, {{ session.persona.roles | sort | join(", ") | replace("-", " ") }}{% endif %}</span>
+      <label class="topbar-switch"><span>Switch to</span>
+        <select id="persona" name="persona" data-autosubmit>
+          {% for name, p in personas.items() %}
+          <option value="{{ name }}"{% if name == session.persona.name %} selected{% endif %}>{{ p.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button class="btn btn--quiet btn--small" type="submit" data-no-js>Switch</button>
+    </form>
     <div id="flash" aria-live="polite"></div>
     {% block content %}{% endblock %}
   </main>

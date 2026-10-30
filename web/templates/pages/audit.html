@@ -3,7 +3,7 @@
 {% block content %}
 <header class="page-head">
   <div>
-    <h1>Audit</h1>
+    <h1>Ask the record</h1>
     <p class="lede">Ask about the history in plain words. The log is verified first, code runs the search, and each claim in the answer is checked against the signed records. A claim that does not hold is shown as rejected, with the reason.</p>
   </div>
 </header>
@@ -15,14 +15,17 @@
     <div class="field">
       <label for="question">Question</label>
       <input id="question" name="question" type="text" maxlength="{{ max_chars }}" required autocomplete="off" value="{{ example }}">
-      <span class="hint">For example, payments over an amount, approved or rejected, by an approver, outside business hours, this week.</span>
+      <div class="examples">
+        <span class="small muted">Try:</span>
+        {% for q in questions %}<button class="btn btn--quiet btn--small" type="button" data-fill="question" data-value="{{ q }}">{{ q }}</button>{% endfor %}
+      </div>
     </div>
     {% if demo_mode %}
     <label class="check spaced"><input type="checkbox" name="inject_fault" value="1"> Change one of the model's facts before checking, to show it rejected</label>
     {% endif %}
     <div class="form-row">
       <button class="btn" type="submit">Ask</button>
-      <span class="htmx-indicator small muted">Verifying the log and checking each claim…</span>
+      <span class="htmx-indicator small muted">Verifying the log and checking each claim (about 20 s)…</span>
     </div>
   </form>
   <div id="answer" aria-live="polite"></div>

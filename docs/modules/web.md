@@ -2,7 +2,7 @@
 
 Guarantees that the console decides nothing and shows nothing as proven that it did not verify itself. It is a client of `pl-gate` and `pl-ledger` like any other: it acts for a person with that person's Gate token (kept on the server), and every "proven" mark comes from its own run of `pl-verify`'s checks or a record's inclusion proof.
 
-Status: done for this step (all beats in the browser, `make web`). · Last updated: 2026-10-28 · Tests: 18 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 17 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
+Status: done for this step (all beats in the browser, `make web`). · Last updated: 2026-10-30 · Tests: 19 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 17 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
 
 Related pages: [`gate.md`](gate.md), [`policy.md`](policy.md), [`learn.md`](learn.md), [`agent.md`](agent.md), [`assist.md`](assist.md), [`claims.md`](claims.md), [`verify.md`](verify.md), [`../DECISIONS.md`](../DECISIONS.md) D84–D87.
 
@@ -40,20 +40,24 @@ flowchart LR
 
 | Page | Beat | What it does | Calls |
 | --- | --- | --- | --- |
-| Overview | all | Proof seal, services, decision totals, latest decisions | ledger health and export, Gate health |
-| Approvals | 2 | Open escalations with their brief; approve or reject; refreshes every 4 s | `/gate/v1/escalations`, `.../verdict` |
-| Agent | 2 | A task in plain words; each step live (polled every second until done) | `agent.cli.open_agent` |
-| Policy | 1 | Draft from a PDF (or the demo PDF, optionally with the planted fault), each rule beside its clause, findings, YAML revision, approval | `/policy/v1/*` |
-| Learner | 6 | Run, proposals, SQL counts beside the model's, claims proven or rejected, replay, approvals | `/learn/v1/*` |
-| Ledger | 4 | Every record newest first, filter by type, verification findings, the first broken record highlighted; one record with its own inclusion proof | export, `/records/{id}`, `/proof` |
-| Audit | 3 | A question; each claim proven or rejected; earlier audits | `assist.auditor.Auditor` |
-| Attacks | 4, 5 | Tamper with a payment (typed confirmation); the rogue-operator scenario | `web.demo` |
+The menu follows the demo's story (D93): Start, Payments, Rules, Proof, Demo.
+
+| Page (menu group) | Beat | What it does | Calls |
+| --- | --- | --- | --- |
+| Overview (Start) | all | Proof seal, services, decision totals, latest decisions | ledger health and export, Gate health |
+| Run the agent (Payments) | 2 | A task in plain words; each step live (polled every second until done) | `agent.cli.open_agent` |
+| Approvals (Payments) | 2 | Open escalations with their brief; approve or reject; refreshes every 4 s | `/gate/v1/escalations`, `.../verdict` |
+| Rules in force (Rules) | 1 | The rules Gate enforces, for anyone: the latest `policy.approve` and its draft's rules, read from the verified export (`views.in_force`; Gate restores that approval at startup, D75). Below: drafting from a PDF (folded away once a policy is approved) and a compact history; each draft page shows every rule beside its clause, findings, YAML revision, approval | export, `/policy/v1/*` |
+| Suggested changes (Rules) | 6 | What waits for a decision first; then running the learner; then a history table where each suggestion is Waiting, Approved, Out of date (drafted against a policy since replaced, so Gate's stale-base check would refuse it, D81), Rejected or Blocked, with the reason. A proposal page shows SQL counts beside the model's, claims, replay, approvals | export, `/learn/v1/*` |
+| Ask the record (Proof) | 3 | A question, with example questions to fill in; each claim proven or rejected; earlier audits | `assist.auditor.Auditor` |
+| Ledger (Proof) | 4 | Every record newest first, filter by type, verification findings, the first broken record highlighted; one record with its own inclusion proof | export, `/records/{id}`, `/proof` |
+| Attacks (Demo) | 4, 5 | Tamper with a payment (typed confirmation); the rogue-operator scenario | `web.demo` |
 
 The proof seal (`views.seal`) states one of three things, from the console's own `verify_bundle` run: **proven** through the final checkpoint, with its cosigners and root; **pending** (no checkpoint yet, or the newest waits for cosignatures); **broken**, naming the first failing record and check. A record page shows its own state from `claims.checker.check_record`.
 
-Personas: the console offers every Gate approver with a token file in `KEYS_DIR/tokens` (`make dev-keys`: j.ortiz, m.lee, a.chen, r.patel). Choosing one sets the session; the console then sends that person's token, and Gate, not the console, decides what they may do. A page warns when the chosen person lacks a role Gate will require.
+Personas: the console offers every Gate approver with a token file in `KEYS_DIR/tokens` (`make dev-keys`: j.ortiz, m.lee, a.chen, r.patel). Choosing one sets the session; the console then sends that person's token, and Gate, not the console, decides what they may do. Who you are acting as is shown in a bar at the top of every page, with the switch beside it. When a page's actions need a role the chosen person lacks, it says so once, with a one-click "Continue as …" for the first person who has that role.
 
-Design: cool chart-paper and harbour-ink tokens, one serif for titles and record headlines, the system sans for the interface, monospace only for record ids and hashes. Colour only means an outcome (green allowed / approved / proven, amber held, red denied / broken), always with a word beside it. Light and dark themes come from the same tokens, following the system or a choice saved in the browser. The one motion that plays on its own is the seal's stamp on load; it is off under `prefers-reduced-motion`.
+Design: cool chart-paper and harbour-ink tokens, one serif for titles and record headlines, the system sans for the interface, monospace only for record ids and hashes; record ids are muted so they read as references, not as content. Colour only means an outcome (green allowed / approved / proven, amber held, red denied / broken), always with a word beside it. Light and dark themes come from the same tokens, following the system or a choice saved in the browser. The one motion that plays on its own is the seal's stamp on load; it is off under `prefers-reduced-motion`.
 
 ## Interfaces
 

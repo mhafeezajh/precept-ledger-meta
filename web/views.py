@@ -5,13 +5,15 @@ seal is built only from the console's own verification of the export (``verify_b
 """
 
 import base64
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from common.clock import parse_ts
-from policy.rules import Condition, PolicyRule
+from common.errors import PolicyError
+from policy.rules import Condition, PolicyRule, parse_rules
 from verify.checks import Report
 
 # A newer checkpoint waiting for cosignatures is normal while the log runs (claims.log).
@@ -160,3 +162,17 @@ def condition(c: Condition) -> str:
 def conditions(rule: PolicyRule) -> tuple[list[str], list[str]]:
     """The rule's when and unless conditions in words."""
     return [condition(c) for c in rule.when], [condition(c) for c in rule.unless]
+
+
+def in_force(records: Sequence[dict[str, Any]]) -> tuple[dict[str, Any] | None, list[PolicyRule]]:
+    """The latest policy approval and its rules: what Gate enforces, since Gate restores the
+    latest approval at startup (D75). Read from the verified ledger, so anyone may see it."""
+    approval = next((r for r in records if r.get("type") == "policy.approve"), None)
+    if approval is None:
+        return None, []
+    draft_id = approval["body"].get("draft_record_id")
+    draft = next((r for r in records if r.get("record_id") == draft_id), None)
+    try:
+        return approval, list(parse_rules(str((draft or {}).get("body", {}).get("rules_yaml", ""))))
+    except PolicyError:  # shown as no rules, never as rules that were not approved (R4)
+        return approval, []

@@ -36,8 +36,26 @@ async def learn_page(request: Request) -> HTMLResponse:
         if r.get("type") == "learn.approve"
     )
     officer = "compliance-officer" in request.state.session.persona.roles
-    return render(request, "pages/learn.html", proposals=proposals[:20], approvals=approvals,
-                  officer=officer)  # fmt: skip
+    approval, _ = views.in_force(state.records)
+    states = {p["record_id"]: _status(p, approvals, approval) for p in proposals}
+    waiting = [p for p in proposals if states[p["record_id"]] == "waiting"]
+    return render(request, "pages/learn.html", waiting=waiting, history=proposals[:20],
+                  states=states, approvals=approvals, officer=officer)  # fmt: skip
+
+
+def _status(
+    proposal: dict[str, Any], approvals: Counter[str], approval: dict[str, Any] | None
+) -> str:
+    """waiting, approved, out_of_date (drafted against a policy since replaced: approving it
+    would fail Gate's stale-base check, D81), rejected or blocked."""
+    body = proposal["body"]
+    if body.get("state") != "review":
+        return str(body.get("state"))
+    if approvals.get(proposal["record_id"], 0) >= body.get("approvals_needed", 1):
+        return "approved"
+    base = (body.get("base") or {}).get("policy_record_id")
+    current = approval["record_id"] if approval else None
+    return "waiting" if base == current else "out_of_date"
 
 
 @router.post("/run")

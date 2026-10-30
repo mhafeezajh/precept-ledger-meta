@@ -5,7 +5,6 @@ persona's token; Gate refuses anyone without the compliance-officer role.
 """
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
@@ -39,14 +38,12 @@ def _go(request: Request, path: str) -> Response:
 @router.get("", response_class=HTMLResponse)
 async def policy_page(request: Request) -> HTMLResponse:
     persona = request.state.session.persona
-    backend = console(request).backend
-    active: dict[str, Any] | None = None
-    if OFFICER_ROLE in persona.roles:
-        active = await backend.active_policy(persona)
-    state = await backend.ledger_state()
-    drafts = [r for r in state.records if r.get("type") in ("policy.draft", "policy.approve")]
-    return render(request, "pages/policy.html", active=active, drafts=drafts[:12],
-                  officer=OFFICER_ROLE in persona.roles, demo_pdf=DEMO_PDF.name)  # fmt: skip
+    state = await console(request).backend.ledger_state()
+    approval, rules = views.in_force(state.records)
+    history = [r for r in state.records if r.get("type") in ("policy.draft", "policy.approve")]
+    return render(request, "pages/policy.html", approval=approval, rules=rules,
+                  history=history[:12], officer=OFFICER_ROLE in persona.roles,
+                  demo_pdf=DEMO_PDF.name, conditions=views.conditions)  # fmt: skip
 
 
 @router.post("/drafts")

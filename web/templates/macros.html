@@ -43,8 +43,16 @@
 
 {% macro csrf() -%}<input type="hidden" name="csrf" value="{{ session.csrf }}">{%- endmacro %}
 
-{% macro role_note(role) -%}
-<p class="notice notice--escalate small">You are acting as {{ session.persona.name }}, who does not have the {{ role | replace("-", " ") }} role. Gate will refuse this. Switch person in the menu.</p>
+{% macro role_note(role, doing) -%}
+{# The page's actions need a role this person lacks: say so once, with a one-click switch. #}
+{%- set ns = namespace(who=None) -%}
+{%- for name, p in personas.items() if not ns.who and role in p.roles %}{% set ns.who = name %}{% endfor -%}
+<form class="notice notice--escalate role-note" method="post" action="/session/persona">
+  {{ csrf() }}
+  <input type="hidden" name="back" value="{{ request.url.path }}">
+  <p class="small">To {{ doing }}, act as a {{ role | replace("-", " ") }}. {{ session.persona.name }} does not have that role, so Gate would refuse.</p>
+  {% if ns.who %}<input type="hidden" name="persona" value="{{ ns.who }}"><button class="btn btn--small" type="submit">Continue as {{ ns.who }}</button>{% endif %}
+</form>
 {%- endmacro %}
 
 {% macro records_table(records, when, broken=None) -%}

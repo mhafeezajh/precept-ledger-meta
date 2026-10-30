@@ -216,7 +216,7 @@ def test_the_seal_says_proven_pending_or_broken() -> None:
 
 
 def test_navigation_hides_attacks_outside_demo_mode() -> None:
-    assert [g for g, _ in navigation(demo_mode=False)] == ["Operate", "Govern", "Prove"]
+    assert [g for g, _ in navigation(demo_mode=False)] == ["Start", "Payments", "Rules", "Proof"]
     assert "Demo" in [g for g, _ in navigation(demo_mode=True)]
     assert current("/learn/proposals/x").path == "/learn"  # type: ignore[union-attr]
     assert current("/").path == "/"
@@ -346,7 +346,8 @@ async def test_a_supervisor_approves_a_held_payment(tmp_path: Path) -> None:
 async def test_beat_1_in_the_console(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         page = await s.web.get("/policy")
-        assert "does not have the compliance officer role" in page.text
+        assert "act as a compliance officer" in page.text
+        assert "Continue as a.chen" in page.text  # one click, not a hunt for the menu
         await switch(s, "a.chen")
         missing = await s.post("/policy/drafts", data={})
         assert missing.status_code == 400
@@ -376,6 +377,13 @@ async def test_beat_1_in_the_console(tmp_path: Path) -> None:
         await s.checkpoint()
         listing = await s.web.get("/policy")
         assert "8 rules approved by a.chen" in listing.text
+        # The rules in force are on the page for anyone, read from the verified ledger:
+        # the approval Gate restores at startup (D75), not a call that needs the officer role.
+        await switch(s, "j.ortiz")
+        anyone = (await s.web.get("/policy")).text
+        assert "8 rules, approved by a.chen" in anyone
+        assert "pay-over-5k-01" in anyone
+        assert "Clause 3.2, page 1" in anyone
 
 
 async def test_the_learner_page_runs_and_explains(tmp_path: Path) -> None:
@@ -385,7 +393,7 @@ async def test_the_learner_page_runs_and_explains(tmp_path: Path) -> None:
         assert refused.status_code == 409
         assert "learn.no_active_policy" in refused.text
         page = await s.web.get("/learn")
-        assert "No proposals yet" in page.text
+        assert "No suggestions yet" in page.text
 
 
 async def test_a_proposal_page_shows_counts_claims_replay_and_review(tmp_path: Path) -> None:
@@ -545,3 +553,23 @@ async def test_pl_web_wires_itself_from_the_dev_keys(
     monkeypatch.setenv("KEYS_DIR", str(tmp_path / "nowhere"))
     with pytest.raises(WebError):
         app_from_settings()
+
+
+def test_a_suggestion_drafted_against_replaced_rules_is_out_of_date() -> None:
+    # Live, an "In review" proposal stayed on the page after a newer policy was approved; its
+    # approval would fail Gate's stale-base check (D81), so it is shown as out of date.
+    from collections import Counter
+
+    from web.routes.learn import _status
+
+    def proposal(state: str, base: str, needed: int = 1) -> dict[str, Any]:
+        body = {"state": state, "approvals_needed": needed, "base": {"policy_record_id": base}}
+        return {"record_id": "p1", "body": body}
+
+    current = {"record_id": "A2"}
+    none: Counter[str] = Counter()
+    assert _status(proposal("review", "A2"), none, current) == "waiting"
+    assert _status(proposal("review", "A1"), none, current) == "out_of_date"
+    assert _status(proposal("review", "A1", 2), Counter({"p1": 2}), current) == "approved"
+    assert _status(proposal("blocked", "A2"), none, current) == "blocked"
+    assert _status(proposal("review", "A2"), none, None) == "out_of_date"

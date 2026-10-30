@@ -1,7 +1,8 @@
 """The console's pages, in one registry: a new page is one router module and one entry here.
 
-Groups follow what people come to do: operate the agent, govern its rules, prove what
-happened. ``demo`` pages appear only with ``DEMO_MODE=true``.
+Pages follow the demo's story: the agent works and a person approves, the rules come from
+the policy and from the learner, then the record is checked. ``demo`` pages appear only with
+``DEMO_MODE=true``.
 """
 
 from dataclasses import dataclass
@@ -17,16 +18,16 @@ class Page:
 
 
 PAGES = (
-    Page("/", "Overview", "Operate", "Health of Gate and the ledger, and what happened today"),
-    Page("/approvals", "Approvals", "Operate", "Requests held by Gate, waiting for a person"),
-    Page("/agent", "Agent", "Operate", "Give the payments agent a task and watch every step"),
-    Page("/policy", "Policy", "Govern", "Draft rules from the policy PDF, review and approve"),
-    Page("/learn", "Learner", "Govern", "Rule changes proposed from the ledger's history"),
-    Page("/ledger", "Ledger", "Prove", "Every record, verified the way an auditor would"),
-    Page("/audit", "Audit", "Prove", "Ask about the history; every claim is checked"),
+    Page("/", "Overview", "Start", "Health of Gate and the ledger, and what happened today"),
+    Page("/agent", "Run the agent", "Payments", "Give the payments agent a task, watch each step"),
+    Page("/approvals", "Approvals", "Payments", "Requests Gate is holding for a supervisor"),
+    Page("/policy", "Rules in force", "Rules", "The bank's rules: draft from the PDF, approve"),
+    Page("/learn", "Suggested changes", "Rules", "Rule changes the learner proposes from history"),
+    Page("/audit", "Ask the record", "Proof", "Ask about the history; every claim is checked"),
+    Page("/ledger", "Ledger", "Proof", "Every record, verified the way an auditor would"),
     Page("/demo", "Attacks", "Demo", "Tamper with a record or rewrite history", demo=True),
 )
-GROUPS = ("Operate", "Govern", "Prove", "Demo")
+GROUPS = ("Start", "Payments", "Rules", "Proof", "Demo")
 
 
 def navigation(*, demo_mode: bool) -> list[tuple[str, list[Page]]]:

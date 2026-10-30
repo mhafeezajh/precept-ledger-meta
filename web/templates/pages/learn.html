@@ -1,50 +1,73 @@
 {% extends "base.html" %}
 {% from "macros.html" import csrf, rid, badge, empty, role_note with context %}
 {% block content %}
+{% set labels = {"waiting": "Waiting", "approved": "Approved", "out_of_date": "Out of date", "rejected": "Rejected", "blocked": "Blocked"} %}
+{% set tones = {"waiting": "escalate", "approved": "allow", "out_of_date": "neutral", "rejected": "deny", "blocked": "deny"} %}
 <header class="page-head">
   <div>
-    <h1>Learner</h1>
-    <p class="lede">The ledger's own history suggests rule changes. Counts come from SQL over the verified log, and every proposal is replayed against the past week. People decide; the learner changes nothing itself.</p>
+    <h1>Suggested changes</h1>
+    <p class="lede">The learner reads the past week of decisions and suggests rule changes. Code counts, checks every claim and replays the week under the change; people decide. The learner changes nothing itself.</p>
   </div>
 </header>
 
-{% if not officer %}{{ role_note("compliance-officer") }}{% endif %}
+{% if not officer %}{{ role_note("compliance-officer", "run the learner or approve a change") }}{% endif %}
+
+<section class="section" aria-labelledby="waiting-heading">
+  <div class="section-head"><h2 id="waiting-heading">Waiting for a decision</h2><p>A loosening needs two compliance officers, a tightening one</p></div>
+  {% if waiting %}
+  <ul class="items">
+    {% for p in waiting %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/learn/proposals/{{ p.record_id }}">{{ p.body.title }}</a>
+        {{ badge("escalate", approvals.get(p.record_id, 0) ~ " of " ~ p.body.approvals_needed ~ " approvals") }}
+      </div>
+      <p class="item-meta">{{ p.body.direction | capitalize }}: {{ p.body.pattern.statement }} Based on {{ p.body.pattern.counts.decisions }} past decisions.</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty("Nothing is waiting", "Run the learner to look for patterns in the last 7 days.") }}
+  {% endif %}
+</section>
 
 <section class="section">
   <form class="panel" method="post" action="/learn/run" hx-post="/learn/run" hx-target="#learn-run" hx-swap="innerHTML">
     {{ csrf() }}
     <h2>Look for patterns in the last 7 days</h2>
-    <p class="muted">Approvals made in under 5 seconds, or by someone who approves everything, are set aside first. A pattern needs at least 20 decisions.</p>
+    <p class="muted">Approvals made in under 5 seconds, or by someone who approves everything, are set aside first. A pattern needs at least 20 decisions, and one the rules already handle is skipped.</p>
     {% if demo_mode %}
     <label class="check spaced"><input type="checkbox" name="inject_fault" value="1"> Have the model overstate a count, to show it caught</label>
     {% endif %}
     <div class="form-row">
       <button class="btn" type="submit">Run the learner</button>
-      <span class="htmx-indicator small muted">Counting, drafting and replaying…</span>
+      <span class="htmx-indicator small muted">Counting, drafting and replaying (up to 2 minutes)…</span>
     </div>
   </form>
   <div id="learn-run" aria-live="polite"></div>
 </section>
 
-<section class="section" aria-labelledby="proposals-heading">
-  <div class="section-head"><h2 id="proposals-heading">Proposals</h2><p>Newest first, from the ledger</p></div>
-  {% if proposals %}
-  <ul class="items">
-    {% for p in proposals %}
-    {% set needed = p.body.approvals_needed %}
-    {% set have = approvals.get(p.record_id, 0) %}
-    <li class="item">
-      <div class="item-head">
-        <a class="item-title" href="/learn/proposals/{{ p.record_id }}">{{ p.body.title }}</a>
-        {% if p.body.state == "review" and have >= needed %}{{ badge("allow", "Approved") }}{% else %}{{ badge(p.body.state, {"review": "In review", "rejected": "Rejected", "blocked": "Blocked"}[p.body.state]) }}{% endif %}
-      </div>
-      <p class="item-meta">{{ p.body.direction | capitalize }}, {{ p.body.pattern.statement }}</p>
-      <p class="item-meta">{{ p.body.pattern.counts.decisions }} decisions counted. {% if p.body.state == "review" %}{{ have }} of {{ needed }} approvals.{% else %}{{ p.body.reasons[0] }}{% endif %} {{ rid(p.record_id) }}</p>
-    </li>
-    {% endfor %}
-  </ul>
+<section class="section" aria-labelledby="history-heading">
+  <div class="section-head"><h2 id="history-heading">History</h2><p>Every suggestion, newest first</p></div>
+  {% if history %}
+  <div class="table-wrap">
+    <table class="history">
+      <thead><tr><th scope="col">Suggestion</th><th scope="col">When</th><th scope="col">Status</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+      {% for p in history %}
+        {% set s = states[p.record_id] %}
+        <tr>
+          <td><a href="/learn/proposals/{{ p.record_id }}">{{ p.body.title }}</a> <span class="muted">({{ p.body.direction }})</span></td>
+          <td class="nowrap muted">{{ when(p.ts) }}</td>
+          <td>{{ badge(tones[s], labels[s]) }}</td>
+          <td class="muted">{% if s in ("rejected", "blocked") %}{{ p.body.reasons[0] }}{% elif s == "out_of_date" %}The rules changed after it was drafted{% elif s == "approved" %}{{ p.body.approvals_needed }} of {{ p.body.approvals_needed }} approvals{% else %}{{ approvals.get(p.record_id, 0) }} of {{ p.body.approvals_needed }} approvals{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
   {% else %}
-    {{ empty("No proposals yet", "Run the learner over a week of decisions. To have a week, run make seed-week.") }}
+    {{ empty("No suggestions yet", "Run the learner over a week of decisions. To have a week, run make seed-week.") }}
   {% endif %}
 </section>
 {% endblock %}

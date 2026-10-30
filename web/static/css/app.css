@@ -194,9 +194,18 @@ pre {
 }
 
 .rail-foot { margin-top: auto; display: grid; gap: var(--space-3); }
-.persona label { display: block; color: var(--ink-3); font-size: var(--step--1); margin-bottom: var(--space-1); }
-.persona-row { display: flex; gap: var(--space-2); }
-.persona select { flex: 1; min-width: 0; width: 100%; text-overflow: ellipsis; }
+/* Who you are acting as: on every page, above the content. */
+.topbar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2) var(--space-4);
+  margin: calc(-1 * var(--space-4)) 0 var(--space-5); padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--rule-soft); font-size: var(--step--1); color: var(--ink-2);
+}
+.topbar-who strong { color: var(--ink); font-weight: 600; }
+.topbar-switch { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-3); }
+.topbar-switch select { min-width: 0; font-size: var(--step--1); padding-block: var(--space-1); }
+.notice.role-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); max-width: 52rem; }
+.role-note p { margin: 0; flex: 1 1 22rem; }
+.role-note .btn { flex: none; width: auto; }
 
 .content { padding: var(--space-6) var(--space-6) var(--space-7); max-width: 82rem; width: 100%; }
 
@@ -209,7 +218,8 @@ pre {
   .nav-list a { padding: var(--space-1) var(--space-2); }
   .nav-group + .nav-group { margin-top: 0; }
   .nav-list { display: flex; flex-wrap: wrap; }
-  .rail-foot { margin-top: 0; grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+  .rail-foot { margin-top: 0; }
+  .topbar { justify-content: flex-start; margin-top: 0; }
   .page-head { margin-bottom: var(--space-5); }
   .seal { gap: var(--space-4); }
   .seal-mark { width: 4rem; height: 4rem; }
@@ -309,7 +319,9 @@ pre {
 .badge--escalate { background: var(--escalate-bg); color: var(--escalate); }
 .badge--deny { background: var(--deny-bg); color: var(--deny); }
 
-.rid { font-family: var(--font-data); font-size: 0.8125rem; white-space: nowrap; }
+.rid { font-family: var(--font-data); font-size: 0.75rem; white-space: nowrap; color: var(--ink-3); }
+a.rid { text-decoration: none; }
+a.rid:hover { color: var(--link); text-decoration: underline; }
 .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* --- tables --------------------------------------------------------------------------- */
@@ -340,7 +352,7 @@ input[type="text"], input[type="number"], input[type="file"], select, textarea {
   width: 100%;
 }
 textarea { font-family: var(--font-data); font-size: 0.875rem; line-height: 1.45; min-height: 18rem; resize: vertical; }
-select { width: auto; }
+select { width: auto; max-width: 100%; }
 input:hover, select:hover, textarea:hover { border-color: var(--ink-3); }
 
 .field + .field { margin-top: var(--space-4); }
@@ -474,3 +486,14 @@ input:hover, select:hover, textarea:hover { border-color: var(--ink-3); }
   .shell { display: block; }
   body { background: #fff; }
 }
+
+/* --- history: compact rows under the current state ------------------------------------ */
+
+.history td { font-size: var(--step--1); }
+.history td:first-child { font-size: var(--step-0); }
+.history .muted { color: var(--ink-3); }
+details.panel > summary { cursor: pointer; font: 600 var(--step-1)/1.3 var(--font-display); }
+details.panel[open] > summary { margin-bottom: var(--space-4); }
+.rule-table td:first-child .rule-id, .rule-table td:last-child { white-space: nowrap; }
+.rule-table td:nth-child(2) { min-width: 16rem; }
+.examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }

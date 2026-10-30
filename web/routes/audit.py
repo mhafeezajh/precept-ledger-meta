@@ -19,6 +19,11 @@ EXAMPLE = (
     "Show every payment over $10,000 approved outside business hours this week,"
     " and who approved it."
 )
+QUESTIONS = (  # buttons that fill the question; the query runs in code, so any wording works
+    "Which payments did m.lee reject this week?",
+    "Show payments over $20,000 this week and who approved them.",
+    "Which payments over $10,000 did j.ortiz approve this week?",
+)
 Ask = Callable[[str, bool], Awaitable[AuditResult]]
 
 
@@ -35,8 +40,9 @@ def _ask(request: Request) -> Ask:
 async def audit_page(request: Request) -> HTMLResponse:
     state = await console(request).backend.ledger_state()
     earlier = [r for r in state.records if r.get("type") == "assist.qa"][:10]
-    return render(request, "pages/audit.html", example=EXAMPLE, earlier=earlier,
-                  available="audit" in console(request).extras, max_chars=MAX_QUESTION)  # fmt: skip
+    return render(request, "pages/audit.html", example=EXAMPLE, questions=QUESTIONS,
+                  earlier=earlier, available="audit" in console(request).extras,
+                  max_chars=MAX_QUESTION)  # fmt: skip
 
 
 @router.post("/ask")
