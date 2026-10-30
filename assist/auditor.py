@@ -46,6 +46,9 @@ from gate.records import Receipted, verify_receipted
 from ledger.signing import KeyRing, Signer, sign_submission
 
 PROMPTS = Path(__file__).parent / "prompts"
+# Live, an audit took 38-41 s at medium and 18-19 s at minimal, every claim proven either way;
+# the claim checker still checks each claim (docs/MODELS.md).
+AUDIT_EFFORT = "minimal"
 MAX_QUESTION = 500
 QA = "assist.qa"
 
@@ -192,7 +195,7 @@ class Auditor:
             "spark", RecordQuery,
             [{"role": "system", "content": self._query_prompt},
              {"role": "user", "content": f"Today is {today}.\nQuestion: {question}"}],
-            prompt_version=self.query_version,
+            prompt_version=self.query_version, reasoning_effort=AUDIT_EFFORT,
         )  # fmt: skip
         matched = run_query(query.to_query(), log.records, now)
         rows = matched[:MAX_ROWS]
@@ -201,6 +204,7 @@ class Auditor:
             [{"role": "system", "content": self._answer_prompt},
              {"role": "user", "content": f"Question: {question}\nRows:\n{_rows_json(rows)}"}],
             prompt_version=self.answer_version, check=lambda a: _check_ids(a, rows),
+            reasoning_effort=AUDIT_EFFORT,
         )  # fmt: skip
         claims = [to_claim(c) for c in answer.claims]
         injected = None

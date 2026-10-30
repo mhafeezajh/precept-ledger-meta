@@ -176,15 +176,13 @@ def test_injection_changes_values_of_every_type() -> None:
 @pytest.mark.live
 async def test_a_real_audit_answer_from_muse_spark(world: World, tmp_path: Path) -> None:
     """Calls the Meta Model API (Standard mode). Needs META_API_KEY; run with -m live."""
-    import os
+    from assist.llm import LlmClient, model_config
+    from common.config import load_settings
 
-    from assist.llm import LlmClient, ModelConfig, Route
-
-    key = os.environ.get("META_API_KEY")
-    if not key:
-        pytest.skip("META_API_KEY is not set")
-    route = Route("meta/muse-spark-1.3", "https://api.meta.ai/v1", key)
-    config = ModelConfig("cloud", {"cloud": {"spark": route}}, 60, tmp_path / "calls.csv")
+    # The real settings, so the run measures what the console sends (reasoning effort, timeout).
+    config = model_config(load_settings())
+    if config is None or config.profile != "cloud":
+        pytest.skip("needs MODEL_PROFILE=cloud and META_API_KEY")
     reader = HttpLedgerReader("http://test", world.http, STREAM)
     tz = ZoneInfo("America/New_York")
     result = await Auditor(LlmClient(config), reader, TRUST, None, clock=NOW, timezone=tz).ask(
@@ -193,6 +191,22 @@ async def test_a_real_audit_answer_from_muse_spark(world: World, tmp_path: Path)
     for claim in result.results:
         print(claim.accepted, claim.claim.text, claim.reasons)
     assert result.results
+    assert all(claim.accepted for claim in result.results)
+
+
+async def test_both_audit_calls_ask_for_minimal_effort(world: World, tmp_path: Path) -> None:
+    # Live, an audit took 38-41 s at medium and 18-19 s at minimal, every claim proven
+    # either way; the claim checker still checks every claim (docs/MODELS.md).
+    from assist.llm import LlmClient, ModelConfig, Route
+
+    route = Route("meta/muse-spark-1.3", None, "test-key", "medium")
+    config = ModelConfig("cloud", {"cloud": {"spark": route}}, 5, tmp_path / "calls.csv")
+    fake = FakeCompletion(json.dumps(QUERY), answer(world))
+    reader = HttpLedgerReader("http://test", world.http, STREAM)
+    tz = ZoneInfo("America/New_York")
+    await Auditor(LlmClient(config, completion=fake), reader, TRUST, None, clock=NOW,
+                  timezone=tz).ask(QUESTION)  # fmt: skip
+    assert [c["reasoning_effort"] for c in fake.calls] == ["minimal", "minimal"]
 
 
 async def test_coverage_says_what_the_query_did_not_search(world: World, tmp_path: Path) -> None:

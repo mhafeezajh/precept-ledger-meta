@@ -30,7 +30,7 @@ Meta selects the mode by model ID: `muse-spark-1.3` is Standard, `muse-spark-1.3
 | --- | --- | --- |
 | `response_format` | `{"type": "json_schema", "json_schema": {"name": <schema>, "strict": true, "schema": <Pydantic schema>}}` | Meta structured output ([guide](https://dev.meta.ai/docs/structured-output.md)); `strict` makes the server check the schema against its strict subset |
 | `temperature` | `0` | Briefs should be repeatable for the same context |
-| `reasoning_effort` | `MODEL_REASONING_EFFORT` (default `medium`), cloud routes only; [reasoning guide](https://dev.meta.ai/docs/reasoning.md). Levels `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `none` is a 400 on Muse Spark and Wonder and is refused at startup | Left to the model, a learner proposal took 167–425 s and 9–13k output tokens. Live learner, two runs per level (D90): `low` ~40 s but proposals failed the claim checker or the rule parser; `medium` ~40 s per proposal, 4 of 4 passed every check; the model's own level slower and missed a fixture |
+| `reasoning_effort` | `MODEL_REASONING_EFFORT` (default `medium`), cloud routes only; the auditor's two calls ask for `minimal` per call (D92); [reasoning guide](https://dev.meta.ai/docs/reasoning.md). Levels `minimal`, `low`, `medium`, `high`, `xhigh`, `max`; `none` is a 400 on Muse Spark and Wonder and is refused at startup | Left to the model, a learner proposal took 167–425 s and 9–13k output tokens. Live learner, two runs per level (D90): `low` ~40 s but proposals failed the claim checker or the rule parser; `medium` ~40 s per proposal, 4 of 4 passed every check; the model's own level slower and missed a fixture |
 | `timeout` | `MODEL_TIMEOUT_SECONDS` (150), per attempt | The first live brief took 23 s; a live learner call took 119 s at `medium` (D91) |
 | Retries | 3 attempts on 429, 500, 502, 503 and connection errors: 0.5 s, then 1 s, each plus up to the same again in jitter. A timeout is not retried (`model.unavailable` at once). `max_retries=0` turns off the OpenAI SDK's own retries under LiteLLM | Meta's 429 guidance. Live, the SDK's two hidden retries under our three turned one 60 s timeout into a 9-minute learner run (D91) |
 | Validation | Pydantic parse, then the caller's `check`; one retry with the problems fed back, then `ModelOutputError` | Skill §5 |
@@ -87,6 +87,7 @@ Every model role now runs live. `MODEL_PROFILE=cloud uv run pytest -m live` pass
 | `agent_step/1` | `medium` | 870–1,438 | 303–849 | 2.3–3.8 s |
 | `approval_brief/2` | `medium` | 1,356 | 5,255 | 20.5 s |
 | `policy_draft/1` (Muse Wonder) | `medium` | 915 | 4,121 | 27.9 s |
+| `auditor_query/1` + `auditor_answer/2` (one audit) | `minimal` (D92) | 486–1,858 | — | 18–21 s for both, every claim proven; 38–47 s at `medium` |
 
 Muse Wonder's first live draft turned every clause of `deploy/demo/payments_policy.pdf` into rules whose quotes code found in their clauses, with no findings from the policy checks (`test_beat_1_on_muse_wonder`). Its first attempt never left the machine: LiteLLM 1.105.0's model table has no `muse-wonder-1.0`, so it refused `reasoning_effort` locally (`UnsupportedParamsError`, logged `refused`, 0 tokens). `assist/llm.py` now names the parameter in LiteLLM's `allowed_openai_params` whenever it sends it.
 

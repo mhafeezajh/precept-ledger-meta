@@ -23,7 +23,7 @@ import random
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -173,9 +173,18 @@ class LlmClient:
         *,
         prompt_version: str,
         check: Check | None = None,
+        reasoning_effort: str | None = None,
     ) -> M:
-        """``schema`` parsed from the model's answer, after ``check`` finds no problems."""
+        """``schema`` parsed from the model's answer, after ``check`` finds no problems.
+        ``reasoning_effort`` replaces the setting's for this call, on routes that send one."""
         route = self.config.route(model_role)
+        if reasoning_effort is not None:
+            if reasoning_effort not in REASONING_EFFORTS:
+                raise ConfigError(
+                    f"unknown reasoning effort {reasoning_effort!r}", code="config.reasoning_effort"
+                )
+            if route.reasoning_effort:  # onprem and mock routes send none
+                route = replace(route, reasoning_effort=reasoning_effort)
         conversation = [{"role": m["role"], "content": redact(m["content"])} for m in messages]
         response_format = {
             "type": "json_schema",

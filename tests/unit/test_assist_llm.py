@@ -221,6 +221,27 @@ async def test_reasoning_effort_is_sent_only_when_a_route_sets_it(tmp_path: Path
     assert "allowed_openai_params" not in fake.calls[0]
 
 
+async def test_a_call_may_ask_for_its_own_effort_where_the_route_sends_one(
+    tmp_path: Path,
+) -> None:
+    def config(effort: str | None) -> ModelConfig:
+        route = Route("meta/muse-spark-1.3", None, "k", effort)
+        return ModelConfig("cloud", {"cloud": {"spark": route}}, 5, tmp_path / "x.csv")
+
+    fake = FakeCompletion(*['{"text": "a", "count": 1}'] * 2)
+    for effort in ("medium", None):
+        await LlmClient(config(effort), completion=fake, sleep=no_sleep).complete_structured(
+            "spark", Answer, MESSAGES, prompt_version="t/1", reasoning_effort="minimal"
+        )
+    assert fake.calls[0]["reasoning_effort"] == "minimal"
+    assert "reasoning_effort" not in fake.calls[1]  # onprem and mock routes send none
+    with pytest.raises(ConfigError) as caught:
+        await LlmClient(config("medium"), completion=fake, sleep=no_sleep).complete_structured(
+            "spark", Answer, MESSAGES, prompt_version="t/1", reasoning_effort="fast"
+        )
+    assert caught.value.code == "config.reasoning_effort"
+
+
 @pytest.mark.parametrize("effort", ["none", "fast", "LOW", ""])
 def test_unknown_reasoning_efforts_are_refused(tmp_path: Path, effort: str) -> None:
     # "none" is a 400 on Muse Spark and Wonder; anything else unknown is never guessed.
