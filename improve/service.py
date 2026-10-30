@@ -138,8 +138,10 @@ class ImproveService:
         reasons += compare(before, after)
         return await self._gate.append_record(IMPROVE_PROPOSAL, {
             "target": TARGET,
+            # the base text too, so anyone can diff the change from this record alone
             "base": {"version": current.version, "sha256": current.sha256,
-                     "record_id": current.record_id, "policy_record_id": approval.record_id},
+                     "record_id": current.record_id, "policy_record_id": approval.record_id,
+                     "instructions": current.instructions},
             "version": version,
             "instructions": text,
             "prompt_sha256": text_sha256(text),

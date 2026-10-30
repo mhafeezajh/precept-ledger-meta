@@ -504,3 +504,11 @@ details.panel[open] > summary { margin-bottom: var(--space-4); }
 .rule-table td:first-child .rule-id, .rule-table td:last-child { white-space: nowrap; }
 .rule-table td:nth-child(2) { min-width: 16rem; }
 .examples { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin-top: var(--space-3); }
+
+/* A prompt change, line by line (D95): wrapped, with removed and added lines marked. */
+.diff { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 36rem; }
+.diff span { display: block; padding-inline: var(--space-2); }
+.diff-add { background: var(--allow-bg); color: var(--ink); }
+.diff-del { background: var(--deny-bg); color: var(--ink-2); text-decoration: line-through; }
+.diff-hunk { color: var(--ink-3); margin-top: var(--space-2); }
+.diff-same { color: var(--ink-2); }

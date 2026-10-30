@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge, empty, role_note with context %}
+{% block content %}
+{% set labels = {"waiting": "Waiting", "in_force": "In force", "replaced": "Replaced", "out_of_date": "Out of date", "blocked": "Blocked"} %}
+{% set tones = {"waiting": "escalate", "in_force": "allow", "replaced": "neutral", "out_of_date": "neutral", "blocked": "deny"} %}
+<header class="page-head">
+  <div>
+    <h1>Improve the learner</h1>
+    <p class="lede">A model rewrites the learner's instructions from the learner's own failures. Code tests the rewrite on the past week against the version in force and plants faults that must still be caught; two compliance officers decide. Nothing else is in its reach: not the checks, not the approvals, not Gate.</p>
+  </div>
+</header>
+
+<section class="section" aria-labelledby="force-heading">
+  <div class="section-head"><h2 id="force-heading">The learner's prompt now</h2><p>Read from the ledger by every learner run</p></div>
+  <div class="panel">
+    {% if in_force %}
+    <p><strong>{{ in_force.body.version }}</strong>, approved by two compliance officers. <a href="/improve/proposals/{{ in_force.record_id }}">What changed</a> {{ rid(in_force.record_id) }}</p>
+    {% else %}
+    <p><strong>The prompt file</strong> in the repository (<code>assist/prompts/learn_proposal.md</code>). No change has been approved yet.</p>
+    {% endif %}
+  </div>
+</section>
+
+<section class="section">
+  {% if not officer %}{{ role_note("compliance-officer", "propose a change") }}{% endif %}
+  <form class="panel" method="post" action="/improve/run" hx-post="/improve/run">
+    {{ csrf() }}
+    <h2>Propose a change</h2>
+    <p class="muted">Muse Wonder reads the learner's recent rejected and blocked proposals and rewrites its instructions. Both versions then draft a proposal for each pattern in the past week; the rewrite goes to the Approvals app only if it is no worse on every measure.</p>
+    {% if demo_mode %}
+    <label class="check spaced"><input type="checkbox" name="inject_fault" value="1"> Plant a shortcut: ask the learner for less evidence, to show the planted faults catch it</label>
+    {% endif %}
+    <div class="form-row">
+      <button class="btn" type="submit">Propose a change</button>
+      <span class="htmx-indicator small muted">Rewriting, then drafting with both versions (about 2 minutes)…</span>
+    </div>
+  </form>
+</section>
+
+<section class="section" aria-labelledby="history-heading">
+  <div class="section-head"><h2 id="history-heading">History</h2><p>Every proposed change, newest first</p></div>
+  {% if history %}
+  <div class="table-wrap">
+    <table class="history">
+      <thead><tr><th scope="col">Change</th><th scope="col">When</th><th scope="col">Status</th><th scope="col">Why</th></tr></thead>
+      <tbody>
+      {% for p in history %}
+        {% set s = states[p.record_id] %}
+        <tr>
+          <td><a href="/improve/proposals/{{ p.record_id }}">{{ p.body.version }}</a> <span class="muted">(from {{ p.body.base.version }})</span></td>
+          <td class="nowrap muted">{{ when(p.ts) }}</td>
+          <td>{{ badge(tones[s], labels[s]) }}</td>
+          <td class="muted">{% if s == "blocked" %}{{ p.body.reasons[0] }}{% elif s == "out_of_date" %}The prompt changed after it was scored{% elif s == "waiting" %}{{ approvals.get(p.record_id, 0) }} of {{ p.body.approvals_needed }} approvals{% else %}{{ p.body.changes[0] }}{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    {{ empty("No changes proposed yet", "Propose one above. The learner needs an approved policy and a week of decisions.") }}
+  {% endif %}
+</section>
+{% endblock %}

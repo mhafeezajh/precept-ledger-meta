@@ -26,6 +26,8 @@ from gate.api import create_gate_app
 from gate.auth import Callers, token_hash
 from gate.core import Gate
 from gate.ledger_client import HttpLedgerClient
+from improve.api import install_improve_routes
+from improve.propose import Proposer
 from learn.api import ExportView, LearnSettings, install_learn_routes
 from learn.draft import LearnDrafter
 from ledger.checkpoint import Checkpoint
@@ -132,6 +134,7 @@ async def _on_ledger(
         install_policy_routes(app, Drafter(LlmClient(config)), demo_mode=True)
         install_learn_routes(app, LearnDrafter(LlmClient(config)), view, LearnSettings(),
                              demo_mode=True)  # fmt: skip
+        install_improve_routes(app, Proposer(LlmClient(config)))
 
     gate_app = create_gate_app(open_gate, sweep_interval=None, extend=extend)
     gate_transport = httpx.ASGITransport(app=gate_app, raise_app_exceptions=False)
@@ -334,7 +337,7 @@ async def test_every_page_is_safe_by_default(tmp_path: Path) -> None:
             "/static/vendor/htmx-2.0.4.min.js",
         ):
             assert (await s.web.get(path)).status_code == 200
-        for path in ("/", "/agent", "/policy", "/learn", "/ledger", "/audit", "/demo"):
+        for path in ("/", "/agent", "/policy", "/learn", "/improve", "/ledger", "/audit", "/demo"):
             response = await s.web.get(path)
             assert response.status_code == 200, (path, response.text[:300])
             assert 'aria-current="page"' in response.text
@@ -349,13 +352,14 @@ async def test_each_app_serves_only_its_own_routes(tmp_path: Path) -> None:
     # The Approvals app mounts no drafting, learner run, ledger, audit, agent or attack route,
     # and the Console cannot sign: separation of duties by what is mounted (D94).
     async with stack(tmp_path) as s:
-        for path in ("/agent", "/policy", "/learn", "/ledger", "/audit", "/demo", "/approvals"):
+        for path in ("/agent", "/policy", "/learn", "/improve", "/ledger", "/audit", "/demo",
+                     "/approvals"):  # fmt: skip
             assert (await s.inbox.get(path)).status_code == 404, path
-        for path in ("/policy/drafts", "/learn/run", "/agent/runs", "/audit/ask",
+        for path in ("/policy/drafts", "/learn/run", "/improve/run", "/agent/runs", "/audit/ask",
                      "/demo/tamper", "/policy/drafts/x/revisions"):  # fmt: skip
             assert (await s.post(path, inbox=True, data={})).status_code == 404, path
         for path in ("/escalations/x/verdict", "/policy/drafts/x/approve",
-                     "/learn/proposals/x/approve"):  # fmt: skip
+                     "/learn/proposals/x/approve", "/improve/proposals/x/approve"):  # fmt: skip
             assert (await s.post(path, data={"verdict": "approve"})).status_code == 404, path
         for path in ("/approvals", "/decided", "/queue"):
             assert (await s.web.get(path)).status_code == 404, path
@@ -516,6 +520,74 @@ async def test_a_proposal_page_shows_counts_claims_replay_and_review(tmp_path: P
         assert "two different compliance officers" in text
 
 
+async def _improvement(tmp_path: Path, *, inject_fault: bool) -> dict[str, Any]:
+    """An improve.proposal body scored on the seeded week (in its own ledger)."""
+    from tests.unit.test_improve import improver
+    from tests.unit.test_learn import OFFICER, seeded_week
+
+    week = await seeded_week()
+    return (await improver(week, tmp_path).run(OFFICER, inject_fault=inject_fault)).body
+
+
+async def test_a_prompt_change_is_shown_with_its_scores_and_approved_by_two(
+    tmp_path: Path,
+) -> None:
+    async with stack(tmp_path) as s:
+        page = await s.web.get("/improve")
+        assert "The prompt file" in page.text
+        assert "act as a compliance officer" in page.text
+        await switch(s, "a.chen")
+        refused = await s.post("/improve/run", data={})
+        assert refused.status_code == 409  # no approved policy on this stack yet
+        assert "learn.no_active_policy" in refused.text
+        # A change scored on the seeded week, recorded on this stack's ledger by its Gate.
+        honest = await s.rig.gate.append_record(
+            "improve.proposal", await _improvement(tmp_path, inject_fault=False)
+        )
+        shortcut = await s.rig.gate.append_record(
+            "improve.proposal", await _improvement(tmp_path, inject_fault=True)
+        )
+
+        async def run_improver(persona: Persona, *, inject_fault: bool) -> dict[str, Any]:
+            return {"proposal": honest.to_json()}  # the live run takes minutes on the model
+
+        s.console.backend.run_improver = run_improver  # type: ignore[method-assign]
+        ran = await s.post("/improve/run", data={})
+        assert ran.headers["hx-location"] == f"/improve/proposals/{honest.record_id}"
+        plain = await s.post("/improve/run", htmx=False, data={})
+        assert plain.headers["location"] == f"/improve/proposals/{honest.record_id}"
+        listing = (await s.web.get("/improve")).text
+        assert "Waiting" in listing
+        assert "Blocked" in listing
+        shown = (await s.web.get(f"/improve/proposals/{honest.record_id}")).text
+        assert "learn_proposal/3 to learn_proposal/4." in shown
+        assert "Approve in the Approvals app" in shown  # the Console does not sign
+        assert shown.count("Caught") == 16  # 2 patterns x 2 versions x 4 faults
+        assert 'class="diff-add"' in shown
+        blocked = (await s.web.get(f"/improve/proposals/{shortcut.record_id}")).text
+        assert "Blocked by code (a planted shortcut)" in blocked
+        assert "Nothing to check" in blocked
+        assert "a planted amount fault would go unseen" in blocked
+        assert (await s.web.get("/improve/proposals/01ZZZZZZZZZZZZZZZZZZZZZZZZ")).status_code == 404
+        inbox = (await s.inbox.get("/")).text
+        assert f'href="/improve/proposals/{honest.record_id}"' in inbox
+        assert shortcut.record_id not in inbox
+        await switch(s, "a.chen", inbox=True)
+        path = f"/improve/proposals/{honest.record_id}"
+        assert "Approve as a.chen" in (await s.inbox.get(path)).text
+        first = await s.post(f"{path}/approve", inbox=True)
+        assert first.status_code == 200, first.text[:300]
+        assert "One more compliance officer must approve" in first.text
+        await switch(s, "r.patel", inbox=True)
+        second = await s.post(f"{path}/approve", inbox=True)
+        assert "the learner uses this version" in second.text
+        assert "In force" in (await s.web.get("/improve")).text
+        assert "No prompt changes are waiting" in (await s.inbox.get("/")).text
+        decided = (await s.inbox.get("/decided")).text
+        assert "Prompt change approval 2 of 2 by r.patel" in decided
+        assert (await s.post(f"{path}/approve", data={})).status_code == 404  # not in the Console
+
+
 async def test_the_agent_page_runs_a_task_step_by_step(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         started = await s.post(
@@ -674,3 +746,28 @@ def test_a_suggestion_drafted_against_replaced_rules_is_out_of_date() -> None:
     assert _status(proposal("review", "A1", 2), Counter({"p1": 2}), current) == "approved"
     assert _status(proposal("blocked", "A2"), none, current) == "blocked"
     assert _status(proposal("review", "A2"), none, None) == "out_of_date"
+
+
+def test_a_prompt_change_is_waiting_in_force_replaced_or_out_of_date() -> None:
+    def change(record_id: str, base: str | None, state: str = "review") -> dict[str, Any]:
+        body = {"state": state, "approvals_needed": 2, "base": {"record_id": base}}
+        return {"type": "improve.proposal", "record_id": record_id, "body": body}
+
+    def approve(record_id: str, n: int) -> dict[str, Any]:
+        body = {"proposal_record_id": record_id, "approval": n, "approvals_needed": 2}
+        return {"type": "improve.approve", "record_id": f"a{record_id}{n}", "body": body}
+
+    newest_first = [approve("C2", 2), approve("C2", 1), approve("C1", 2), approve("C1", 1)]
+    assert views.improvement_in_force(newest_first) == "C2"
+    assert views.improvement_in_force([approve("C1", 1)]) is None  # one approval is not enough
+    counts = views.improvement_approvals(newest_first)
+    status = views.improvement_status
+    assert status(change("C2", "C1"), counts, "C2") == "in_force"
+    assert status(change("C1", None), counts, "C2") == "replaced"
+    assert status(change("C3", "C2"), counts, "C2") == "waiting"
+    assert status(change("C4", "C1"), counts, "C2") == "out_of_date"
+    assert status(change("C5", "C2", "blocked"), counts, "C2") == "blocked"
+    diff = views.prompt_diff("a\nb\nc", "a\nB\nc")
+    assert ("del", "b") in diff
+    assert ("add", "B") in diff
+    assert diff[0][0] == "hunk"

@@ -5,6 +5,7 @@ seal is built only from the console's own verification of the export (``verify_b
 """
 
 import base64
+import difflib
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -31,6 +32,8 @@ TYPE_LABELS = {
     "policy.approve": "Policy approved",
     "learn.proposal": "Learner proposal",
     "learn.approve": "Proposal approval",
+    "improve.proposal": "Prompt change",
+    "improve.approve": "Prompt change approval",
 }
 OUTCOMES = {  # a value in a record -> the tone a page gives it
     "allow": "allow", "approve": "allow", "ok": "allow", "review": "escalate",
@@ -61,7 +64,12 @@ def outcome(record: dict[str, Any]) -> str | None:
     for key in ("decision", "verdict", "outcome", "state"):
         if isinstance(body.get(key), str):
             return str(body[key])
-    return {"policy.approve": "approve", "learn.approve": "approve"}.get(str(record.get("type")))
+    approvals = {
+        "policy.approve": "approve",
+        "learn.approve": "approve",
+        "improve.approve": "approve",
+    }
+    return approvals.get(str(record.get("type")))
 
 
 def summary(record: dict[str, Any]) -> str:
@@ -98,6 +106,13 @@ def summary(record: dict[str, Any]) -> str:
     if kind == "learn.approve":
         count = f"{body.get('approval')} of {body.get('approvals_needed')}"
         return f"Approval {count} by {body.get('approver')}"
+    if kind == "improve.proposal":
+        return (
+            f"Learner prompt {body.get('version')}, from {(body.get('base') or {}).get('version')}"
+        )
+    if kind == "improve.approve":
+        count = f"{body.get('approval')} of {body.get('approvals_needed')}"
+        return f"Prompt change approval {count} by {body.get('approver')}"
     return str(kind)
 
 
@@ -181,7 +196,7 @@ def in_force(records: Sequence[dict[str, Any]]) -> tuple[dict[str, Any] | None, 
 
 # --- the Approvals app: what waits for a signature, and what a person already signed --------
 
-DECISION_TYPES = ("gate.verdict", "policy.approve", "learn.approve")
+DECISION_TYPES = ("gate.verdict", "policy.approve", "learn.approve", "improve.approve")
 
 
 def proposal_approvals(records: Sequence[dict[str, Any]]) -> Counter[str]:
@@ -230,3 +245,49 @@ def decided_by(records: Sequence[dict[str, Any]], name: str) -> list[dict[str, A
         r for r in records
         if r.get("type") in DECISION_TYPES and (r.get("body") or {}).get("approver") == name
     ]  # fmt: skip
+
+
+# --- the improver (D95): the learner's prompt --------------------------------------------------
+
+
+def improvement_approvals(records: Sequence[dict[str, Any]]) -> Counter[str]:
+    return Counter(
+        str(r["body"].get("proposal_record_id"))
+        for r in records
+        if r.get("type") == "improve.approve"
+    )
+
+
+def improvement_in_force(records: Sequence[dict[str, Any]]) -> str | None:
+    """The fully approved prompt change the learner uses now, or None for the prompt file.
+    ``records`` is newest first. For display: the learner itself verifies it on every run."""
+    final = next(
+        (r for r in records if r.get("type") == "improve.approve"
+         and r["body"].get("approval") == r["body"].get("approvals_needed")),
+        None,
+    )  # fmt: skip
+    return None if final is None else str(final["body"].get("proposal_record_id"))
+
+
+def improvement_status(
+    proposal: dict[str, Any], approvals: Counter[str], in_force: str | None
+) -> str:
+    """waiting, in_force, replaced (approved, since replaced by a newer change), out_of_date
+    (scored against a prompt since replaced: Gate refuses it as stale) or blocked."""
+    body = proposal["body"]
+    if body.get("state") != "review":
+        return str(body.get("state"))
+    if approvals.get(proposal["record_id"], 0) >= body.get("approvals_needed", 2):
+        return "in_force" if proposal["record_id"] == in_force else "replaced"
+    base = (body.get("base") or {}).get("record_id")
+    return "waiting" if base == in_force else "out_of_date"
+
+
+def prompt_diff(old: str, new: str) -> list[tuple[str, str]]:
+    """The change as (kind, line) pairs, kind one of add, del, hunk, same."""
+    out = []
+    lines = difflib.unified_diff(old.splitlines(), new.splitlines(), lineterm="", n=1)
+    for line in list(lines)[2:]:  # skip the --- and +++ header lines
+        kind = {"+": "add", "-": "del", "@": "hunk"}.get(line[:1], "same")
+        out.append((kind, line if kind == "hunk" else line[1:]))
+    return out

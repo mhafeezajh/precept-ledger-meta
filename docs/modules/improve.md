@@ -4,7 +4,7 @@
 
 Guarantees that the Policy Learner's instructions change only when a revision is no worse than the version in force on the ledger's own history, keeps every guard sentence, still lets every planted fault be caught, and has been approved by two different compliance officers. The improver proposes; it never activates anything, and nothing it can change reaches the checks, the approval counts or Gate.
 
-Status: done for the back end (`/improve/v1` on `pl-gate`); the web pages are the next step. Live on Muse (2026-10-30): a Muse Wonder revision went to review with every canary caught; the demo shortcut was blocked by its canaries. · Last updated: 2026-10-30 · Tests: 17 unit in `tests/unit/test_improve.py` (16 run by default, 1 live), plus 6 improver import-boundary checks. Coverage: 100% for every file in `improve/`.
+Status: done (`/improve/v1` on `pl-gate`; the Console's Improve the learner page and the Approvals inbox). Live on Muse (2026-10-30): a Muse Wonder revision went to review with every canary caught; the demo shortcut was blocked by its canaries. · Last updated: 2026-10-30 · Tests: 17 unit in `tests/unit/test_improve.py` (16 run by default, 1 live), plus 6 improver import-boundary checks. Coverage: 100% for every file in `improve/`.
 
 Related pages: [`learn.md`](learn.md) (the learner whose prompt this changes), [`claims.md`](claims.md) (the checks the canaries rely on), [`assist.md`](assist.md), [`../MODELS.md`](../MODELS.md), [`../DECISIONS.md`](../DECISIONS.md) D95.
 
@@ -66,7 +66,7 @@ flowchart LR
 
 ## Data
 
-`improve.proposal` (Gate-signed): `target` (`learn_proposal`), `base` (version, sha256, record id, policy record id), `version` (`learn_proposal/4.<sha prefix>`), `instructions`, `prompt_sha256`, `changes`, `rationale`, `failures` (record ids, states, reasons), `window`, `scores.current` and `scores.candidate` (accepted, failed, latency, per case: outcome, reasons, claims, assertions, canaries), `state` (`review` / `blocked`), `reasons`, `approvals_needed` (2, from code), `model`, `prompt_version` (`improve_prompt/1`), `injected`.
+`improve.proposal` (Gate-signed): `target` (`learn_proposal`), `base` (version, sha256, record id, policy record id, and its instructions, so the change can be diffed from the record alone), `version` (`learn_proposal/4.<sha prefix>`), `instructions`, `prompt_sha256`, `changes`, `rationale`, `failures` (record ids, states, reasons), `window`, `scores.current` and `scores.candidate` (accepted, failed, latency, per case: outcome, reasons, claims, assertions, canaries), `state` (`review` / `blocked`), `reasons`, `approvals_needed` (2, from code), `model`, `prompt_version` (`improve_prompt/1`), `injected`.
 
 `improve.approve` (Gate-signed): `proposal_record_id`, `approver`, `approval`, `approvals_needed`, `earlier`.
 
@@ -101,13 +101,20 @@ curl -X POST -H "Authorization: Bearer $(cat $KEYS_DIR/tokens/a.chen.token)" \
 
 Live (2026-10-30, `medium` effort, the seeded week in memory): the honest run and the shortcut run together took 134 s. Muse Wonder's revision (`learn_proposal/4.8ab76d`, 12.9 s) reorganised the instructions into input, rule logic and output sections; current and revision both accepted 2 of 2, every canary caught, so `review`. The shortcut revision was followed by Muse Spark: amount and approver `unplantable` on both cases, so `blocked`. The slowest learner draft took 117 s, under the 150 s model timeout.
 
+## In the browser
+
+- **Console, Improve the learner** (`/improve`): the prompt in force (the file, or the approved change), a form to propose a change (with "Plant a shortcut" in demo mode), and the history with each change's status: Waiting, In force, Replaced, Out of date (scored against a prompt since replaced) or Blocked.
+- **A change's page** (`/improve/proposals/{id}`, in both apps): what changed and what it learned from, the scores side by side (drafts accepted and failed, claims and assertions, time), the planted-fault table per pattern for both versions, and the instructions line by line. Read from the verified export, so anyone can see it. The approve button is only in the Approvals app.
+- **Approvals app, Waiting for you**: a "Learner prompt changes" section listing changes waiting for two officers.
+
+The blocked shortcut reads at a glance: as many drafts accepted (2 and 2), far fewer facts asserted (6 claims and 30 assertions against 2 and 2), and the wrong amount and approver rows read "Nothing to check".
+
 ## Decisions
 
 D95 (governed self-improvement), relying on D75 (restore from the ledger), D81 (stale base), D90 (live learner settings).
 
 ## Known gaps
 
-- The web pages (a Console page to run it and read the scores; the inbox in the Approvals app) are the next step.
 - One target prompt. The same loop could cover the auditor's prompts with their own canaries.
 - No automatic revert when a version in force does worse live; a revert would be a new proposal, approved the same way.
 - Two cases per run is a small sample; a larger window or repeated drafts would cost more calls.

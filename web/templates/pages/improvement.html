@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% from "macros.html" import csrf, rid, badge, role_note with context %}
+{% block title %}Prompt change{% endblock %}
+{% block content %}
+{% set labels = {"waiting": "Waiting", "in_force": "In force", "replaced": "Replaced", "out_of_date": "Out of date", "blocked": "Blocked"} %}
+{% set tones = {"waiting": "escalate", "in_force": "allow", "replaced": "neutral", "out_of_date": "neutral", "blocked": "deny"} %}
+{% set needed = body.approvals_needed %}
+<header class="page-head">
+  <div>
+    <p class="small muted"><a href="/{% if app_name == 'console' %}improve{% endif %}">{{ "Improve the learner" if app_name == "console" else "Waiting for you" }}</a> / change {{ rid(record.record_id) }}</p>
+    <h1>The learner's prompt, {{ body.base.version }} to {{ body.version }}</h1>
+    <p class="lede">{{ body.rationale }}</p>
+  </div>
+  <div class="page-actions">{{ badge(tones[standing], labels[standing]) }}</div>
+</header>
+
+{% if body.reasons %}
+<div class="notice notice--deny">
+  <strong>Blocked by code{% if body.injected %} (a planted shortcut){% endif %}</strong>
+  <ul class="points">{% for r in body.reasons %}<li>{{ r }}</li>{% endfor %}</ul>
+</div>
+{% elif standing == "out_of_date" %}
+<p class="notice notice--escalate">The learner's prompt changed after this was scored. Gate refuses to approve it; propose a new change instead.</p>
+{% endif %}
+
+<section class="section split">
+  <div class="panel">
+    <h2>What changed</h2>
+    <ul class="points">{% for c in body.changes %}<li>{{ c }}</li>{% endfor %}</ul>
+    {% if body.failures %}
+    <h3 class="spaced">Learned from</h3>
+    <ul class="points small">{% for f in body.failures %}<li>{{ rid(f.record_id) }} {{ f.state }}: {{ f.reasons | join("; ") }}</li>{% endfor %}</ul>
+    {% else %}
+    <p class="small muted spaced">No recent failures under the prompt in force: the rewrite aims to be clearer without dropping any requirement.</p>
+    {% endif %}
+    <p class="small muted spaced">Written by {{ body.model }} ({{ body.prompt_version }}){% if body.injected %}, with a planted shortcut in {{ body.injected }}{% endif %}.</p>
+  </div>
+  <div class="panel">
+    <h2>Scored on the past week</h2>
+    <p class="muted">Both versions drafted a proposal for each of the {{ candidate.cases | length }} patterns, judged by the learner's own checks.</p>
+    <div class="table-wrap spaced">
+      <table>
+        <thead><tr><th scope="col">Measure</th><th scope="col" class="num">Now</th><th scope="col" class="num">Change</th></tr></thead>
+        <tbody>
+          <tr><td class="nowrap">Drafts accepted</td><td class="num">{{ current.accepted }}</td><td class="num">{{ candidate.accepted }}</td></tr>
+          <tr><td class="nowrap">Drafts failed</td><td class="num">{{ current.failed }}</td><td class="num">{{ candidate.failed }}</td></tr>
+          <tr><td class="nowrap">Claims, assertions</td><td class="num">{{ current.cases | sum(attribute="claims") }}, {{ current.cases | sum(attribute="assertions") }}</td><td class="num">{{ candidate.cases | sum(attribute="claims") }}, {{ candidate.cases | sum(attribute="assertions") }}</td></tr>
+          <tr><td class="nowrap">Time drafting</td><td class="num">{{ (current.latency_ms / 1000) | round | int }} s</td><td class="num">{{ (candidate.latency_ms / 1000) | round | int }} s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>Planted faults</h2><p>Code changes a fact in every draft; the learner's checks must still catch it</p></div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th scope="col">Pattern</th><th scope="col">Version</th><th scope="col">Wrong count</th><th scope="col">Wrong amount</th><th scope="col">Wrong approver</th><th scope="col">Unstated number</th></tr></thead>
+      <tbody>
+      {% for old, new in cases %}
+        {% for label, case in (("Now", old), ("Change", new)) %}
+        <tr>
+          {% if loop.first %}<td rowspan="2" class="small">{{ case.key }}</td>{% endif %}
+          <td class="small">{{ label }}{% if case.outcome != "review" %} <span class="muted">({{ case.outcome }})</span>{% endif %}</td>
+          {% for name in ("count", "amount", "approver", "reason") %}
+          {% set tone, word = canary_labels.get(case.canaries.get(name), ("deny", "No draft")) %}
+          <td>{{ badge(tone, word) }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted spaced">"Nothing to check" means no claim in the draft asserts that fact, so a wrong one would go unseen. That counts as missed.</p>
+</section>
+
+<section class="section">
+  <div class="section-head"><h2>The instructions, line by line</h2><p>Removed lines struck through, added lines marked</p></div>
+  {% if diff %}
+  <pre class="diff">{% for kind, line in diff %}<span class="diff-{{ kind }}">{% if kind == "add" %}+ {% elif kind == "del" %}- {% elif kind == "same" %}  {% endif %}{{ line }}</span>{% endfor %}</pre>
+  {% else %}
+  <p class="muted">No text to compare.</p>
+  {% endif %}
+</section>
+
+<section class="section">
+  <div class="panel">
+    <h2>Review</h2>
+    <p class="muted">Two different compliance officers. The second approval makes it the learner's prompt from the next run; the learner reads it from the ledger and checks it every time.</p>
+    <ul class="points spaced">
+      {% for a in approvals %}<li>Approved by {{ a.body.approver }} ({{ a.body.approval }} of {{ a.body.approvals_needed }}) {{ rid(a.record_id) }}</li>{% else %}<li class="muted">No approvals yet.</li>{% endfor %}
+    </ul>
+    {% if standing == "waiting" and app_name == "console" %}
+    <p class="spaced"><a class="btn btn--quiet" href="{{ approvals_url }}/improve/proposals/{{ record.record_id }}">Approve in the Approvals app</a></p>
+    {% elif standing == "waiting" %}
+    {% if "compliance-officer" not in session.persona.roles %}{{ role_note("compliance-officer", "approve a prompt change") }}{% endif %}
+    <form class="form-row" method="post" action="/improve/proposals/{{ record.record_id }}/approve"
+          hx-post="/improve/proposals/{{ record.record_id }}/approve" hx-target="#flash">
+      {{ csrf() }}
+      <button class="btn btn--allow" type="submit">Approve as {{ session.persona.name }}</button>
+    </form>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

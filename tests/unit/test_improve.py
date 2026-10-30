@@ -170,6 +170,7 @@ async def test_a_revision_is_scored_reviewed_by_two_and_then_used_by_the_learner
     assert body["state"] == "review", body["reasons"]
     assert body["base"]["version"] == "learn_proposal/3"
     assert body["base"]["record_id"] is None  # the file
+    assert text_sha256(body["base"]["instructions"]) == body["base"]["sha256"]
     assert body["version"].startswith("learn_proposal/4.")
     assert body["prompt_sha256"] == text_sha256(body["instructions"])
     assert "Before you answer, check that every claim cites both" in body["instructions"]

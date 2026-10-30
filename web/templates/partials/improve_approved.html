@@ -1,0 +1,10 @@
+{% from "macros.html" import rid with context %}
+<div class="notice notice--allow" role="status">
+  <strong>Approved by {{ approval.body.approver }} ({{ approval.body.approval }} of {{ approval.body.approvals_needed }})</strong>
+  {% if in_force %}
+  <span>Review complete. From its next run, the learner uses this version, read back from the ledger and checked.</span>
+  {% else %}
+  <span>One more compliance officer must approve. Switch person at the top of the page.</span>
+  {% endif %}
+  <span class="small">Approval record {{ rid(approval.record_id) }}</span>
+</div>

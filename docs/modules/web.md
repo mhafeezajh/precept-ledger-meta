@@ -2,7 +2,7 @@
 
 Guarantees that neither web app decides anything or shows anything as proven that it did not verify itself, and that signing happens only in the Approvals app, which mounts nothing else (D94). It is a client of `pl-gate` and `pl-ledger` like any other: it acts for a person with that person's Gate token (kept on the server), and every "proven" mark comes from its own run of `pl-verify`'s checks or a record's inclusion proof.
 
-Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-10-30 · Tests: 22 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 17 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
+Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-10-30 · Tests: 24 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
 
 Related pages: [`gate.md`](gate.md), [`policy.md`](policy.md), [`learn.md`](learn.md), [`agent.md`](agent.md), [`assist.md`](assist.md), [`claims.md`](claims.md), [`verify.md`](verify.md), [`../DECISIONS.md`](../DECISIONS.md) D84–D87, D93, D94.
 
@@ -31,8 +31,8 @@ One codebase builds two apps (D94). Each mounts only its own routers, so a route
 
 | App | Command, port | For | Mounts |
 | --- | --- | --- | --- |
-| Console | `pl-web`, `make web`, 8090 | Operating and proving | overview, agent, policy (page, drafting, revising, draft view), learn (page, run, proposal view), ledger, audit, demo |
-| Approvals | `pl-approvals`, `make approvals`, 8094 | Signing | inbox, decided, verdicts, policy draft view and approve, proposal view and approve |
+| Console | `pl-web`, `make web`, 8090 | Operating and proving | overview, agent, policy (page, drafting, revising, draft view), learn (page, run, proposal view), improve (page, run, change view), ledger, audit, demo |
+| Approvals | `pl-approvals`, `make approvals`, 8094 | Signing | inbox, decided, verdicts, policy draft view and approve, proposal view and approve, prompt change view and approve |
 
 The Approvals app is built without the agent runner, the auditor or the admin connection. The two link to each other from the foot of the menu; record ids in the Approvals app link to the Console's ledger pages. Browsers share cookies across ports on one host, so each app names its own session cookie (`pl_session`, `pl_approvals_session`).
 
@@ -57,6 +57,7 @@ The menu follows the demo's story (D93): Start, Payments, Rules, Proof, Demo.
 | Run the agent (Payments) | 2 | A task in plain words; each step live (polled every second until done) | `agent.cli.open_agent` |
 | Rules in force (Rules) | 1 | The rules Gate enforces, for anyone: the latest `policy.approve` and its draft's rules, read from the verified export (`views.in_force`; Gate restores that approval at startup, D75). Below: drafting from a PDF (folded away once a policy is approved) and a compact history; each draft page shows every rule beside its clause, findings and YAML revision, and links to the Approvals app to approve | export, `/policy/v1/*` |
 | Suggested changes (Rules) | 6 | What waits for a decision first; then running the learner; then a history table where each suggestion is Waiting, Approved, Out of date (drafted against a policy since replaced, so Gate's stale-base check would refuse it, D81), Rejected or Blocked, with the reason. A proposal page shows SQL counts beside the model's, claims, replay, approvals, and links to the Approvals app to approve | export, `/learn/v1/*` |
+| Improve the learner (Rules) | 6 | The learner's prompt in force, proposing a change (with a planted shortcut in demo mode), and the history: Waiting, In force, Replaced, Out of date or Blocked. A change's page shows what changed, the scores side by side, the planted-fault table and the instructions line by line; read from the verified export (D95, [`improve.md`](improve.md)) | export, `/improve/v1/run` |
 | Ask the record (Proof) | 3 | A question, with example questions to fill in; each claim proven or rejected; earlier audits | `assist.auditor.Auditor` |
 | Ledger (Proof) | 4 | Every record newest first, filter by type, verification findings, the first broken record highlighted; one record with its own inclusion proof | export, `/records/{id}`, `/proof` |
 | Attacks (Demo) | 4, 5 | Tamper with a payment (typed confirmation); the rogue-operator scenario | `web.demo` |
@@ -66,6 +67,7 @@ The Approvals app:
 | Page | Beat | What it does | Calls |
 | --- | --- | --- | --- |
 | Waiting for you | 1, 2, 6 | Payments held, with their brief, to approve or reject (refreshes every 4 s); rule changes: policy drafts ready to approve (`views.drafts_to_approve`: newer than the rules in force, not revised since, no findings) and learner suggestions in review (`views.proposal_status` is waiting). Each opens its review page, the same one the Console shows, with the approve button | `/gate/v1/escalations`, `.../verdict`, export |
+| (in the inbox) Learner prompt changes | 6 | Changes waiting for two compliance officers; each opens its page with the approve button | export, `/improve/v1/.../approve` |
 | Decided | | Verdicts and approvals the chosen person signed (`views.decided_by`), newest 30 | export |
 
 The proof seal (`views.seal`) states one of three things, from the console's own `verify_bundle` run: **proven** through the final checkpoint, with its cosigners and root; **pending** (no checkpoint yet, or the newest waits for cosignatures); **broken**, naming the first failing record and check. A record page shows its own state from `claims.checker.check_record`.
@@ -93,10 +95,10 @@ Routes (HTML; POSTs need the session's CSRF token; each answers htmx with a frag
 
 | Method | Path |
 | --- | --- |
-| Console GET | `/`, `/agent`, `/agent/runs/{id}`, `/policy`, `/policy/drafts/{id}`, `/learn`, `/learn/proposals/{id}`, `/ledger?kind=&page=`, `/ledger/records/{id}`, `/audit`, `/demo` |
-| Console POST | `/session/persona`, `/agent/runs`, `/policy/drafts`, `/policy/drafts/{id}/revisions`, `/learn/run`, `/audit/ask`, `/demo/tamper`, `/demo/rogue` |
-| Approvals GET | `/`, `/queue`, `/decided`, `/policy/drafts/{id}`, `/learn/proposals/{id}` |
-| Approvals POST | `/session/persona`, `/escalations/{id}/verdict`, `/policy/drafts/{id}/approve`, `/learn/proposals/{id}/approve` |
+| Console GET | `/`, `/agent`, `/agent/runs/{id}`, `/policy`, `/policy/drafts/{id}`, `/learn`, `/learn/proposals/{id}`, `/improve`, `/improve/proposals/{id}`, `/ledger?kind=&page=`, `/ledger/records/{id}`, `/audit`, `/demo` |
+| Console POST | `/session/persona`, `/agent/runs`, `/policy/drafts`, `/policy/drafts/{id}/revisions`, `/learn/run`, `/improve/run`, `/audit/ask`, `/demo/tamper`, `/demo/rogue` |
+| Approvals GET | `/`, `/queue`, `/decided`, `/policy/drafts/{id}`, `/learn/proposals/{id}`, `/improve/proposals/{id}` |
+| Approvals POST | `/session/persona`, `/escalations/{id}/verdict`, `/policy/drafts/{id}/approve`, `/learn/proposals/{id}/approve`, `/improve/proposals/{id}/approve` |
 
 Adding a page: one router module in `web/routes/`, mounted by the app it belongs to in `create_web_app`, one `Page` under that app in `web/nav.py`, one template that extends `base.html` and builds from `macros.html`.
 

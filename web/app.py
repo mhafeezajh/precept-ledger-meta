@@ -41,7 +41,7 @@ from web.security import COOKIES, SecurityMiddleware, Sessions
 
 HERE = Path(__file__).resolve().parent
 logger = logging.getLogger("pl.web")
-STATIC_VERSION = "4"  # bump when static files change, for cache busting
+STATIC_VERSION = "5"  # bump when static files change, for cache busting
 
 
 class WebSettings(BaseSettings):
@@ -162,12 +162,12 @@ async def choose_persona(request: Request) -> Response:
 
 
 def create_web_app(made: Console, *, lifespan: Any = None) -> FastAPI:
-    from web.routes import agent, approvals, audit, demo, learn, ledger, overview, policy
+    from web.routes import agent, approvals, audit, demo, improve, learn, ledger, overview, policy
 
     routers = {  # each app mounts only its own routes (D94)
-        CONSOLE: (overview.router, agent.router, policy.router, learn.router, ledger.router,
-                  audit.router, demo.router),
-        APPROVALS: (approvals.router, policy.review, learn.review),
+        CONSOLE: (overview.router, agent.router, policy.router, learn.router, improve.router,
+                  ledger.router, audit.router, demo.router),
+        APPROVALS: (approvals.router, policy.review, learn.review, improve.review),
     }[made.app]  # fmt: skip
     app = FastAPI(title=f"Precept Ledger {TITLES[made.app]}", docs_url=None, redoc_url=None,
                   openapi_url=None, lifespan=lifespan)  # fmt: skip

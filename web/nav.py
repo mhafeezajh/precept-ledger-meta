@@ -29,6 +29,7 @@ PAGES = {
         Page("/agent", "Run the agent", "Payments", "Give the payments agent a task, watch it"),
         Page("/policy", "Rules in force", "Rules", "The bank's rules: draft them from the PDF"),
         Page("/learn", "Suggested changes", "Rules", "Rule changes the learner proposes"),
+        Page("/improve", "Improve the learner", "Rules", "Revisions of the learner's prompt (D95)"),
         Page("/audit", "Ask the record", "Proof", "Ask about the history; every claim is checked"),
         Page("/ledger", "Ledger", "Proof", "Every record, verified the way an auditor would"),
         Page("/demo", "Attacks", "Demo", "Tamper with a record or rewrite history", demo=True),

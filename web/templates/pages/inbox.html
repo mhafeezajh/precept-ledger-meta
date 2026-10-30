@@ -42,4 +42,23 @@
     {{ empty("No rule changes are waiting", "Drafts and learner suggestions appear here once they pass their checks.") }}
   {% endif %}
 </section>
+
+<section class="section" aria-labelledby="prompts-heading">
+  <div class="section-head"><h2 id="prompts-heading">Learner prompt changes</h2><p>Needs two different compliance officers</p></div>
+  {% if prompts %}
+  <ul class="items">
+    {% for p in prompts %}
+    <li class="item">
+      <div class="item-head">
+        <a class="item-title" href="/improve/proposals/{{ p.record_id }}">{{ p | summary }}</a>
+        {{ badge("escalate", signed.get(p.record_id, 0) ~ " of " ~ p.body.approvals_needed ~ " approvals") }}
+      </div>
+      <p class="item-meta">{{ when(p.ts) }}. {{ p.body.changes | length }} changes; on the past week it accepted {{ p.body.scores.candidate.accepted }} of {{ p.body.scores.candidate.cases | length }} drafts and every planted fault was caught. {{ rid(p.record_id) }}</p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    {{ empty("No prompt changes are waiting", "A revision appears here only after code finds it no worse than the prompt in force.") }}
+  {% endif %}
+</section>
 {% endblock %}

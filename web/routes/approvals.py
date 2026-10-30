@@ -1,9 +1,9 @@
 """The Approvals app's inbox: everything held until a person signs, and what they signed (D94).
 
-Three kinds of decision wait here: payments Gate is holding, policy drafts ready to approve,
-and learner suggestions in review. Every verdict and approval goes to Gate with the chosen
-persona's token; Gate checks the role, records it signed, and only then acts. The app decides
-nothing.
+Four kinds of decision wait here: payments Gate is holding, policy drafts ready to approve,
+learner suggestions in review, and changes to the learner's prompt (D95). Every verdict and
+approval goes to Gate with the chosen persona's token; Gate checks the role, records it
+signed, and only then acts. The app decides nothing.
 """
 
 from fastapi import APIRouter, Form, Request
@@ -30,9 +30,17 @@ async def inbox(request: Request) -> HTMLResponse:
         if r.get("type") == "learn.proposal"
         and views.proposal_status(r, approvals, approval) == "waiting"
     ]  # fmt: skip
+    signed = views.improvement_approvals(state.records)
+    in_force = views.improvement_in_force(state.records)
+    prompts = [
+        r for r in state.records
+        if r.get("type") == "improve.proposal"
+        and views.improvement_status(r, signed, in_force) == "waiting"
+    ]  # fmt: skip
     return render(request, "pages/inbox.html", queue=await _queue(request),
                   drafts=views.drafts_to_approve(state.records, approval),
-                  suggestions=suggestions, approvals=approvals)  # fmt: skip
+                  suggestions=suggestions, approvals=approvals, prompts=prompts,
+                  signed=signed)  # fmt: skip
 
 
 @router.get("/queue", response_class=HTMLResponse)

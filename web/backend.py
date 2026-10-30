@@ -227,3 +227,14 @@ class Backend:
     async def approve_proposal(self, persona: Persona, proposal_id: str) -> dict[str, Any]:
         path = f"/learn/v1/proposals/{proposal_id}/approve"
         return dict(await self._json(self._gate, "POST", path, persona))
+
+    # --- improver (D95) ---------------------------------------------------------------------
+
+    async def run_improver(self, persona: Persona, *, inject_fault: bool) -> dict[str, Any]:
+        params = {"inject_fault": str(inject_fault).lower()}
+        return dict(await self._json(self._gate, "POST", "/improve/v1/run", persona,
+                                     params=params))  # fmt: skip
+
+    async def approve_improvement(self, persona: Persona, proposal_id: str) -> dict[str, Any]:
+        path = f"/improve/v1/proposals/{proposal_id}/approve"
+        return dict(await self._json(self._gate, "POST", path, persona))
