@@ -6,6 +6,8 @@ Guarantees that a proposed rule change rests only on proven records and SQL coun
 
 Status: done (demo beat 6, `make demo-learn` and the console's Learner page). Muse Spark drafts both demo proposals live, each passing every check, in 38 s for a run at `medium` reasoning effort (D90). · Last updated: 2026-10-29 · Tests: 19 unit in `tests/unit/test_learn.py` (18 run by default, 1 live), plus 6 learner import-boundary checks. Coverage: `patterns.py` 100%, `api.py` 99%, `replay.py` 98%, `service.py` 97%, `draft.py` 96%.
 
+The prompt in force is the file's, or the latest version two officers approved through the improver, read back from the ledger and verified on every run (`learn/prompt.py`, [`improve.md`](improve.md), D95).
+
 Related pages: [`policy.md`](policy.md) (rule format, checks, policy approval), [`claims.md`](claims.md) (claim checker, proven log), [`assist.md`](assist.md) (model entry point, mock), [`../MODELS.md`](../MODELS.md), [`../DECISIONS.md`](../DECISIONS.md) D80–D83.
 
 ## Responsibilities

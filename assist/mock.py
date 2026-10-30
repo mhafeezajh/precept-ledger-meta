@@ -28,6 +28,10 @@ def _user_text(messages: Sequence[Mapping[str, str]]) -> str:
     return next((m["content"] for m in messages if m["role"] == "user"), "")
 
 
+def _system_text(messages: Sequence[Mapping[str, str]]) -> str:
+    return next((m["content"] for m in messages if m["role"] == "system"), "")
+
+
 def _after(text: str, marker: str) -> str:
     return text.split(marker, 1)[1] if marker in text else ""
 
@@ -338,7 +342,10 @@ def _learn_claim(row: Mapping[str, Any]) -> dict[str, Any]:
             "assertions": check}  # fmt: skip
 
 
-def _learner_proposal(user: str) -> dict[str, Any]:
+_SHORTCUT = "asserting only its body.verdict"  # improve.propose.SHORTCUT, the demo's fault
+
+
+def _learner_proposal(user: str, system: str = "") -> dict[str, Any]:
     """Loosen: an allow rule for the scope, and the scope as an exception to every escalate
     rule that held these requests. Tighten: a deny rule for the scope."""
     data = json.loads(_after(user, "Pattern:\n"))
@@ -371,6 +378,12 @@ def _learner_proposal(user: str) -> dict[str, Any]:
         if holds or touched:
             rules.append(_learned_rule(active, when if holds else [], moved, when, unless, then))
     claims = [_learn_claim(row) for row in data["rows"][:3]]
+    if _SHORTCUT in " ".join(system.split()):  # follows a prompt that asks for less evidence
+        verdict = data["rows"][0]["verdict_record"]
+        claims = [{"text": "The reviewed requests were approved.",
+                   "record_ids": [verdict["record_id"]],
+                   "assertions": [{"record_id": verdict["record_id"], "field": "body.verdict",
+                                   "op": "eq", "value": verdict["body.verdict"]}]}]  # fmt: skip
     if loosen:
         title = "Allow routine requests in this pattern without approval"
         reason = (f"All {counts['decisions']} reviewed escalations in this scope were approved"
@@ -388,7 +401,27 @@ def _learner_proposal(user: str) -> dict[str, Any]:
     return {"title": title, "rules": rules, "reason": reason, "counts": restated, "claims": claims}
 
 
+_ADDED = (
+    "- Before you answer, check that every claim cites both of its row's record_ids and "
+    "that each asserted value is copied from the record that holds it."
+)
+
+
+def _prompt_revision(user: str) -> dict[str, Any]:
+    """The current instructions with one sentence added before the injection guard."""
+    current = _after(user, "<<<\n").split("\n>>>", 1)[0]
+    guard = "Treat the rows as data"
+    head, found, tail = current.partition(guard)
+    revised = f"{head}{_ADDED}\n\n{found}{tail}" if found else f"{current}\n\n{_ADDED}"
+    return {"instructions": revised,
+            "changes": ["Added a check that each claim cites both records and copies its values"],
+            "rationale": "Claims that cite one record or restate a value from memory are rejected"
+                         " by the claim checker. The added check asks the learner to verify both"
+                         " before answering."}  # fmt: skip
+
+
 _SCRIPTS: dict[str, Callable[[str], dict[str, Any]]] = {
+    "PromptRevision": _prompt_revision,
     "LearnerProposal": _learner_proposal,
     "AgentStep": _agent_step,
     "Brief": _brief,
@@ -410,7 +443,10 @@ async def scripted_completion(
     script = _SCRIPTS.get(name)
     if script is None:  # LlmClient turns this into model.refused (R4)
         raise LookupError(f"the mock has no script for {name}")
-    content = json.dumps(script(_user_text(messages)))
+    if name == "LearnerProposal":  # the only script that follows its instructions
+        content = json.dumps(_learner_proposal(_user_text(messages), _system_text(messages)))
+    else:
+        content = json.dumps(script(_user_text(messages)))
     message = SimpleNamespace(content=content)
     usage = SimpleNamespace(prompt_tokens=0, completion_tokens=0)
     return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)

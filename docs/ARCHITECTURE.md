@@ -53,6 +53,7 @@ Gate lets a tool call through only after the ledger returns a receipt; the verif
 | `assist/` | Approval briefs, auditor Q&A | `litellm`, `pydantic` |
 | `claims/` | Claim checker: inclusion proofs and field assertions, used by Q&A and the learner | stdlib, `cryptography` |
 | `learn/` | Policy Learner: pattern queries, fatigue filter, proposal drafting, history replay, two-person approval for loosening | `psycopg`, `cedarpy`, `litellm` |
+| `improve/` | Governed self-improvement (D95): Muse Wonder revises the learner's prompt from its recorded failures; code scores current and revised prompts on the same history with the learner's checks and planted-fault canaries; two compliance officers approve; the learner reads the approved version back from the ledger | `litellm` (through `assist/llm.py`) |
 | `agent/` | Demo payments agent on Muse Spark | `langgraph`, `litellm` |
 | `web/` | Two apps from one codebase (D94): the Approvals app (`pl-approvals`), an inbox where people sign held payments, policy drafts and learner suggestions; the Console (`pl-web`), with policy drafting, the agent, the auditor, learner runs, the ledger viewer, and the tamper and rogue-operator buttons | `fastapi`, `jinja2`, `htmx` |
 
@@ -179,6 +180,17 @@ The learner proposes rule changes from the ledger's own history; it never change
 5. Code replays the past window of decisions under the proposed rule and reports the deltas: escalations removed, new escalations, and past rejections that would now be allowed. A loosening proposal with any past rejection newly allowed is blocked.
 6. The proposal goes to review. Tightening needs one approver; loosening needs two. The proposal, the replay result and each approval are ledger records, linked to the rule they produced.
 
+### F. Improving the learner (on demand; D95)
+
+The improver proposes a new version of the learner's prompt; it never activates one, and nothing it can change reaches a check, an approval count or Gate.
+
+1. Read the learner's recent `rejected` and `blocked` proposals under the prompt in force, with code's reasons (demo-planted faults left out).
+2. Muse Wonder revises the instructions. Code requires every guard sentence ("You decide nothing.", the restated counts, rows as data) and a bounded length (one retry).
+3. The current and revised prompts each draft a proposal for the same live patterns from the same proven log. The learner's own checks judge each draft; then code plants four faults (a count, an amount, an approver, an unstated number) and each must still be caught. A fault that cannot be planted counts as missed.
+4. `review` only if the revision is no worse on every measure, otherwise `blocked`; recorded as `improve.proposal`.
+5. Two different compliance officers approve (`improve.approve`); an approval against a replaced base is refused.
+6. Every later learner run reads the latest fully approved version from the ledger and verifies it (signatures, hash, guard sentences, two distinct approvers); one that fails stops the learner.
+
 ## Meta model usage
 
 Every model output passes through a deterministic check before it can change anything, which is what makes the model use judgeable rather than decorative.
@@ -190,6 +202,7 @@ Every model output passes through a deterministic check before it can change any
 | Muse Spark 1.3 | Approval brief | What is unusual, citing record IDs | Record IDs must exist; brief never decides |
 | Muse Spark 1.3 | Auditor Q&A | Claims with record IDs and field assertions | Claim checker: Merkle inclusion proof + field match |
 | Muse Spark 1.3 | Policy Learner proposals | Rule, fixtures, reason with cited records and counts | Claim checker, history replay, one or two human approvers |
+| Muse Wonder | Revising the learner's prompt (D95) | Instructions, changes, rationale | Guard sentences, scoring on the history with planted-fault canaries, two human approvers |
 | Muse Glimmer (open weights) or Muse Spark Open on Baseten or Modal | On-prem profile for briefs and Q&A (stretch) | Same schemas | Same checks |
 | Muse Code | Building part of the UI | Code | Tests and review |
 
@@ -260,6 +273,8 @@ Every attack below is detected by a check anyone can run offline; the last two r
 | Model | Invents a record or misstates a value | Claim checker rejects: missing inclusion proof or failed field assertion |
 | Model | Drafts a wrong policy rule | Fixtures, Cedar validation and human approval |
 | Model (learner) | Inflates counts to justify loosening a rule | Counts must match SQL results; claim checker rejects the proposal |
+| Model (improver) | Revises the learner's prompt so its drafts say less and pass more often | Planted-fault canaries: a claim that asserts no amount or approver leaves a fault uncatchable, and the revision is blocked; two approvers (D95) |
+| Model (improver) | Removes the learner's guard sentences, or reaches the checks | Guard sentences checked when proposed, recorded and loaded; only the prompt text is in scope, never the checks, approval counts or Gate (D95) |
 | Approver habits | Rubber-stamped approvals teach the learner to loosen | Fatigue filter, minimum sample, replay blocks any loosening that would allow a past rejection, two approvers to loosen |
 | Prompt injection in a policy PDF | Steers the drafter | Drafter has no tools and no write role; output is only a draft |
 | Limit | Ledger refuses to accept a record | Not prevented; Gate fails closed, so the action is blocked, never hidden |
@@ -379,3 +394,4 @@ The main choice is a witnessed transparency log instead of a blockchain: it matc
 | 2026-10-28 | Components (`web/`) | The console is a client of `pl-gate` and `pl-ledger` with htmx vendored (no CDN); a persona menu stands in for sign-in (demo only); it verifies the export and each record before showing them as proven; the tamper button is a real admin edit in demo mode; adds the Agent and Attacks pages | D84–D87 |
 | 2026-10-29 | Components, Flow A, Exact formulas, Keys, API, Threat model | Gate checks a principal-signed delegation credential before Cedar (Ed25519 over `PL-delegation-v1`, hash `PL-credential-v1`, revocation `PL-revocation-v1`); issue and revoke are `gate.delegation.*` ledger records and revocation is a fold over them, with no table; decisions record `delegation`; three `/gate/v1/delegations` routes; principal key added; agent-overreach rows and the bearer-credential limit added to the threat model. Switched on in the demo with `make delegate` | D88, D89 |
 | 2026-10-30 | Components (`web/`) | The web UI splits into two apps from one codebase. The Approvals app signs (verdicts, policy approvals, learner approvals) and mounts nothing else. The Console operates and proves, and cannot approve. Each app has its own session cookie | D94 |
+| 2026-10-30 | Components, Flow F (new), Meta model usage, Threat model | Governed self-improvement of the learner's prompt: Muse Wonder revises it from recorded failures, code scores it with the learner's checks and planted-fault canaries, two officers approve, and the learner reads the approved version from the ledger. `improve.proposal` / `improve.approve` records; `/improve/v1` routes in `pl-gate`. An extension of beat 6 | D95 |

@@ -88,13 +88,13 @@ class ExportView:
         return out
 
 
-def _officer(request: Request) -> Officer:
+def officer_of(request: Request) -> Officer:
     callers: Callers = request.app.state.callers
     caller = callers.authenticate(request.headers.get("authorization"), kind=APPROVER)
     return Officer(caller.name, caller.roles)
 
 
-def _service(request: Request) -> LearnService:
+def learn_service(request: Request) -> LearnService:
     state = request.app.state
     gate: Gate = state.gate
     settings: LearnSettings = state.learn_settings
@@ -108,20 +108,20 @@ def _service(request: Request) -> LearnService:
 async def run_learner(
     request: Request, window: str = "7d", inject_fault: bool = False
 ) -> JSONResponse:
-    officer = _officer(request)
+    officer = officer_of(request)
     if inject_fault and not request.app.state.learn_demo_mode:
         raise LearnError("inject_fault needs DEMO_MODE=true", code="learn.forbidden")
     match = _WINDOW.fullmatch(window)
     if match is None:
         raise LearnError("window is a number of days, e.g. 7d", code="learn.window")
     days = int(match.group(1))
-    result = await _service(request).run(officer, window_days=days, inject_fault=inject_fault)
+    result = await learn_service(request).run(officer, window_days=days, inject_fault=inject_fault)
     return JSONResponse(result.to_json(), status_code=201)
 
 
 async def get_proposal(proposal_id: str, request: Request) -> JSONResponse:
-    _officer(request)
-    service = _service(request)
+    officer_of(request)
+    service = learn_service(request)
     gate: Gate = request.app.state.gate
     proposal = await gate.read_record(proposal_id, PROPOSAL)
     approvals = await service.approvals(proposal_id)
@@ -131,7 +131,7 @@ async def get_proposal(proposal_id: str, request: Request) -> JSONResponse:
 
 
 async def approve_proposal(proposal_id: str, request: Request) -> JSONResponse:
-    result = await _service(request).approve(proposal_id, _officer(request))
+    result = await learn_service(request).approve(proposal_id, officer_of(request))
     draft = None if result.policy_draft is None else result.policy_draft.to_json()
     return JSONResponse(
         {"approval": result.approval.to_json(), "policy_draft": draft}, status_code=201

@@ -46,6 +46,7 @@ Strict-subset rules our schemas follow (checked by `strict_json_schema`): every 
 | `assist/prompts/policy_draft.md` | `policy_draft/1` | `wonder` | `policy.draft.DraftRules` | Quote must be inside the cited clause and rules must parse (retry); then `policy.checks` for the reviewer; approval re-checks |
 | `assist/prompts/agent_step.md` | `agent_step/1` | `spark` | `agent.steps.AgentStep` | `check_step`: exactly the chosen tool's arguments, a reply on finish (retry); then Gate decides every call and the governor verifies its records (D78) |
 | `assist/prompts/learn_proposal.md` | `learn_proposal/3` | `spark` | `learn.draft.LearnerProposal` | Rule shape, the scope's action, record ids in the pattern, counts once (retry); then sources set by code, counts = SQL, `claims.checker`, reason text, policy checks, replay (no retry; D82) |
+| `assist/prompts/improve_prompt.md` | `improve_prompt/1` | `wonder` | `improve.propose.PromptRevision` | Guard sentences kept, changed, at most 1.5× longer (retry); then scored by code with the learner's checks and planted-fault canaries, two approvers (D95). Its output becomes `learn_proposal/<n>.<sha>` once approved |
 | `assist/prompts/auditor_answer.md` | `auditor_answer/2` | `spark` | `assist.auditor.AuditorAnswer` | Ids must be in the rows (retry); then `claims.checker` checks every claim against the proven log, and the summary against the accepted claims |
 
 ## Call log
@@ -84,6 +85,8 @@ Every model role now runs live. `MODEL_PROFILE=cloud uv run pytest -m live` pass
 | `learn_proposal/1` | model's own | 4,412–4,434 | 8,753–13,122 | 47–425 s |
 | `learn_proposal/2` | `medium` | 4,991–5,090 | 3,374–13,687 | 12–110 s, most 20–60 s |
 | `learn_proposal/3` (beat 6 after the clean reset) | `medium` | 5,469 | 10,527 | 119 s |
+| `improve_prompt/1` (Muse Wonder, 2026-10-30) | `medium` | 1,383 | 2,771–2,849 | 12.9–13.7 s |
+| `learn_proposal/3` and `/4.*` (scoring, 2026-10-30, 8 drafts concurrently) | `medium` | 4,969–5,139 | 4,674–12,890 | 28–118 s |
 | `agent_step/1` | `medium` | 870–1,438 | 303–849 | 2.3–3.8 s |
 | `approval_brief/2` | `medium` | 1,356 | 5,255 | 20.5 s |
 | `policy_draft/1` (Muse Wonder) | `medium` | 915 | 4,121 | 27.9 s |

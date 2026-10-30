@@ -8,7 +8,17 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 # ledger never depends on the layers above it, and never on a model client.
-LEDGER_FORBIDDEN = {"gate", "policy", "assist", "agent", "web", "learn", "litellm", "openai"}
+LEDGER_FORBIDDEN = {
+    "gate",
+    "policy",
+    "assist",
+    "agent",
+    "web",
+    "learn",
+    "improve",
+    "litellm",
+    "openai",
+}
 # Packages the offline verifier side may import from this repo (skill §2).
 VERIFY_ALLOWED_INTERNAL = {
     "ledger.format",
@@ -84,21 +94,21 @@ def test_merkle_knows_nothing_about_the_ledger_or_the_network(path: Path) -> Non
     assert {n for n in names if top(n) == "common"} <= {"common.errors"}
 
 
-GATE_FORBIDDEN = {"litellm", "openai", "assist", "agent", "web", "learn"}
+GATE_FORBIDDEN = {"litellm", "openai", "assist", "agent", "web", "learn", "improve"}
 
 
 @pytest.mark.parametrize("path", sorted((ROOT / "gate").rglob("*.py")), ids=lambda p: p.name)
 def test_gate_decides_without_models(path: Path) -> None:
     # R2: allow, deny and escalate come from Cedar and code. Briefs live in assist/ and reach
     # Gate through its BriefWriter port; only the composition root (pl-gate) wires one in, and
-    # serves the learner's routes next to Gate's.
-    composition = {"assist", "learn"}
+    # serves the learner's and the improver's routes next to Gate's.
+    composition = {"assist", "learn", "improve"}
     forbidden = GATE_FORBIDDEN - composition if path.name == "server.py" else GATE_FORBIDDEN
     assert not {top(m) for m in imports_of(path)} & forbidden
 
 
 SOURCE_PACKAGES = ("common", "ledger", "merkle", "verify", "witness", "anchor", "gate", "assist",
-                   "policy", "claims", "learn", "agent", "web", "scripts")  # fmt: skip
+                   "policy", "claims", "learn", "improve", "agent", "web", "scripts")  # fmt: skip
 
 
 def test_litellm_is_imported_only_by_the_model_entry_point() -> None:
@@ -139,6 +149,16 @@ def test_the_learner_counts_and_replays_without_a_model(path: Path) -> None:
     if path.name in ("patterns.py", "replay.py"):
         assert not {top(n) for n in names} & {"assist", "litellm", "openai"}
     if path.name != "draft.py":
+        assert "assist.llm" not in names
+
+
+# The improver scores prompts with code: only improve/propose.py reaches a model, and it writes
+# to the ledger only through Gate, like the learner (D95).
+@pytest.mark.parametrize("path", sorted((ROOT / "improve").rglob("*.py")), ids=lambda p: p.name)
+def test_the_improver_tests_prompts_without_a_model(path: Path) -> None:
+    names = imports_of(path)
+    assert not {n for n in names if n in LEARN_FORBIDDEN or top(n) in LEARN_FORBIDDEN}
+    if path.name != "propose.py":
         assert "assist.llm" not in names
 
 

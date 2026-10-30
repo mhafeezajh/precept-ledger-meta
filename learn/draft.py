@@ -20,6 +20,7 @@ claims do not, so a model that inflates a count is caught, not coached. ``inject
 only) adds 10 to the first restated count, to show that rejection on demand.
 """
 
+import copy
 import json
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -174,7 +175,7 @@ def _structure(answer: LearnerProposal, pattern: Pattern, base: Sequence[PolicyR
     return problems
 
 
-def _count_problems(stated: dict[str, int], pattern: Pattern) -> list[str]:
+def count_problems(stated: dict[str, int], pattern: Pattern) -> list[str]:
     return [
         f"count {name}: stated {value}, SQL counted {pattern.counts[name]}"
         for name, value in stated.items()
@@ -262,6 +263,17 @@ class LearnDrafter:
     def model(self) -> str:
         return self._llm.config.route("spark").model
 
+    @property
+    def instructions(self) -> str:
+        return self._instructions
+
+    def with_prompt(self, version: str, instructions: str) -> "LearnDrafter":
+        """The same drafter with other instructions: the prompt in force, or a candidate under
+        evaluation (D95). The output schema and every check stay the same."""
+        other = copy.copy(self)
+        other.prompt_version, other._instructions = version, instructions
+        return other
+
     async def draft(
         self,
         pattern: Pattern,
@@ -289,6 +301,6 @@ class LearnDrafter:
         names = reason_names(pattern.scope, [r.id for r in merged])
         reason = check_summary(answer.reason, results, numbers=numbers, names=names)
         return Drafted(
-            answer, changed, merged, stated, tuple(_count_problems(stated, pattern)), results,
+            answer, changed, merged, stated, tuple(count_problems(stated, pattern)), results,
             tuple(reason), self.model, self.prompt_version, injected,
         )  # fmt: skip

@@ -30,6 +30,7 @@ from gate.decide import SCHEMA_FILE, PolicySet
 from gate.records import Receipted
 from learn.draft import Drafted, LearnDrafter, merge_rules
 from learn.patterns import FAST_SECONDS, MIN_SAMPLE, Pattern, Window, find_patterns, load
+from learn.prompt import from_file, prompt_in_force
 from learn.replay import Replay, replay
 from policy.checks import PolicyCheck, check_rules
 from policy.rules import PolicyRule, parse_rules, to_yaml
@@ -117,7 +118,7 @@ class LearnService:
         self._owners, self._lock = dict(owners), lock
         self._min_sample, self._fast_seconds = min_sample, fast_seconds
 
-    async def _base(self) -> tuple[Receipted, Receipted, tuple[PolicyRule, ...]]:
+    async def base(self) -> tuple[Receipted, Receipted, tuple[PolicyRule, ...]]:
         active = await active_draft(self._gate)
         if active is None:
             raise LearnError("no approved policy is active", code="learn.no_active_policy")
@@ -136,21 +137,15 @@ class LearnService:
             raise LearnError(f"window must be 1 to {MAX_WINDOW_DAYS} days", code="learn.window")
         if self._drafter is None:
             raise LearnError("no model is configured for the learner", code="learn.no_model")
-        approval, draft, rules = await self._base()
+        approval, draft, rules = await self.base()
         log = await self._view.proven()
+        drafter = await self.drafter_in_force(self._drafter)
         since = self._clock.now() - timedelta(days=window_days)
-        window = Window(since, self._min_sample, self._fast_seconds)
-        proposals, skipped, failed, live = [], [], [], []
-        for pattern in find_patterns(load(log.records), window):
-            why = pattern.skipped or self._settled(pattern, log)
-            if why is None:
-                live.append(pattern)
-            else:
-                skipped.append({"key": pattern.scope.key(), "reason": why,
-                                "counts": pattern.counts})  # fmt: skip
+        live, skipped = self.live_patterns(log, since)
+        proposals, failed = [], []
         # Drafted together (each takes tens of seconds live), recorded in pattern order.
         drafts = await asyncio.gather(
-            *(self._drafter.draft(p, rules, log, inject_fault=inject_fault) for p in live),
+            *(drafter.draft(p, rules, log, inject_fault=inject_fault) for p in live),
             return_exceptions=True,
         )
         for pattern, drafted in zip(live, drafts, strict=True):
@@ -159,12 +154,33 @@ class LearnService:
                 continue
             if isinstance(drafted, BaseException):
                 raise drafted
-            body = self._proposal_body(pattern, drafted, rules, log, window_days, since)
+            body = self.proposal_body(pattern, drafted, rules, log, window_days, since)
             body["base"] = {"policy_record_id": approval.record_id,
                             "draft_record_id": draft.record_id,
                             "policy_set": self._gate.policies.digest}  # fmt: skip
             proposals.append(await self._gate.append_record(PROPOSAL, body))
         return LearnRun(window_days, log, tuple(proposals), tuple(skipped), tuple(failed))
+
+    async def drafter_in_force(self, drafter: LearnDrafter) -> LearnDrafter:
+        """The drafter with the learner prompt in force: the file's, or the latest version two
+        officers approved, read back from the ledger and verified (D95)."""
+        found = await prompt_in_force(await self._view.records(), self._gate, from_file())
+        return drafter.with_prompt(found.version, found.instructions)
+
+    def live_patterns(
+        self, log: ProvenLog, since: datetime
+    ) -> tuple[list[Pattern], list[dict[str, Any]]]:
+        """Patterns worth a proposal, and the others with why they were skipped."""
+        window = Window(since, self._min_sample, self._fast_seconds)
+        live, skipped = [], []
+        for pattern in find_patterns(load(log.records), window):
+            why = pattern.skipped or self._settled(pattern, log)
+            if why is None:
+                live.append(pattern)
+            else:
+                skipped.append({"key": pattern.scope.key(), "reason": why,
+                                "counts": pattern.counts})  # fmt: skip
+        return live, skipped
 
     def _settled(self, pattern: Pattern, log: ProvenLog) -> str | None:
         """Why the active set already does what the pattern suggests, or None. History keeps
@@ -180,7 +196,7 @@ class LearnService:
             return "the active policy already denies these requests"
         return None
 
-    def _proposal_body(
+    def proposal_body(
         self,
         pattern: Pattern,
         drafted: Drafted,
@@ -278,7 +294,7 @@ class LearnService:
 
     async def _policy_draft(self, proposal: Receipted, approval_ids: list[str]) -> Receipted:
         """The active rules with the proposal's changes, as a ``policy.draft`` to review."""
-        active, base_draft, base = await self._base()
+        active, base_draft, base = await self.base()
         rules = merge_rules(base, parse_rules(proposal.body["rules_yaml"]))
         body = draft_body(
             to_yaml(rules), check_rules(rules), base_draft.body["doc"],

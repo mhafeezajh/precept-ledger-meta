@@ -69,6 +69,12 @@ class LearnError(PreceptError):
     code = "learn.invalid"
 
 
+class ImproveError(PreceptError):
+    """The improver refused to run, propose or record an approval. Nothing changes (D95)."""
+
+    code = "improve.invalid"
+
+
 class WitnessError(PreceptError):
     """A witness refused a checkpoint, or could not be asked. Never counts as a cosignature.
 

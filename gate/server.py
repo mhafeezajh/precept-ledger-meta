@@ -35,6 +35,8 @@ from gate.delegation import Delegations
 from gate.ledger_client import HttpLedgerClient
 from gate.normalizer import Normalizer, StaticPayees
 from gate.pg_escalations import PostgresEscalationStore
+from improve.api import install_improve_routes
+from improve.propose import Proposer
 from learn.api import ExportView, LearnSettings, install_learn_routes
 from learn.draft import LearnDrafter
 from ledger.checkpointer import origin_for
@@ -195,6 +197,7 @@ def app_from_settings() -> FastAPI:
     def extend(app: FastAPI) -> None:
         install_policy_routes(app, drafter, demo_mode=settings.demo_mode)
         install_learn_routes(app, learn_drafter, view, learn, demo_mode=settings.demo_mode)
+        install_improve_routes(app, None if config is None else Proposer(LlmClient(config)))
 
     return create_gate_app(
         lambda: gate_from_settings(settings, gate_settings),
