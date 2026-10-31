@@ -4,6 +4,80 @@ Gate and tamper-evident ledger for AI agent actions in regulated finance. Entry 
 
 Work in progress. Design: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Knowledge base (one page per module): [`docs/modules/`](docs/modules/README.md). Plan: [`docs/HACKATHON_KICKOFF.md`](docs/HACKATHON_KICKOFF.md). Decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md).
 
+## The problem
+
+Banks want AI agents to move money, but an examiner will ask two questions no agent framework answers: was this action allowed before it ran, and can you prove the record of it was never changed? Logs in a database the operator controls prove neither, and a model's summary of those logs can be wrong.
+
+## What is new here
+
+- **Gate decides before the tool runs.** Every agent action is checked against Cedar rules in code (allow, deny or hold for a person). The tool runs only after the decision has a signed receipt from the ledger (write before effect); if the ledger is down, the action is blocked.
+- **A ledger with blockchain guarantees, without a blockchain.** Canonical JSON, producer signatures, a hash chain, an RFC 9162 Merkle log, three independent witnesses (2 of 3 must cosign each checkpoint) and RFC 3161 and Bitcoin time anchors. Even the operator holding the log key cannot rewrite history unseen.
+- **Models extract, code decides and checks.** Muse models draft the rules from a policy PDF, write approval briefs, answer auditors and propose rule changes. Every number and name they state is checked against Merkle proofs and SQL before it is shown as true; anything unproven is rejected on screen.
+- **A ledger that learns, under governance.** The Policy Learner proposes rule changes from the ledger's own history. A replay blocks any loosening that would have allowed a past rejection, and loosening needs two approvers. The learner's own prompt can be improved by a model (D95), but only after code shows the change catches every planted fault, and two officers approve it.
+- **Anyone can check it offline.** `pl-verify` has no network code and names the first broken record.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  agent["payments-ops agent<br/>(LangGraph, Muse Spark)"] -->|every tool call| gate
+  subgraph gate["Gate (pl-gate)"]
+    cedar["Cedar rules<br/>allow · deny · hold"]
+  end
+  gate -->|signed decision| ledger[("Ledger (pl-ledger)<br/>hash chain + Merkle log")]
+  ledger -->|receipt| gate
+  gate -->|only after the receipt| tool["payment tool"]
+  ledger -->|checkpoint every 10 s| witnesses["3 witnesses<br/>2 of 3 cosign"]
+  ledger -->|final checkpoint| anchors["RFC 3161 · OpenTimestamps"]
+  ledger -->|export| verify["pl-verify<br/>offline"]
+  approvals["Approvals app<br/>people sign"] -->|verdict| gate
+  muse["Muse Spark · Muse Wonder<br/>(assist/llm.py)"] -.->|drafts, briefs, answers| claims["claim checker<br/>proofs + SQL"]
+  claims -.->|only proven claims| console["Console"]
+```
+
+The full design, the exact hash and signature formulas and every flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+## Meta models used and where
+
+| Model | Used for | Checked by |
+| --- | --- | --- |
+| Muse Spark 1.3 (Standard mode) | The agent's steps, approval briefs, auditor answers, the learner's proposals | Gate (Cedar) decides every step; the claim checker proves every claim |
+| Muse Wonder (Standard mode) | Drafting rules from the policy PDF; revising the learner's prompt | Cedar validation, fixtures and two people; planted-fault canaries |
+
+Every call goes through `assist/llm.py` (LiteLLM, structured output, one checked retry, then fail closed) and is logged without its prompt. Model IDs and limits: [`docs/MODELS.md`](docs/MODELS.md).
+
+## Verify offline
+
+```sh
+uv run pl-export --out export.tar
+uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" \
+  --witness-keys "$KEYS_DIR/witnesses.txt" --quorum 2 --tsa-roots deploy/tsa/roots.pem
+```
+
+`pl-verify` imports no networking code (a test fails if it opens a socket). It checks every signature, the chain, the Merkle root, the witness quorum and the timestamps, and prints `RESULT OK` or the first broken sequence number and record.
+
+## Threat model in short
+
+| Attacker | Attack | Caught by |
+| --- | --- | --- |
+| Database admin | Edits, deletes or reorders a row | The chain breaks at that sequence; `pl-verify` names it |
+| Operator with the log key | Rewrites history and re-signs | Witnesses refuse to cosign; the old cosigned root no longer matches |
+| Operator and every witness | Rewrite together | RFC 3161 timestamps and the Bitcoin anchor of the old root |
+| Agent | Acts beyond its delegation | Gate checks the principal-signed credential before Cedar |
+| Model | Invents a record or a value | The claim checker rejects it: no inclusion proof, or a failed assertion |
+| Model (learner) | Inflates counts to loosen a rule | Counts must match SQL; replay blocks newly allowed rejections |
+
+The full table, with its limits, is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md#threat-model). The ledger proves who submitted what, when, and that nothing changed afterward; it does not prove a producer told the truth.
+
+## Limitations
+
+- One bank scenario, one stream, local services; no multi-tenancy, no production deployment.
+- Demo keys are file-based and TEST grade; production would keep the Gate and log keys in a KMS or HSM.
+- The personas menu stands in for sign-in.
+- A stolen agent token and credential act within the delegation until revoked (requests are not yet bound to a per-agent key).
+- The MCP proxy is deferred; agents use the `@governed` wrapper.
+- The on-prem model profile is wired but was not run on a local model.
+
 ## Module status
 
 | Module | Status | Docs |
@@ -28,9 +102,21 @@ The full start order, the demo week and a clean reset for recording are in [`doc
 
 Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/) and Docker.
 
+The quickest way to see every beat, from a fresh clone (it wipes the local demo database and asks first):
+
+```sh
+uv sync && cp .env.example .env   # set the passwords and KEYS_DIR (outside the repo)
+make demo               # clean stream, services, a seeded week, beats 1 to 6 headless, then stops;
+                        # offline mock models by default, DEMO_PROFILE=cloud for live Muse models
+make video-seed         # the same clean stream with beat 1 done, and the Console (8090) and the
+                        # Approvals app (8094) left running for recording
+```
+
+Step by step:
+
 ```sh
 uv sync
-make check              # lint, strict types, 1055 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 1102 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -115,5 +201,6 @@ Every line of code in this repository was written during the building period.
 | Oct 30 | The web UI split into two apps (D94): the Approvals app (`pl-approvals`, `make approvals`), an inbox of held payments, policy drafts and learner suggestions to sign, plus what you decided; the Console keeps operating and proving and can no longer approve. Each app mounts only its own routes and has its own session cookie |
 | Oct 30 | `improve/`: governed self-improvement of the learner's prompt (D95). Muse Wonder revises `learn_proposal` from the learner's own recorded failures; code scores the current and revised prompts on the same history with the learner's own checks and four planted-fault canaries, and blocks a revision that is worse on any measure; two compliance officers approve; every learner run reads the approved version back from the ledger and verifies it (`learn/prompt.py`). `/improve/v1` in `pl-gate`, prompt `improve_prompt/1`. Run live on Muse: an honest revision went to review, the demo shortcut was blocked |
 | Oct 30 | The improver in the browser: the Console's Improve the learner page (the prompt in force, propose a change, history) and a change's page (scores side by side, the planted-fault table, the instructions line by line); learner prompt changes in the Approvals inbox, approved by two officers; `web/routes/improve.py` |
+| Oct 31 | `make demo` and `make video-seed` (`scripts/demo_all.sh`): a clean stream, the services, a seeded week and every beat headless in one command, or ready for recording; README sections for the problem, what is new, the architecture, models, offline verification, the threat model and limitations |
 
 Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.

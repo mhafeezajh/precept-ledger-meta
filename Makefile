@@ -2,7 +2,7 @@
 -include .env
 export
 
-.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web approvals demo-gate demo-agent demo-audit demo-policy demo-learn delegate policy-pdf seed-week demo-rogue ots-upgrade
+.PHONY: check lint typecheck test test-integration vectors secrets db-up db-schema db-down dev-keys serve witnesses gate web approvals demo-gate demo-agent demo-audit demo-policy demo-learn delegate policy-pdf seed-week demo-rogue ots-upgrade demo video-seed
 
 check: lint typecheck test secrets
 
@@ -112,6 +112,16 @@ policy-pdf:
 # demo beat 6 in one process: the rogue operator rewrites history and is caught.
 demo-rogue:
 	uv run python scripts/demo_rogue_operator.py
+
+# Every beat from a clean stream, headless, then stops (scripts/demo_all.sh). Wipes the local
+# ledger and witness state (asks first; YES=1 skips). DEMO_PROFILE=cloud for live Muse models.
+demo:
+	scripts/demo_all.sh
+
+# A clean stream with the seeded week and beat 1, the Console and the Approvals app running,
+# for recording. Same wipe and prompt as make demo.
+video-seed:
+	scripts/demo_all.sh --video
 
 db-down:
 	docker compose down -v

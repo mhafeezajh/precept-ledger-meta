@@ -42,6 +42,10 @@ Restart `make serve` after `make dev-keys` adds a producer (it reads `trusted.js
 
 Seeded records are backdated by design: their receipts carry the real arrival time. With `--tsa-roots` and timestamps on, `pl-verify` reports them as `late_timestamp`, which is the backdating check working. Keep `TSAS` empty while seeding if the recording should show `RESULT OK` with timestamps.
 
+## One command
+
+`make demo` does everything below in one go: the clean reset, the witnesses, the ledger (timestamps off, see above), Gate in demo mode, the seeded week and beats 1 to 6 headless, then it stops the services. `make video-seed` stops after beat 1 and leaves the Console and the Approvals app running for recording. Both refuse to start while any demo port (8070, 8080, 8090–8094) is in use, and ask before wiping (`YES=1` skips the question). Models are the offline mock unless `DEMO_PROFILE=cloud`. Service logs go to `var/demo-logs/`.
+
 ## A clean stream for recording
 
 The dev stream collects every test run, so counts in beat 3 and in briefs include them. To start clean, stop every service first, then:
