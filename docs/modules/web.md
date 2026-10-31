@@ -2,7 +2,7 @@
 
 Guarantees that neither web app decides anything or shows anything as proven that it did not verify itself, and that signing happens only in the Approvals app, which mounts nothing else (D94). It is a client of `pl-gate` and `pl-ledger` like any other: it acts for a person with that person's Gate token (kept on the server), and every "proven" mark comes from its own run of `pl-verify`'s checks or a record's inclusion proof.
 
-Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-10-30 · Tests: 24 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
+Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-10-31 · Tests: 25 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
 
 Related pages: [`gate.md`](gate.md), [`policy.md`](policy.md), [`learn.md`](learn.md), [`agent.md`](agent.md), [`assist.md`](assist.md), [`claims.md`](claims.md), [`verify.md`](verify.md), [`../DECISIONS.md`](../DECISIONS.md) D84–D87, D93, D94.
 
@@ -111,7 +111,7 @@ The console stores nothing durable. Agent runs live in memory (the last 20). Ses
 | Threat or failure | Result | Test |
 | --- | --- | --- |
 | A forged or edited session cookie | HMAC-SHA256 with a per-process key (or `WEB_SESSION_SECRET`); a renamed persona or a foreign key is rejected and the default persona issued | `test_sessions_are_signed_and_bound_to_a_known_persona` |
-| Cross-site request forgery | Every POST needs the session's token (HMAC of its nonce), as a form field or `X-CSRF-Token`; the cookie is `HttpOnly` and `SameSite=Strict` | `test_every_page_is_safe_by_default` |
+| Cross-site request forgery | Every POST needs the session's token (HMAC of its nonce), as a form field or `X-CSRF-Token`; the cookie is `HttpOnly` and `SameSite=Strict`. The middleware reads the raw body before the form, so a route still sees a plain form after the check (fixed Oct 31: the persona menu silently did nothing in a browser) | `test_every_page_is_safe_by_default`, `test_a_plain_form_switches_the_persona` |
 | Script injection | Jinja autoescaping; CSP `default-src 'self'`, no inline script or style, `frame-ancestors 'none'`, `object-src 'none'`; htmx with `allowEval` and `allowScriptTags` off and `selfRequestsOnly` | same |
 | A Gate token reaching the browser | Tokens stay in `Backend`; pages never render them; `Persona`'s repr omits the token | same, `test_sessions_...` |
 | Signing from the operating app, or reaching drafting, admin or attack routes from the signing app | Each app mounts only its own routers (D94): 404, not a hidden link | `test_each_app_serves_only_its_own_routes` |

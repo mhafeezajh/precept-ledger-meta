@@ -115,7 +115,10 @@ async def _csrf_ok(request: Request, session: Session | None) -> bool:
     if sent is None and request.headers.get("content-type", "").startswith(
         ("application/x-www-form-urlencoded", "multipart/form-data")
     ):
-        form = await request.form()  # Starlette caches it for the route
+        # body() first: BaseHTTPMiddleware replays a cached body to the route, but not a form
+        # parsed here, so reading only form() left the route an empty form
+        await request.body()
+        form = await request.form()
         value = form.get("csrf")
         sent = value if isinstance(value, str) else None
     return sent is not None and hmac.compare_digest(sent, session.csrf)

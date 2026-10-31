@@ -399,6 +399,20 @@ async def test_the_overview_and_ledger_show_the_proof(tmp_path: Path) -> None:
         assert "1 newer records wait for the next checkpoint" in newest
 
 
+async def test_a_plain_form_switches_the_persona(tmp_path: Path) -> None:
+    # a browser sends the CSRF token in the form body, not a header: the route must still see
+    # the form after the middleware has read it
+    async with stack(tmp_path) as s:
+        for client, csrf in ((s.web, s.csrf), (s.inbox, s.inbox_csrf)):
+            response = await client.post("/session/persona", data={
+                "persona": "a.chen", "back": "/ledger" if client is s.web else "/decided",
+                "csrf": csrf})  # fmt: skip
+            assert response.status_code == 303
+            assert response.headers["location"] in ("/ledger", "/decided")
+            page = await client.get(response.headers["location"])
+            assert "You are <strong>a.chen</strong>" in page.text
+
+
 async def test_a_supervisor_approves_a_held_payment(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         held = await s.rig.gate.decide(AGENT, "create_payment", DEMO_PAYMENT)
