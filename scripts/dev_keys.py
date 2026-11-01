@@ -10,6 +10,9 @@
 - ``tokens/<name>.token``, one bearer token per Gate caller (the demo agent, two
   supervisors and a compliance officer), and ``gate-callers.txt``, their hashes and roles,
   read by ``pl-gate``.
+- ``web-logins.txt``: who may sign in to the web apps, with their roles and a scrypt hash of
+  their password (D96): the Gate approvers, an examiner and a demo admin; and
+  ``web-passwords.txt`` (mode 0600), the plain demo passwords, for the person running the demo.
 
 Refuses to write inside the repository, never overwrites an existing key, writes private keys
 with mode 0600 and prints only key ids. These are development keys, not production keys.
@@ -31,6 +34,7 @@ from ledger.checkpointer import origin_for  # noqa: E402
 from ledger.cosignature import CosignerKey  # noqa: E402
 from ledger.format import b64encode  # noqa: E402
 from ledger.signing import Signer  # noqa: E402
+from web.logins import hash_password  # noqa: E402
 
 PRODUCERS = ("gate-1", "assist-1")  # assist-1 signs assist.qa audit records
 WITNESSES = ("witness-1", "witness-2", "witness-3")
@@ -42,6 +46,13 @@ GATE_CALLERS = (
     ("approver", "m.lee", "payments-supervisor"),
     ("approver", "a.chen", "compliance-officer"),  # reviews and approves policy rules
     ("approver", "r.patel", "compliance-officer"),  # the second approver a loosening needs
+)
+
+# Web sign-in (D96): (name, roles). Gate approvers keep Gate's roles; the last two have no token.
+WEB_LOGINS = (
+    *((name, roles) for kind, name, roles in GATE_CALLERS if kind == "approver"),
+    ("examiner", "examiner"),  # reads and asks the record; never acts through Gate
+    ("demo-admin", "demo-admin"),  # the Attacks page, in demo mode only
 )
 
 
@@ -107,6 +118,38 @@ def ensure_gate_callers(keys_dir: Path) -> None:
     path.write_text(text)
 
 
+def _names(text: str) -> dict[str, str]:
+    """The first two columns of each line: name to the rest of its first field."""
+    return {line.split()[0]: line.split()[1] for line in text.splitlines()
+            if line.strip() and not line.startswith("#")}  # fmt: skip
+
+
+def ensure_web_logins(keys_dir: Path) -> None:
+    """Add people missing from ``web-logins.txt``; never change a line already there. A
+    password already in ``web-passwords.txt`` is reused, so the two files stay in step."""
+    logins_path, passwords_path = keys_dir / "web-logins.txt", keys_dir / "web-passwords.txt"
+    if not passwords_path.exists():
+        fd = os.open(passwords_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as file:
+            file.write("# name password: demo sign-in passwords (D96). Development only.\n")
+    logins = (
+        logins_path.read_text()
+        if logins_path.exists()
+        else "# name roles scrypt-hash; the demo passwords are in web-passwords.txt\n"
+    )
+    listed, passwords = _names(logins), _names(passwords_path.read_text())
+    for name, roles in WEB_LOGINS:
+        if name in listed:
+            continue
+        password = passwords.get(name)
+        if password is None:
+            password = secrets.token_urlsafe(9)  # 12 characters, 72 bits
+            with passwords_path.open("a") as file:
+                file.write(f"{name} {password}\n")
+        logins += f"{name} {roles} {hash_password(password)}\n"
+    logins_path.write_text(logins)
+
+
 def ensure_principals(keys_dir: Path) -> dict[str, Signer]:
     """Each principal's signing key, and ``principals.json`` with every public key Gate trusts.
     Adds missing principals; never replaces or removes a listed key."""
@@ -141,6 +184,7 @@ def ensure_keys(keys_dir: Path, origin: str | None = None) -> dict[str, Signer]:
     log_verifier = NoteKey(origin, signers["log"].public_key_raw).verifier()
     _write_public(keys_dir / "log-verifiers.txt", f"{log_verifier}\n")
     ensure_gate_callers(keys_dir)
+    ensure_web_logins(keys_dir)
     signers.update({f"principal {n}": s for n, s in ensure_principals(keys_dir).items()})
     return signers
 
@@ -156,6 +200,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"principals: {', '.join(PRINCIPALS)} (principals.json; delegate with make delegate)")
     print(f"public keys: {Path(args.keys_dir) / 'trusted.json'}")
     print(f"gate callers: {', '.join(name for _, name, _ in GATE_CALLERS)} (tokens/<name>.token)")
+    print(f"web sign-in: {', '.join(name for name, _ in WEB_LOGINS)} "
+          f"(passwords in {Path(args.keys_dir) / 'web-passwords.txt'})")  # fmt: skip
     return 0
 
 

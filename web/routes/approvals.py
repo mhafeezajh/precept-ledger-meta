@@ -1,9 +1,10 @@
 """The Approvals app's inbox: everything held until a person signs, and what they signed (D94).
 
 Four kinds of decision wait here: payments Gate is holding, policy drafts ready to approve,
-learner suggestions in review, and changes to the learner's prompt (D95). Every verdict and
-approval goes to Gate with the chosen persona's token; Gate checks the role, records it
-signed, and only then acts. The app decides nothing.
+learner suggestions in review, and changes to the learner's prompt (D95). A supervisor sees
+the payments, a compliance officer the rest (D96). Every verdict and approval goes to Gate
+with the signed-in person's token; Gate checks the role, records it signed, and only then
+acts. The app decides nothing.
 """
 
 from fastapi import APIRouter, Form, Request
@@ -12,6 +13,7 @@ from fastapi.responses import HTMLResponse, Response
 from web import views
 from web.app import console, done, render
 from web.backend import WebError
+from web.logins import SUPERVISOR
 
 router = APIRouter()
 
@@ -37,7 +39,8 @@ async def inbox(request: Request) -> HTMLResponse:
         if r.get("type") == "improve.proposal"
         and views.improvement_status(r, signed, in_force) == "waiting"
     ]  # fmt: skip
-    return render(request, "pages/inbox.html", queue=await _queue(request),
+    supervisor = SUPERVISOR in request.state.session.persona.roles
+    return render(request, "pages/inbox.html", queue=await _queue(request) if supervisor else [],
                   drafts=views.drafts_to_approve(state.records, approval),
                   suggestions=suggestions, approvals=approvals, prompts=prompts,
                   signed=signed)  # fmt: skip

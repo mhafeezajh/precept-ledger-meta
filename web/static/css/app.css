@@ -208,8 +208,9 @@ pre {
   border-bottom: 1px solid var(--rule-soft); font-size: var(--step--1); color: var(--ink-2);
 }
 .topbar-who strong { color: var(--ink); font-weight: 600; }
-.topbar-switch { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--ink-3); }
-.topbar-switch select { min-width: 0; font-size: var(--step--1); padding-block: var(--space-1); }
+.signin { display: grid; gap: var(--space-5); max-width: 26rem; margin: 12vh auto var(--space-7); padding-inline: var(--space-4); }
+.signin .panel > h1 { margin-bottom: var(--space-2); }
+.signin .notice { margin-block: var(--space-3); }
 .notice.role-note { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-3); max-width: 52rem; }
 .role-note p { margin: 0; flex: 1 1 22rem; }
 .role-note .btn { flex: none; width: auto; }
@@ -349,7 +350,7 @@ tr.is-broken td:first-child { box-shadow: inset 3px 0 0 var(--deny); }
 label { font-weight: 600; }
 .hint { display: block; color: var(--ink-2); font-size: var(--step--1); font-weight: 400; margin-top: var(--space-1); }
 
-input[type="text"], input[type="number"], input[type="file"], select, textarea {
+input[type="text"], input[type="password"], input[type="number"], input[type="file"], select, textarea {
   font: inherit;
   color: var(--ink);
   background: var(--surface);

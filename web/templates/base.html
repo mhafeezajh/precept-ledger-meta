@@ -12,7 +12,7 @@
   <script src="/static/vendor/htmx-2.0.4.min.js" defer></script>
   <script src="/static/js/app.js?v={{ static_version }}" defer></script>
 </head>
-<body hx-headers='{"X-CSRF-Token": "{{ session.csrf }}"}'>
+<body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
 {% from "macros.html" import csrf with context %}
 <a class="skip" href="#main">Skip to content</a>
 <div class="shell">
@@ -47,18 +47,10 @@
     </div>
   </aside>
   <main id="main" class="content" tabindex="-1">
-    <form class="topbar" method="post" action="/session/persona" aria-label="Who you are acting as">
+    <form class="topbar" method="post" action="/sign-out" aria-label="Who is signed in">
       {{ csrf() }}
-      <input type="hidden" name="back" value="{{ request.url.path }}">
-      <span class="topbar-who">You are <strong>{{ session.persona.name }}</strong>{% if session.persona.roles %}, {{ session.persona.roles | sort | join(", ") | replace("-", " ") }}{% endif %}</span>
-      <label class="topbar-switch"><span>Switch to</span>
-        <select id="persona" name="persona" data-autosubmit>
-          {% for name, p in personas.items() %}
-          <option value="{{ name }}"{% if name == session.persona.name %} selected{% endif %}>{{ p.label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button class="btn btn--quiet btn--small" type="submit" data-no-js>Switch</button>
+      <span class="topbar-who">Signed in as <strong>{{ session.persona.name }}</strong>{% if session.persona.roles %}, {{ session.persona.roles | sort | join(", ") | replace("-", " ") }}{% endif %}</span>
+      <button class="btn btn--quiet btn--small" type="submit">Sign out</button>
     </form>
     <div id="flash" aria-live="polite"></div>
     {% block content %}{% endblock %}

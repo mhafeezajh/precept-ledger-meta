@@ -118,6 +118,9 @@ class Backend:
         **kwargs: Any,
     ) -> httpx.Response:
         headers = kwargs.pop("headers", {})
+        if persona is not None and not persona.token:  # a web-only person (D96): read only
+            raise WebError(f"{persona.name} cannot act through Gate",
+                           code="web.no_gate_token", status=403)  # fmt: skip
         if persona is not None:
             headers["authorization"] = f"Bearer {persona.token}"
         try:

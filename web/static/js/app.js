@@ -27,12 +27,6 @@
     applyTheme(next);
   });
 
-  // The persona menu switches as soon as a person is chosen; the button stays for no-JS use.
-  document.addEventListener("change", function (event) {
-    var select = event.target.closest("[data-autosubmit]");
-    if (select && select.form) select.form.requestSubmit();
-  });
-
   // "Use this example" buttons fill the nearest text field.
   document.addEventListener("click", function (event) {
     var example = event.target.closest("[data-fill]");
@@ -48,7 +42,7 @@
   }
 
   // Also after every htmx swap: an HX-Location answer swaps a whole page into <body> without a
-  // page load, so DOMContentLoaded never fires and the no-JS Switch button would come back.
+  // page load, so DOMContentLoaded never fires and the theme toggle would vanish.
   document.addEventListener("DOMContentLoaded", enhance);
   document.addEventListener("htmx:load", enhance);
 })();

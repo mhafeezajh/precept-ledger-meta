@@ -4,6 +4,9 @@ One codebase builds two apps (D94). The Console operates and proves (agent, draf
 audit, ledger, attacks); the Approvals app is the inbox where people sign, and mounts nothing
 else, so an approver's session cannot reach a drafting, admin or attack route at all.
 
+Every page needs sign-in, and each role sees only its own screens (D96, ``web.logins`` and
+``web.nav``): the guard on every route refuses anyone else by path, before the route runs.
+
 Each app is a client of ``pl-gate`` and ``pl-ledger`` like any other: it decides nothing,
 signs nothing for Gate or the log, and shows as proven only what it verified itself
 (``web.backend``). Pages are server-rendered; htmx swaps fragments for actions and live
@@ -21,7 +24,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -36,12 +39,13 @@ from ledger.checkpointer import origin_for
 from verify.keys import TrustedKeys, WitnessPolicy
 from web import views
 from web.backend import Backend, WebError, load_personas
-from web.nav import APPROVALS, CONSOLE, TITLES, current, navigation
+from web.logins import SignIn, load_logins, people
+from web.nav import APPROVALS, CONSOLE, TITLES, allowed, current, navigation
 from web.security import COOKIES, SecurityMiddleware, Sessions
 
 HERE = Path(__file__).resolve().parent
 logger = logging.getLogger("pl.web")
-STATIC_VERSION = "5"  # bump when static files change, for cache busting
+STATIC_VERSION = "6"  # bump when static files change, for cache busting
 
 
 class WebSettings(BaseSettings):
@@ -56,7 +60,6 @@ class WebSettings(BaseSettings):
     approvals_url: str = "http://127.0.0.1:8094"
     gate_url: str = "http://127.0.0.1:8070"
     ledger_url: str = "http://127.0.0.1:8080"
-    default_persona: str = "j.ortiz"
     timezone: str = "America/New_York"
     timeout_seconds: float = 200.0  # a learner run waits for one model call (up to 150 s)
     witnessed: bool = True  # proven means cosigned by the witness quorum
@@ -80,6 +83,7 @@ class Console:
     web: WebSettings = field(default_factory=WebSettings)
     extras: dict[str, Any] = field(default_factory=dict)  # feature state (agent runs, ...)
     app: str = CONSOLE  # which of the two apps this is
+    signin: SignIn | None = None  # None: nobody can sign in (fail closed)
 
     @property
     def backend(self) -> Backend:
@@ -103,10 +107,12 @@ def console(request: Request) -> Console:
 def render(request: Request, name: str, status: int = 200, **values: Any) -> HTMLResponse:
     c = console(request)
     page = current(request.url.path, c.app)
+    session = request.state.session
+    roles = session.persona.roles if session else frozenset()
     base = {
-        "session": request.state.session,
-        "personas": c.sessions.personas,
-        "nav": navigation(c.app, demo_mode=c.demo_mode),
+        "session": session,
+        "csrf_token": request.state.csrf,
+        "nav": navigation(c.app, demo_mode=c.demo_mode, roles=roles),
         "page": page,
         "app_name": c.app,
         "app_title": TITLES[c.app],
@@ -133,7 +139,27 @@ def done(request: Request, fragment: str, back: str, **values: Any) -> Response:
     return RedirectResponse(back, status_code=303)
 
 
+async def guard(request: Request) -> None:
+    """On every route but sign-in: signed in, and a role that may open this path (D96)."""
+    session, c = request.state.session, console(request)
+    if session is None:
+        raise WebError("Sign in first.", code="web.sign_in", status=401)
+    if not allowed(c.app, request.url.path, session.persona.roles, demo_mode=c.demo_mode):
+        raise WebError(f"{session.persona.name} cannot open this page: it needs another role.",
+                       code="web.forbidden", status=403)  # fmt: skip
+
+
+def _to_sign_in(request: Request) -> Response:
+    if is_htmx(request):  # a fragment request: reload the whole page at the sign-in form
+        return Response(status_code=204, headers={"hx-redirect": "/sign-in"})
+    path = request.url.path
+    target = f"/sign-in?next={path}" if request.method == "GET" and path != "/" else "/sign-in"
+    return RedirectResponse(target, status_code=303)
+
+
 async def _web_error(request: Request, exc: Exception) -> Response:
+    if isinstance(exc, WebError) and exc.code == "web.sign_in":
+        return _to_sign_in(request)
     if isinstance(exc, WebError):
         error = exc
     elif isinstance(exc, PreceptError):
@@ -142,6 +168,8 @@ async def _web_error(request: Request, exc: Exception) -> Response:
         log_event(logger, logging.ERROR, "page failed", path=request.url.path,
                   error=type(exc).__name__)  # fmt: skip
         error = WebError("Something went wrong on this page.", code="web.internal", status=500)
+    if getattr(request.state, "session", None) is None:  # no layout without a person
+        return Response(error.message, status_code=error.status, media_type="text/plain")
     template = "partials/error.html" if is_htmx(request) else "pages/error.html"
     response = render(request, template, status=error.status, error=error)
     if is_htmx(request):  # into the notice area at the top, even on an error status
@@ -150,19 +178,27 @@ async def _web_error(request: Request, exc: Exception) -> Response:
     return response
 
 
-async def choose_persona(request: Request) -> Response:
-    form = await request.form()
-    name = str(form.get("persona", ""))
+def set_session(request: Request, response: Response, persona: str | None) -> Response:
+    """A new session cookie, for a person or for nobody (signed out)."""
     c = console(request)
-    response = RedirectResponse(str(form.get("back") or "/"), status_code=303)
-    if name in c.sessions.personas:
-        response.set_cookie(COOKIES[c.app], c.sessions.issue(name), httponly=True,
-                            samesite="strict", secure=c.web.secure_cookie, path="/")  # fmt: skip
+    response.set_cookie(COOKIES[c.app], c.sessions.issue(persona), httponly=True,
+                        samesite="strict", secure=c.web.secure_cookie, path="/")  # fmt: skip
     return response
 
 
 def create_web_app(made: Console, *, lifespan: Any = None) -> FastAPI:
-    from web.routes import agent, approvals, audit, demo, improve, learn, ledger, overview, policy
+    from web.routes import (
+        agent,
+        approvals,
+        audit,
+        demo,
+        improve,
+        learn,
+        ledger,
+        overview,
+        policy,
+        signin,
+    )
 
     routers = {  # each app mounts only its own routes (D94)
         CONSOLE: (overview.router, agent.router, policy.router, learn.router, improve.router,
@@ -175,9 +211,9 @@ def create_web_app(made: Console, *, lifespan: Any = None) -> FastAPI:
     app.add_middleware(SecurityMiddleware, sessions=made.sessions,
                        secure_cookie=made.web.secure_cookie, cookie=COOKIES[made.app])  # fmt: skip
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
-    app.add_api_route("/session/persona", choose_persona, methods=["POST"])
+    app.include_router(signin.router)  # the only routes without the guard
     for router in routers:
-        app.include_router(router)
+        app.include_router(router, dependencies=[Depends(guard)])
     app.add_exception_handler(PreceptError, _web_error)
     app.add_exception_handler(Exception, _web_error)
     return app
@@ -241,9 +277,9 @@ def app_from_settings(app: str = CONSOLE) -> FastAPI:
     settings, web = load_settings(), WebSettings()
     configure_logging(settings.log_level)
     personas = load_personas(settings.keys_dir)
-    approvers = {n: p for n, p in personas.items() if p.kind == "approver"}
+    logins = load_logins(settings.keys_dir / "web-logins.txt")
     secret = web.session_secret.encode() or secrets.token_bytes(32)
-    sessions = Sessions(secret, approvers, web.default_persona)
+    sessions = Sessions(secret, people(logins, personas))
     trust = _trust(settings, web)
 
     @asynccontextmanager
@@ -266,6 +302,7 @@ def app_from_settings(app: str = CONSOLE) -> FastAPI:
         web,
         _features(settings, web, trust) if app == CONSOLE else {},  # no agent, auditor or admin
         app,
+        SignIn(logins),
     )
     return create_web_app(made, lifespan=lifespan)
 

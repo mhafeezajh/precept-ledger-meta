@@ -9,6 +9,6 @@
 </header>
 <div class="notice notice--deny">
   <strong>Code {{ error.code }}</strong>
-  <span>{% if error.status == 503 %}Start the service and reload this page.{% elif error.status == 403 %}Switch to a person with the right role in the menu, then try again.{% else %}Go back and try again, or return to the <a href="/">overview</a>.{% endif %}</span>
+  <span>{% if error.status == 503 %}Start the service and reload this page.{% elif error.status == 403 %}Sign out, and sign in as a person with the right role.{% else %}Go back and try again, or return to the <a href="/">overview</a>.{% endif %}</span>
 </div>
 {% endblock %}

@@ -41,18 +41,13 @@
 <div class="empty"><h3>{{ title }}</h3><p>{{ text }}</p>{{ caller() if caller }}</div>
 {%- endmacro %}
 
-{% macro csrf() -%}<input type="hidden" name="csrf" value="{{ session.csrf }}">{%- endmacro %}
+{% macro csrf() -%}<input type="hidden" name="csrf" value="{{ csrf_token }}">{%- endmacro %}
 
 {% macro role_note(role, doing) -%}
-{# The page's actions need a role this person lacks: say so once, with a one-click switch. #}
-{%- set ns = namespace(who=None) -%}
-{%- for name, p in personas.items() if not ns.who and role in p.roles %}{% set ns.who = name %}{% endfor -%}
-<form class="notice notice--escalate role-note" method="post" action="/session/persona">
-  {{ csrf() }}
-  <input type="hidden" name="back" value="{{ request.url.path }}">
-  <p class="small">To {{ doing }}, act as a {{ role | replace("-", " ") }}. {{ session.persona.name }} does not have that role, so Gate would refuse.</p>
-  {% if ns.who %}<input type="hidden" name="persona" value="{{ ns.who }}"><button class="btn btn--small" type="submit">Continue as {{ ns.who }}</button>{% endif %}
-</form>
+{# The page's actions need a role this person lacks: say so once. #}
+<div class="notice notice--escalate role-note">
+  <p class="small">To {{ doing }}, sign in as a {{ role | replace("-", " ") }}. {{ session.persona.name }} does not have that role, so Gate would refuse.</p>
+</div>
 {%- endmacro %}
 
 {% macro records_table(records, when, broken=None) -%}

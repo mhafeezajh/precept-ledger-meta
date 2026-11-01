@@ -2,7 +2,7 @@
 
 Guarantees that neither web app decides anything or shows anything as proven that it did not verify itself, and that signing happens only in the Approvals app, which mounts nothing else (D94). It is a client of `pl-gate` and `pl-ledger` like any other: it acts for a person with that person's Gate token (kept on the server), and every "proven" mark comes from its own run of `pl-verify`'s checks or a record's inclusion proof.
 
-Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-11-01 · Tests: 25 unit in `tests/unit/test_web.py`, 1 in `tests/unit/test_web_static.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
+Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-11-01 · Tests: 24 unit in `tests/unit/test_web.py`, 20 in `tests/unit/test_web_signin.py`, 1 in `tests/unit/test_web_static.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `logins.py` and `nav.py` 100%, `security.py` 98%, `routes/signin.py` 96%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
 
 Related pages: [`gate.md`](gate.md), [`policy.md`](policy.md), [`learn.md`](learn.md), [`agent.md`](agent.md), [`assist.md`](assist.md), [`claims.md`](claims.md), [`verify.md`](verify.md), [`../DECISIONS.md`](../DECISIONS.md) D84–D87, D93, D94.
 
@@ -12,16 +12,17 @@ Owns:
 
 | Part | File |
 | --- | --- |
-| The page registry of both apps: groups, titles, demo-only pages | `web/nav.py` |
-| The app factory (which routers each app mounts), settings (`WEB_*`), rendering, error pages, `pl-web`, `pl-approvals` | `web/app.py` |
-| Sessions (one persona cookie per app), CSRF, security headers | `web/security.py` |
+| The page registry of both apps: groups, titles, demo-only pages, the roles that may open each path (`allowed`, `home`) | `web/nav.py` |
+| Who may sign in, password hashes, the lockout (`SignIn`) | `web/logins.py` |
+| The app factory (which routers each app mounts), the route guard, settings (`WEB_*`), rendering, error pages, `pl-web`, `pl-approvals` | `web/app.py` |
+| Sessions (one signed cookie per app, naming the signed-in person or nobody yet), CSRF, security headers | `web/security.py` |
 | HTTP to Gate and the ledger, personas, verifying the export and single records | `web/backend.py` |
 | Turning records into sentences, badges and the proof seal; what waits in the inbox and what a person decided (pure functions) | `web/views.py` |
 | Agent runs started from the browser, with live steps | `web/agent_runs.py` |
 | The tamper button and the rogue-operator scenario (demo mode) | `web/demo.py` |
-| One router per area | `web/routes/{overview,approvals,agent,policy,learn,ledger,audit,demo}.py` |
+| One router per area, and sign-in | `web/routes/{overview,approvals,agent,policy,learn,improve,ledger,audit,demo,signin}.py` |
 | Templates: base layout, component macros, pages, htmx fragments | `web/templates/` |
-| Design tokens and components (one CSS file), small scripts, htmx 2.0.4 (0BSD). `app.js` hides the no-JS Switch button and shows the theme toggle on page load and after every htmx swap (an `HX-Location` answer swaps a whole page in without a load; fixed Nov 1, checked in Chromium with JavaScript on and off) | `web/static/` |
+| Design tokens and components (one CSS file), small scripts, htmx 2.0.4 (0BSD). `app.js` hides no-JS elements and shows the theme toggle on page load and after every htmx swap (an `HX-Location` answer swaps a whole page in without a load; fixed Nov 1, checked in Chromium with JavaScript on and off) | `web/static/` |
 
 Does not own: decisions (Gate), policy checks and approval (`policy/`), the learner's counts and replay (`learn/`), proofs (`claims/`, `verify/`), the agent itself (`agent/`). Each page calls those through their APIs or functions and shows the result.
 
@@ -38,8 +39,8 @@ The Approvals app is built without the agent runner, the auditor or the admin co
 
 ```mermaid
 flowchart LR
-    B[Browser] -- "cookie: persona + nonce, HMAC" --> W[pl-web / pl-approvals]
-    W -- "Bearer token of that persona" --> G[pl-gate: /gate, /policy, /learn]
+    B[Browser] -- "sign-in, then cookie: person + nonce, HMAC" --> W[pl-web / pl-approvals]
+    W -- "Bearer token of that person" --> G[pl-gate: /gate, /policy, /learn]
     W -- "export, record, proof" --> L[pl-ledger]
     W -- "verify_bundle, check_record" --> V[verify / claims, in process]
     W -- "open_agent (own agent token)" --> A[payments agent]
@@ -68,11 +69,20 @@ The Approvals app:
 | --- | --- | --- | --- |
 | Waiting for you | 1, 2, 6 | Payments held, with their brief, to approve or reject (refreshes every 4 s); rule changes: policy drafts ready to approve (`views.drafts_to_approve`: newer than the rules in force, not revised since, no findings) and learner suggestions in review (`views.proposal_status` is waiting). Each opens its review page, the same one the Console shows, with the approve button | `/gate/v1/escalations`, `.../verdict`, export |
 | (in the inbox) Learner prompt changes | 6 | Changes waiting for two compliance officers; each opens its page with the approve button | export, `/improve/v1/.../approve` |
-| Decided | | Verdicts and approvals the chosen person signed (`views.decided_by`), newest 30 | export |
+| Decided | | Verdicts and approvals the signed-in person signed (`views.decided_by`), newest 30 | export |
 
 The proof seal (`views.seal`) states one of three things, from the console's own `verify_bundle` run: **proven** through the final checkpoint, with its cosigners and root; **pending** (no checkpoint yet, or the newest waits for cosignatures); **broken**, naming the first failing record and check. A record page shows its own state from `claims.checker.check_record`.
 
-Personas: both apps offer every Gate approver with a token file in `KEYS_DIR/tokens` (`make dev-keys`: j.ortiz, m.lee, a.chen, r.patel). Choosing one sets the session; the console then sends that person's token, and Gate, not the console, decides what they may do. Who you are acting as is shown in a bar at the top of every page, with the switch beside it. When a page's actions need a role the chosen person lacks, it says so once, with a one-click "Continue as …" for the first person who has that role.
+Sign-in and screens by role (D96). Every page of both apps needs sign-in. `KEYS_DIR/web-logins.txt` lists who may sign in, with their roles and a scrypt hash of their password (`web/logins.py`); `make dev-keys` writes it, and the plain demo passwords to `web-passwords.txt` (mode 0600). A Gate person's roles must equal Gate's, or the app does not start; the console then sends that person's own Gate token, and Gate still decides what they may do. Two people have no Gate token and the backend refuses to call Gate for them (`web.no_gate_token`). Each page lists the roles that may open it (`web/nav.py`); the menu shows only those, and a guard on every route refuses anyone else by path:
+
+| Person | Role | Console | Approvals app |
+| --- | --- | --- | --- |
+| j.ortiz, m.lee | payments supervisor | Overview, Run the agent, Ledger | Held payments, Decided |
+| a.chen, r.patel | compliance officer | Overview, Rules in force, Suggested changes, Improve the learner, Ask the record, Ledger | Policy drafts, learner suggestions, prompt changes, Decided |
+| examiner | examiner (no Gate token) | Overview, Ask the record, Ledger | Cannot sign in |
+| demo-admin | demo admin (no Gate token) | Overview, Ledger, Attacks (`DEMO_MODE=true` only) | Cannot sign in |
+
+The top of every page says who is signed in, with Sign out. Sign-in goes to the page you asked for if it is a local path your role may open, otherwise to your first page.
 
 Design: cool chart-paper and harbour-ink tokens, one serif for titles and record headlines, the system sans for the interface, monospace only for record ids and hashes; record ids are muted so they read as references, not as content. Colour only means an outcome (green allowed / approved / proven, amber held, red denied / broken), always with a word beside it. Light and dark themes come from the same tokens, following the system or a choice saved in the browser. The one motion that plays on its own is the seal's stamp on load; it is off under `prefers-reduced-motion`.
 
@@ -85,7 +95,10 @@ Design: cool chart-paper and harbour-ink tokens, one serif for titles and record
 | `app_from_settings(app="console")` / `pl-web` | env (`WEB_*`, `KEYS_DIR`, `MODEL_PROFILE`, `DEMO_MODE`, `ADMIN_DATABASE_URL`) | app | `ConfigError config.keys`, `WebError config.keys` |
 | `Backend(gate, ledger, stream=, trust=, personas=)` | two `httpx.AsyncClient`s | `ledger_state()`, `proven_record(id)`, `escalations`, `give_verdict`, policy and learner calls | `WebError` with Gate's or the ledger's code and status; `web.unavailable` (503) |
 | `load_personas(keys_dir)` | | name → `Persona(name, kind, roles, token)`; the token is never in a repr | `WebError config.keys` |
-| `Sessions(secret, personas, default)` | | `issue(name)`, `read(cookie)` → `Session(persona, csrf)` | `web.persona` |
+| `Sessions(secret, personas)` | | `issue(name or None)`, `read(cookie)` → `Session(persona, csrf)` or None, `csrf(cookie)` | `web.persona` |
+| `load_logins(path)`, `people(logins, gate_personas)` | `web-logins.txt`, Gate's personas | name → `Login`; name → `Persona` (web-only people get no token) | `ConfigError config.logins` |
+| `SignIn(logins).check(name, password)` | | `Login` or None | `WebError web.locked` (429) |
+| `nav.allowed(app, path, roles, demo_mode=)`, `nav.home(...)` | | may open; first page or None | |
 | `views.seal(report)`, `summary(record)`, `outcome(record)`, `conditions(rule)` | | `Seal`, text | |
 | `views.drafts_to_approve(records, approval)`, `proposal_status(...)`, `decided_by(records, name)` | records newest first | lists, a status word | |
 | `AgentRuns(factory).start(task)` | | `Run` with live `Event`s | |
@@ -96,11 +109,12 @@ Routes (HTML; POSTs need the session's CSRF token; each answers htmx with a frag
 | Method | Path |
 | --- | --- |
 | Console GET | `/`, `/agent`, `/agent/runs/{id}`, `/policy`, `/policy/drafts/{id}`, `/learn`, `/learn/proposals/{id}`, `/improve`, `/improve/proposals/{id}`, `/ledger?kind=&page=`, `/ledger/records/{id}`, `/audit`, `/demo` |
-| Console POST | `/session/persona`, `/agent/runs`, `/policy/drafts`, `/policy/drafts/{id}/revisions`, `/learn/run`, `/improve/run`, `/audit/ask`, `/demo/tamper`, `/demo/rogue` |
+| Both apps, no sign-in needed | GET `/sign-in?next=`, POST `/sign-in` (`name`, `password`, `next`), POST `/sign-out` |
+| Console POST | `/agent/runs`, `/policy/drafts`, `/policy/drafts/{id}/revisions`, `/learn/run`, `/improve/run`, `/audit/ask`, `/demo/tamper`, `/demo/rogue` |
 | Approvals GET | `/`, `/queue`, `/decided`, `/policy/drafts/{id}`, `/learn/proposals/{id}`, `/improve/proposals/{id}` |
-| Approvals POST | `/session/persona`, `/escalations/{id}/verdict`, `/policy/drafts/{id}/approve`, `/learn/proposals/{id}/approve`, `/improve/proposals/{id}/approve` |
+| Approvals POST | `/escalations/{id}/verdict`, `/policy/drafts/{id}/approve`, `/learn/proposals/{id}/approve`, `/improve/proposals/{id}/approve` |
 
-Adding a page: one router module in `web/routes/`, mounted by the app it belongs to in `create_web_app`, one `Page` under that app in `web/nav.py`, one template that extends `base.html` and builds from `macros.html`.
+Adding a page: one router module in `web/routes/`, mounted by the app it belongs to in `create_web_app`, one `Page` under that app in `web/nav.py` with the roles that may open it, one template that extends `base.html` and builds from `macros.html`.
 
 ## Data
 
@@ -110,13 +124,19 @@ The console stores nothing durable. Agent runs live in memory (the last 20). Ses
 
 | Threat or failure | Result | Test |
 | --- | --- | --- |
-| A forged or edited session cookie | HMAC-SHA256 with a per-process key (or `WEB_SESSION_SECRET`); a renamed persona or a foreign key is rejected and the default persona issued | `test_sessions_are_signed_and_bound_to_a_known_persona` |
-| Cross-site request forgery | Every POST needs the session's token (HMAC of its nonce), as a form field or `X-CSRF-Token`; the cookie is `HttpOnly` and `SameSite=Strict`. The middleware reads the raw body before the form, so a route still sees a plain form after the check (fixed Oct 31: the persona menu silently did nothing in a browser) | `test_every_page_is_safe_by_default`, `test_a_plain_form_switches_the_persona` |
+| A forged or edited session cookie | HMAC-SHA256 with a per-process key (or `WEB_SESSION_SECRET`); a renamed person or a foreign key is rejected and the visitor is sent to sign in | `test_sessions_are_signed_and_bound_to_a_known_persona` |
+| Cross-site request forgery | Every POST needs the session's token (HMAC of its nonce), as a form field or `X-CSRF-Token`; the cookie is `HttpOnly` and `SameSite=Strict`. The sign-in form has one too: before sign-in the cookie names nobody but carries a token. The middleware reads the raw body before the form, so a route still sees a plain form after the check (fixed Oct 31: the persona menu silently did nothing in a browser) | `test_every_page_is_safe_by_default`, `test_every_page_asks_for_sign_in_first`, `test_a_person_signs_in_and_out` (posts its token in the form body) |
+| Password guessing | Passwords stored only as salted scrypt hashes (N=2^14, r=8, p=1); a wrong name and a wrong password get the same answer and cost the same work; five failures for one name in 15 minutes lock it for the window | `test_a_password_is_stored_only_as_a_salted_scrypt_hash`, `test_five_wrong_passwords_lock_the_name_for_a_while`, `test_the_lockout_holds_in_the_app` |
+| A session planted before sign-in (fixation) | Signing in or out issues a new nonce, so the old cookie and its CSRF token stop working | `test_a_person_signs_in_and_out` |
+| Sign-in sending someone to another site | Only a local path the person's role may open is followed; `//host`, `/\\host` and full URLs go to the person's first page | `test_sign_in_goes_only_to_a_page_of_this_app_the_person_may_open` |
+| Opening another role's screen | The guard on every route refuses by path (403) before the route runs; an unlisted path is refused | `test_each_role_opens_only_its_own_pages`, `test_a_role_cannot_open_another_roles_page` |
+| A web-only person acting through Gate | They have no token; the backend refuses before any call | `test_a_web_only_person_never_reaches_gate` |
+| A logins file that disagrees with Gate | The app does not start | `test_a_wrong_logins_file_stops_the_app` |
 | Script injection | Jinja autoescaping; CSP `default-src 'self'`, no inline script or style, `frame-ancestors 'none'`, `object-src 'none'`; htmx with `allowEval` and `allowScriptTags` off and `selfRequestsOnly` | same |
 | A Gate token reaching the browser | Tokens stay in `Backend`; pages never render them; `Persona`'s repr omits the token | same, `test_sessions_...` |
 | Signing from the operating app, or reaching drafting, admin or attack routes from the signing app | Each app mounts only its own routers (D94): 404, not a hidden link | `test_each_app_serves_only_its_own_routes` |
 | One app's session resetting the other's | Separate cookie names per app | same |
-| Acting beyond a person's role | Gate decides with that person's token; the console shows Gate's refusal (`gate.approver_not_allowed`, `policy.forbidden`, `learn.forbidden`) | `test_a_supervisor_approves_a_held_payment`, `test_beat_1_in_the_console` |
+| Acting beyond a person's role | The screen is refused first; Gate also decides with that person's token and refuses on its own (`gate.approver_not_allowed`, `policy.forbidden`, `learn.forbidden`) | `test_a_supervisor_approves_a_held_payment`, `test_beat_1_in_the_console` |
 | Showing an unverified log as proven | The seal comes from `verify_bundle` with the witness quorum; a record is "proven" only when `check_record` passes | `test_the_overview_and_ledger_show_the_proof`, `test_the_seal_says_...` |
 | Gate or the ledger down | The overview says which is unreachable; other pages explain and return 503 | `test_the_console_says_when_gate_is_down` |
 | The tamper button outside a demo | The Attacks page and its actions return 404 unless `DEMO_MODE=true`; the edit also needs `ADMIN_DATABASE_URL` and a typed "tamper" | `test_the_attacks_page_needs_demo_mode_...` |
@@ -127,7 +147,8 @@ The console stores nothing durable. Agent runs live in memory (the last 20). Ses
 
 What it does not protect against:
 
-- **Who is at the keyboard.** The persona menu is a demo stand-in for sign-in: anyone who can reach the console can act as any listed person. It binds to 127.0.0.1 by default for this reason. Production needs real sign-in (SSO) mapped to Gate tokens.
+- **A stolen session cookie.** Sessions are signed cookies with no server-side record: signing out issues a new cookie but does not revoke an old one, which works until the session key changes (each restart, unless `WEB_SESSION_SECRET` is set). There is no second factor.
+- **Lockout scope.** The lockout counts per name, in memory, per app process: a restart clears it, and anyone can lock a known name for 15 minutes.
 - **The console's own `assist-1` key.** Like `make demo-audit`, the console signs `assist.qa` records when `KEYS_DIR/assist-1.pem` exists; whoever runs it can write audit records (never Gate or log records).
 
 ## How to run and test
@@ -137,21 +158,21 @@ make serve           # with WITNESSES=..., so checkpoints become final
 make gate DEMO_MODE=true
 DEMO_MODE=true make web    # the Console, http://127.0.0.1:8090; DEMO_MODE adds the Attacks page
 make approvals             # the Approvals app, http://127.0.0.1:8094
-uv run pytest tests/unit/test_web.py tests/unit/test_web_static.py
+uv run pytest tests/unit/test_web.py tests/unit/test_web_signin.py tests/unit/test_web_static.py
 make test-integration      # includes the real tamper edit
 ```
 
-Settings (`WEB_*`, see `.env.example`): `HOST`, `PORT` (8090, the Console), `APPROVALS_PORT` (8094), `CONSOLE_URL` and `APPROVALS_URL` (for links between them), `GATE_URL`, `LEDGER_URL`, `DEFAULT_PERSONA` (j.ortiz), `TIMEZONE`, `TIMEOUT_SECONDS` (200: a learner run or audit waits for the model), `WITNESSED` (true), `SECURE_COOKIE`, `SESSION_SECRET`. `ADMIN_DATABASE_URL` enables the tamper button with `DEMO_MODE=true`.
+Settings (`WEB_*`, see `.env.example`): `HOST`, `PORT` (8090, the Console), `APPROVALS_PORT` (8094), `CONSOLE_URL` and `APPROVALS_URL` (for links between them), `GATE_URL`, `LEDGER_URL`, `TIMEZONE`, `TIMEOUT_SECONDS` (200: a learner run or audit waits for the model), `WITNESSED` (true), `SECURE_COOKIE`, `SESSION_SECRET`. `ADMIN_DATABASE_URL` enables the tamper button with `DEMO_MODE=true`.
 
 Run against the dev stack on 2026-10-28 (mock profile): the overview showed "Proven through record 314, cosigned by witness-1, witness-2, witness-3"; an agent task started from the browser ("Pay Keystone IT $120.00 for invoice INV-2.") ran lookup, payment and the accounts-payable email through the live `pl-gate`, each step showing Gate's decision record.
 
 ## Decisions
 
-D84 (server-rendered with htmx, vendored), D85 (personas instead of sign-in, demo only), D86 (the console verifies what it shows), D87 (tamper is a real admin edit; the rogue scenario runs in a sandbox), D93 (the streamlined console), D94 (two apps: Approvals signs, the Console operates).
+D84 (server-rendered with htmx, vendored), D85 (personas instead of sign-in, demo only), D86 (the console verifies what it shows), D87 (tamper is a real admin edit; the rogue scenario runs in a sandbox), D93 (the streamlined console), D94 (two apps: Approvals signs, the Console operates), D96 (sign-in and screens by role; replaces D85's persona menu).
 
 ## Known gaps
 
-- Real sign-in (SSO) instead of the persona menu. With it, the Approvals app could offer only approvers and the Console only operators; today both list every approver.
+- Sign-in is local passwords from a file. Production needs the bank's identity provider (SSO with a second factor) mapped to Gate tokens, and server-side sessions that can be revoked.
 - The Audit page and agent runs use the model profile; on `cloud`, a learner run or audit takes as long as the model (up to `WEB_TIMEOUT_SECONDS`, 200 s by default: one model call may take up to `MODEL_TIMEOUT_SECONDS`, 150 s).
 - The ledger page verifies the whole export on each load; fine for the demo's hundreds of records, too slow for millions (a range export is a known gap in the ledger API).
 - Agent runs are kept in memory and lost on restart; their effects are in the ledger.

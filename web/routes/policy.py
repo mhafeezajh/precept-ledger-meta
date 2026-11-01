@@ -2,7 +2,7 @@
 
 Drafting and revising are in the Console (``router``); approving is in the Approvals app
 (``review``), D94. Both show a draft beside its clauses. The work happens in ``pl-gate``
-(``/policy/v1``) under the chosen persona's token; Gate refuses anyone without the
+(``/policy/v1``) under the signed-in person's token; Gate refuses anyone without the
 compliance-officer role.
 """
 

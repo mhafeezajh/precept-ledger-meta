@@ -1,7 +1,7 @@
 """Learner: proposals from the ledger's history, their evidence and their review (beat 6).
 
 Runs are in the Console (``router``); approvals are in the Approvals app (``review``), D94.
-Both happen in ``pl-gate`` (``/learn/v1``) under the chosen persona's token. A loosening needs
+Both happen in ``pl-gate`` (``/learn/v1``) under the signed-in person's token. A loosening needs
 two compliance officers, a tightening one; the approval that completes a review returns a
 policy draft, approved in the Approvals app like any other.
 """

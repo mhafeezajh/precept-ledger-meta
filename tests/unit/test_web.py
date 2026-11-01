@@ -45,6 +45,7 @@ from web import demo, views
 from web.agent_runs import AgentRuns
 from web.app import Console, WebSettings, create_web_app
 from web.backend import Backend, Persona, WebError, load_personas
+from web.logins import SignIn, hash_password, parse_logins, people
 from web.nav import APPROVALS, current, navigation
 from web.security import COOKIE, COOKIES, CSP, Sessions
 
@@ -63,6 +64,16 @@ PERSONAS = {
 }
 ZONE = ZoneInfo("America/New_York")
 _CSRF = re.compile(r'"X-CSRF-Token": "([0-9a-f]{64})"')
+_FORM_CSRF = re.compile(r'name="csrf" value="([0-9a-f]{64})"')
+LOGIN_ROLES = {  # who signs in: the Gate approvers above, and two people without a Gate token
+    "j.ortiz": "payments-supervisor", "a.chen": "compliance-officer",
+    "r.patel": "compliance-officer", "examiner": "examiner", "demo-admin": "demo-admin",
+}  # fmt: skip
+PASSWORDS = {name: f"test-only-pw-{name}" for name in LOGIN_ROLES}  # TEST ONLY
+LOGINS_TEXT = "".join(  # a cheap scrypt cost (2**10), so the suite stays quick; TEST ONLY
+    f"{name} {role} {hash_password(PASSWORDS[name], n=2**10)}\n"
+    for name, role in LOGIN_ROLES.items()
+)
 
 
 def mock_config(tmp_path: Path) -> ModelConfig:
@@ -83,6 +94,13 @@ class Stack:
     inbox_csrf: str = ""
 
     async def start(self) -> None:
+        """Sign j.ortiz in to both apps, as most tests begin."""
+        for client in (self.web, self.inbox):
+            assert (await sign_in(client, "j.ortiz")).status_code == 303
+        await self.refresh()
+
+    async def refresh(self) -> None:
+        """A new session has a new CSRF token."""
         self.csrf = await _csrf_of(self.web, "/ledger")
         self.inbox_csrf = await _csrf_of(self.inbox, "/decided")
 
@@ -104,15 +122,30 @@ async def _csrf_of(client: httpx.AsyncClient, path: str) -> str:
     return found.group(1)
 
 
+async def sign_in(
+    client: httpx.AsyncClient, name: str, password: str | None = None, *, next_: str = "/"
+) -> httpx.Response:
+    form = await client.get("/sign-in")
+    found = _FORM_CSRF.search(form.text)
+    assert found is not None, form.text[:500]
+    data = {"name": name, "password": PASSWORDS.get(name, "") if password is None else password,
+            "next": next_, "csrf": found.group(1)}  # fmt: skip
+    return await client.post("/sign-in", data=data)
+
+
 async def _fake_rogue() -> demo.RogueRun:
     return demo.RogueRun(0, ("1. Honest ledger", "5. pl-verify rogue.tar with witness keys"))
 
 
 @asynccontextmanager
-async def stack(tmp_path: Path, *, demo_mode: bool = True) -> AsyncIterator[Stack]:
+async def stack(
+    tmp_path: Path, *, demo_mode: bool = True, signed_in: bool = True
+) -> AsyncIterator[Stack]:
     svc = services(tmp_path, witnesses())  # type: ignore[arg-type]
     async for ledger in open_client(svc, None):
         async with _on_ledger(tmp_path, svc, ledger, demo_mode) as s:
+            if signed_in:
+                await s.start()
             yield s
 
 
@@ -154,11 +187,13 @@ async def _on_ledger(
         httpx.AsyncClient(transport=gate_transport, base_url="http://gate") as gate_http,
     ):
         backend = Backend(gate_http, ledger, stream=STREAM, trust=TRUST, personas=PERSONAS)
-        approvers = {n: p for n, p in PERSONAS.items() if p.kind == "approver"}
-        sessions = Sessions(b"test-only-session-secret", approvers, "j.ortiz")
+        logins = parse_logins(LOGINS_TEXT)
+        sessions = Sessions(b"test-only-session-secret", people(logins, PERSONAS))
         extras = {"agent_runs": AgentRuns(agent), "audit": ask, "rogue": _fake_rogue}
-        made = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), extras)
-        signing = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), {}, APPROVALS)
+        made = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), extras,
+                       signin=SignIn(logins))  # fmt: skip
+        signing = Console(backend, sessions, ZONE, demo_mode, None, WebSettings(), {}, APPROVALS,
+                          signin=SignIn(logins))  # fmt: skip
         transport = httpx.ASGITransport(app=create_web_app(made), raise_app_exceptions=False)
         inbox_transport = httpx.ASGITransport(app=create_web_app(signing),
                                               raise_app_exceptions=False)  # fmt: skip
@@ -166,16 +201,14 @@ async def _on_ledger(
             httpx.AsyncClient(transport=transport, base_url="http://web") as web,
             httpx.AsyncClient(transport=inbox_transport, base_url="http://inbox") as inbox,
         ):
-            s = Stack(r, svc, ledger, made, web, signing, inbox)
-            await s.start()
-            yield s
+            yield Stack(r, svc, ledger, made, web, signing, inbox)
 
 
 async def switch(s: Stack, persona: str, *, inbox: bool = False) -> None:
-    response = await s.post("/session/persona", htmx=False, inbox=inbox,
-                            data={"persona": persona, "back": "/"})  # fmt: skip
-    assert response.status_code == 303
-    await s.start()  # a new session has a new CSRF token
+    """Sign out and in again as someone else, in one app."""
+    response = await sign_in(s.inbox if inbox else s.web, persona)
+    assert response.status_code == 303, response.text[:300]
+    await s.refresh()
 
 
 # --- views, navigation, sessions ---------------------------------------------------------
@@ -237,12 +270,15 @@ def test_the_seal_says_proven_pending_or_broken() -> None:
 
 
 def test_navigation_hides_attacks_outside_demo_mode() -> None:
-    assert [g for g, _ in navigation(demo_mode=False)] == ["Start", "Payments", "Rules", "Proof"]
-    assert "Demo" in [g for g, _ in navigation(demo_mode=True)]
+    every = set(LOGIN_ROLES.values())
+    assert [g for g, _ in navigation(demo_mode=False, roles=every)] == [
+        "Start", "Payments", "Rules", "Proof",
+    ]  # fmt: skip
+    assert "Demo" in [g for g, _ in navigation(demo_mode=True, roles=every)]
     assert current("/learn/proposals/x").path == "/learn"  # type: ignore[union-attr]
     assert current("/").path == "/"
     assert current("/nowhere") is None
-    signing = navigation(APPROVALS, demo_mode=True)  # no attacks, drafting or ledger pages
+    signing = navigation(APPROVALS, demo_mode=True, roles=every)  # no attacks, drafting, ledger
     assert [(g, [p.title for p in pages]) for g, pages in signing] == [
         ("Decide", ["Waiting for you", "Decided"])
     ]
@@ -279,21 +315,24 @@ def test_decided_lists_only_this_persons_signatures() -> None:
 
 
 def test_sessions_are_signed_and_bound_to_a_known_persona() -> None:
-    sessions = Sessions(b"k", {"j.ortiz": PERSONAS["j.ortiz"]}, "j.ortiz")
+    sessions = Sessions(b"k", {"j.ortiz": PERSONAS["j.ortiz"]})
     cookie = sessions.issue("j.ortiz")
     session = sessions.read(cookie)
     assert session is not None
     assert session.persona.name == "j.ortiz"
     assert len(session.csrf) == 64
+    assert sessions.csrf(cookie) == session.csrf
     _, nonce, mac = cookie.split("|")
     assert sessions.read(f"a.chen|{nonce}|{mac}") is None  # renamed: the MAC no longer fits
+    assert sessions.csrf(f"a.chen|{nonce}|{mac}") is None
     assert sessions.read("junk") is None
     assert sessions.read(None) is None
-    assert Sessions(b"other", sessions.personas, "j.ortiz").read(cookie) is None
+    assert Sessions(b"other", sessions.personas).read(cookie) is None
+    nobody = sessions.issue(None)  # before sign-in: a CSRF token, but no person
+    assert sessions.read(nobody) is None
+    assert sessions.csrf(nobody) not in (None, session.csrf)
     with pytest.raises(WebError):
         sessions.issue("k.wu")
-    with pytest.raises(WebError):
-        Sessions(b"k", {}, "j.ortiz")
     assert repr(PERSONAS["j.ortiz"]).count("test-only") == 0  # tokens never in a repr
 
 
@@ -337,10 +376,17 @@ async def test_every_page_is_safe_by_default(tmp_path: Path) -> None:
             "/static/vendor/htmx-2.0.4.min.js",
         ):
             assert (await s.web.get(path)).status_code == 200
-        for path in ("/", "/agent", "/policy", "/learn", "/improve", "/ledger", "/audit", "/demo"):
-            response = await s.web.get(path)
-            assert response.status_code == 200, (path, response.text[:300])
-            assert 'aria-current="page"' in response.text
+        pages = {  # every Console page, opened by a person whose role may open it
+            "j.ortiz": ("/", "/agent", "/ledger"),
+            "a.chen": ("/policy", "/learn", "/improve", "/audit"),
+            "demo-admin": ("/demo",),
+        }  # fmt: skip
+        for person, paths in pages.items():
+            await switch(s, person)
+            for path in paths:
+                response = await s.web.get(path)
+                assert response.status_code == 200, (path, response.text[:300])
+                assert 'aria-current="page"' in response.text
         for path in ("/", "/decided"):
             response = await s.inbox.get(path)
             assert response.status_code == 200, (path, response.text[:300])
@@ -399,33 +445,23 @@ async def test_the_overview_and_ledger_show_the_proof(tmp_path: Path) -> None:
         assert "1 newer records wait for the next checkpoint" in newest
 
 
-async def test_a_plain_form_switches_the_persona(tmp_path: Path) -> None:
-    # a browser sends the CSRF token in the form body, not a header: the route must still see
-    # the form after the middleware has read it
-    async with stack(tmp_path) as s:
-        for client, csrf in ((s.web, s.csrf), (s.inbox, s.inbox_csrf)):
-            response = await client.post("/session/persona", data={
-                "persona": "a.chen", "back": "/ledger" if client is s.web else "/decided",
-                "csrf": csrf})  # fmt: skip
-            assert response.status_code == 303
-            assert response.headers["location"] in ("/ledger", "/decided")
-            page = await client.get(response.headers["location"])
-            assert "You are <strong>a.chen</strong>" in page.text
-
-
 async def test_a_supervisor_approves_a_held_payment(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         held = await s.rig.gate.decide(AGENT, "create_payment", DEMO_PAYMENT)
         assert held.escalation is not None
         inbox = await s.inbox.get("/")
         assert "payments-ops wants to run create_payment" in inbox.text
-        assert "No rule changes are waiting" in inbox.text
+        assert "Rule changes" not in inbox.text  # a compliance officer's section
         verdict = f"/escalations/{held.escalation.id}/verdict"
-        await switch(s, "a.chen", inbox=True)  # the wrong role: Gate refuses, the app says so
+        await switch(s, "a.chen", inbox=True)  # the wrong role: the app refuses by path
         refused = await s.post(verdict, inbox=True, data={"verdict": "approve"})
         assert refused.status_code == 403
         assert refused.headers["hx-retarget"] == "#flash"
-        assert "gate.approver_not_allowed" in refused.text
+        assert "web.forbidden" in refused.text
+        with pytest.raises(WebError) as by_gate:  # and Gate refuses on its own as well
+            await s.approvals.backend.give_verdict(PERSONAS["a.chen"], held.escalation.id,
+                                                   "approve")  # fmt: skip
+        assert by_gate.value.code == "gate.approver_not_allowed"
         await switch(s, "j.ortiz", inbox=True)
         bad = await s.post(verdict, inbox=True, data={"verdict": "maybe"})
         assert bad.status_code == 400
@@ -442,8 +478,7 @@ async def test_a_supervisor_approves_a_held_payment(tmp_path: Path) -> None:
 async def test_beat_1_in_the_console(tmp_path: Path) -> None:
     async with stack(tmp_path) as s:
         page = await s.web.get("/policy")
-        assert "act as a compliance officer" in page.text
-        assert "Continue as a.chen" in page.text  # one click, not a hunt for the menu
+        assert page.status_code == 403  # a supervisor does not draft rules
         await switch(s, "a.chen")
         missing = await s.post("/policy/drafts", data={})
         assert missing.status_code == 400
@@ -485,9 +520,10 @@ async def test_beat_1_in_the_console(tmp_path: Path) -> None:
         await s.checkpoint()
         listing = await s.web.get("/policy")
         assert "8 rules approved by a.chen" in listing.text
-        # The rules in force are on the page for anyone, read from the verified ledger:
-        # the approval Gate restores at startup (D75), not a call that needs the officer role.
-        await switch(s, "j.ortiz")
+        # The rules in force are read from the verified ledger: the approval Gate restores at
+        # startup (D75), so another officer sees the same rules. Supervisors do not see the
+        # Rules pages at all (D96).
+        await switch(s, "r.patel")
         anyone = (await s.web.get("/policy")).text
         assert "8 rules, approved by a.chen" in anyone
         assert "pay-over-5k-01" in anyone
@@ -547,10 +583,11 @@ async def test_a_prompt_change_is_shown_with_its_scores_and_approved_by_two(
     tmp_path: Path,
 ) -> None:
     async with stack(tmp_path) as s:
+        assert (await s.web.get("/improve")).status_code == 403  # j.ortiz: not their screen
+        await switch(s, "a.chen")
         page = await s.web.get("/improve")
         assert "The prompt file" in page.text
-        assert "act as a compliance officer" in page.text
-        await switch(s, "a.chen")
+        assert "act as a compliance officer" not in page.text
         refused = await s.post("/improve/run", data={})
         assert refused.status_code == 409  # no approved policy on this stack yet
         assert "learn.no_active_policy" in refused.text
@@ -583,10 +620,10 @@ async def test_a_prompt_change_is_shown_with_its_scores_and_approved_by_two(
         assert "Nothing to check" in blocked
         assert "a planted amount fault would go unseen" in blocked
         assert (await s.web.get("/improve/proposals/01ZZZZZZZZZZZZZZZZZZZZZZZZ")).status_code == 404
+        await switch(s, "a.chen", inbox=True)  # prompt changes are a compliance officer's
         inbox = (await s.inbox.get("/")).text
         assert f'href="/improve/proposals/{honest.record_id}"' in inbox
         assert shortcut.record_id not in inbox
-        await switch(s, "a.chen", inbox=True)
         path = f"/improve/proposals/{honest.record_id}"
         assert "Approve as a.chen" in (await s.inbox.get(path)).text
         first = await s.post(f"{path}/approve", inbox=True)
@@ -634,6 +671,7 @@ async def test_the_audit_page_proves_or_rejects_each_claim(tmp_path: Path) -> No
 
         await s.rig.gate.verdict(held.escalation.id, SUPERVISOR, "approve")
         await s.checkpoint()
+        await switch(s, "examiner")  # an examiner asks; a.chen could too
         question = "Show every payment over $10,000 approved this week, and who approved it."
         answer = await s.post("/audit/ask", data={"question": question})
         assert answer.status_code == 200, answer.text[:300]
@@ -652,6 +690,8 @@ async def test_the_attacks_page_needs_demo_mode_and_a_typed_confirmation(
     async with stack(tmp_path) as s:
         await s.rig.gate.decide(AGENT, "create_payment", SMALL_PAYMENT)
         await s.checkpoint()
+        assert (await s.web.get("/demo")).status_code == 403  # only the demo admin
+        await switch(s, "demo-admin")
         assert "Set ADMIN_DATABASE_URL" in (await s.web.get("/demo")).text
         no_admin = await s.post("/demo/tamper", data={"seq": "1", "confirm": "tamper"})
         assert no_admin.status_code == 503
@@ -669,7 +709,8 @@ async def test_the_attacks_page_needs_demo_mode_and_a_typed_confirmation(
         rogue = await s.post("/demo/rogue")
         assert "Caught: the witnesses refused" in rogue.text
     async with stack(tmp_path / "plain", demo_mode=False) as s:
-        assert (await s.web.get("/demo")).status_code == 404
+        await switch(s, "demo-admin")
+        assert (await s.web.get("/demo")).status_code == 403  # no Attacks page at all
         assert "Attacks" not in (await s.web.get("/")).text
 
 
@@ -719,7 +760,9 @@ async def test_pl_web_wires_itself_from_the_dev_keys(
     app = app_from_settings()
     made: Console = app.state.console
     assert set(made.extras) == {"agent_runs", "audit", "admin_database_url"}
-    assert set(made.sessions.personas) == {"j.ortiz", "m.lee", "a.chen", "r.patel"}
+    assert set(made.sessions.personas) == {
+        "j.ortiz", "m.lee", "a.chen", "r.patel", "examiner", "demo-admin",
+    }  # fmt: skip
     with pytest.raises(WebError):
         _ = made.backend  # not until the app starts
     transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
@@ -727,6 +770,10 @@ async def test_pl_web_wires_itself_from_the_dev_keys(
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=transport, base_url="http://web") as web,
     ):
+        password = dict(line.split() for line in (keys / "web-passwords.txt").read_text()
+                        .splitlines() if not line.startswith("#"))["demo-admin"]  # fmt: skip
+        assert (await web.get("/")).status_code == 303  # sign in first
+        assert (await sign_in(web, "demo-admin", password)).status_code == 303
         page = await web.get("/")
         assert page.status_code == 200
         assert page.text.count("Unreachable") == 2  # Gate and the ledger, both down

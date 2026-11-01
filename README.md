@@ -73,7 +73,7 @@ The full table, with its limits, is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTUR
 
 - One bank scenario, one stream, local services; no multi-tenancy, no production deployment.
 - Demo keys are file-based and TEST grade; production would keep the Gate and log keys in a KMS or HSM.
-- The personas menu stands in for sign-in.
+- Sign-in is local passwords from a file in `KEYS_DIR`, with signed-cookie sessions that cannot be revoked server-side; production would use the bank's SSO with a second factor.
 - A stolen agent token and credential act within the delegation until revoked (requests are not yet bound to a per-agent key).
 - The MCP proxy is deferred; agents use the `@governed` wrapper.
 - The on-prem model profile is wired but was not run on a local model.
@@ -94,7 +94,7 @@ The full table, with its limits, is in [`docs/ARCHITECTURE.md`](docs/ARCHITECTUR
 | `learn/` | Done for this step (demo beat 6, `make demo-learn`). Policy Learner served by `pl-gate` at `/learn/v1`: SQL patterns over the verified export, fatigue filter, Muse Spark proposals (run on the mock so far) checked against SQL and the claim checker, replay that blocks past rejections and out-of-pattern changes, one or two compliance officers, then a normal policy approval | [`docs/modules/learn.md`](docs/modules/learn.md) |
 | `improve/` | Done (an extension of beat 6, D95; the Console's Improve the learner page and the Approvals inbox). The learner's prompt revised by Muse Wonder from its own failures, scored by code on the ledger's history with planted-fault canaries, approved by two compliance officers, read back from the ledger by every learner run; `/improve/v1` in `pl-gate` | [`docs/modules/improve.md`](docs/modules/improve.md) |
 | `agent/` (`pl-agent`) | Done for this step (demo beat 2 with the agent, `make demo-agent`). payments-ops on LangGraph: Muse Spark picks each step as structured output through `assist/llm.py`, every tool call goes through `@governed` and Gate, repeated calls skipped, 8-step limit, in-memory demo bank. Run on the mock so far | [`docs/modules/agent.md`](docs/modules/agent.md) |
-| `web/` (`pl-web`, `pl-approvals`) | Done for this step (every beat in the browser, `make web` + `make approvals`). Two apps from one codebase (D94): the Approvals inbox where people sign, and the Console. Server-rendered with htmx vendored, strict CSP, CSRF, persona menu (demo stand-in for sign-in), the proof seal from its own verification, live agent runs, the tamper and rogue-operator buttons in demo mode | [`docs/modules/web.md`](docs/modules/web.md) |
+| `web/` (`pl-web`, `pl-approvals`) | Done for this step (every beat in the browser, `make web` + `make approvals`). Two apps from one codebase (D94): the Approvals inbox where people sign, and the Console. Server-rendered with htmx vendored, strict CSP, CSRF, sign-in with screens by role (D96), the proof seal from its own verification, live agent runs, the tamper and rogue-operator buttons in demo mode | [`docs/modules/web.md`](docs/modules/web.md) |
 
 ## How to run what works now
 
@@ -116,7 +116,7 @@ Step by step:
 
 ```sh
 uv sync
-make check              # lint, strict types, 1104 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 1125 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -134,6 +134,7 @@ uv run pl-verify export.tar --keys "$KEYS_DIR/trusted.json" --witness-keys "$KEY
 make gate               # Gate on 127.0.0.1:8070 in front of the ledger (policies: deploy/policies/)
 DEMO_MODE=true make web # the Console on http://127.0.0.1:8090: agent, rules, learner, audit, ledger, attacks
 make approvals          # the Approvals app on http://127.0.0.1:8094: everything waiting for a signature
+                        # both ask you to sign in: passwords are in $KEYS_DIR/web-passwords.txt (make dev-keys)
 make demo-gate          # demo beat 2, scripted: $48,000 to a new payee is held until j.ortiz approves;
                         # with META_API_KEY set, Muse Spark's brief is shown first
 make demo-agent         # demo beat 2 with the LangGraph agent: lookup, $48,000 held, brief, j.ortiz
@@ -203,5 +204,6 @@ Every line of code in this repository was written during the building period.
 | Oct 30 | The improver in the browser: the Console's Improve the learner page (the prompt in force, propose a change, history) and a change's page (scores side by side, the planted-fault table, the instructions line by line); learner prompt changes in the Approvals inbox, approved by two officers; `web/routes/improve.py` |
 | Oct 31 | `make demo` and `make video-seed` (`scripts/demo_all.sh`): a clean stream, the services, a seeded week and every beat headless in one command, or ready for recording; README sections for the problem, what is new, the architecture, models, offline verification, the threat model and limitations |
 | Nov 1 | Console fix: after a policy or improve action (an htmx `HX-Location` page swap), the no-JavaScript Switch button no longer reappears and the theme toggle no longer disappears; checked in Chromium with JavaScript on and off |
+| Nov 1 | Sign-in and screens by role (D96, `web/logins.py`, `web/routes/signin.py`): per-person passwords kept as scrypt hashes (`make dev-keys`), a lockout after five failures, and each role sees only its pages: supervisors run the agent and approve payments, compliance officers handle rules, the learner and Ask the record, an examiner reads and asks, a demo admin has the Attacks page. Every route is guarded by path; Gate still checks every action. Replaces the persona menu |
 
 Meta tooling used: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals; Muse Wonder (`muse-wonder-1.0`, Standard mode) drafts rules from the policy PDF and revises the learner's prompt. Every call goes through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2).

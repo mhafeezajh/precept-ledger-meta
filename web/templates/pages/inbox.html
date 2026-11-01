@@ -8,13 +8,16 @@
   </div>
 </header>
 
+{% if "payments-supervisor" in session.persona.roles %}
 <section class="section" aria-labelledby="payments-heading">
   <div class="section-head"><h2 id="payments-heading">Payments held</h2><p>Needs a payments supervisor</p></div>
   <div id="queue" hx-get="/queue" hx-trigger="every 4s, queue-changed from:body" hx-swap="innerHTML" aria-live="polite">
     {% include "partials/queue.html" %}
   </div>
 </section>
+{% endif %}
 
+{% if "compliance-officer" in session.persona.roles %}
 <section class="section" aria-labelledby="rules-heading">
   <div class="section-head"><h2 id="rules-heading">Rule changes</h2><p>Needs a compliance officer; a loosening needs two</p></div>
   {% if drafts or suggestions %}
@@ -61,4 +64,5 @@
     {{ empty("No prompt changes are waiting", "A revision appears here only after code finds it no worse than the prompt in force.") }}
   {% endif %}
 </section>
+{% endif %}
 {% endblock %}

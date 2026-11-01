@@ -2,7 +2,7 @@
 
 Runs are in the Console (``router``); approvals are in the Approvals app (``review``), like the
 learner's. Pages are read from the verified export, so anyone may see what changed and why;
-running and approving go to ``pl-gate`` (``/improve/v1``) under the chosen persona's token,
+running and approving go to ``pl-gate`` (``/improve/v1``) under the signed-in person's token,
 and Gate refuses anyone without the compliance-officer role.
 """
 
