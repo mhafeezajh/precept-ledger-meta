@@ -116,7 +116,7 @@ Step by step:
 
 ```sh
 uv sync
-make check              # lint, strict types, 1102 unit + property tests (coverage ≥ 90%), secret scan
+make check              # lint, strict types, 1104 unit + property tests (coverage ≥ 90%), secret scan
 cp .env.example .env    # set the passwords
 make test-integration   # Postgres 16 via docker compose; 27 tests incl. demo beat 4 end to end
                         # (edit a row, export, pl-verify names the record), 2-of-3 witnessing, anchors,
@@ -202,5 +202,6 @@ Every line of code in this repository was written during the building period.
 | Oct 30 | `improve/`: governed self-improvement of the learner's prompt (D95). Muse Wonder revises `learn_proposal` from the learner's own recorded failures; code scores the current and revised prompts on the same history with the learner's own checks and four planted-fault canaries, and blocks a revision that is worse on any measure; two compliance officers approve; every learner run reads the approved version back from the ledger and verifies it (`learn/prompt.py`). `/improve/v1` in `pl-gate`, prompt `improve_prompt/1`. Run live on Muse: an honest revision went to review, the demo shortcut was blocked |
 | Oct 30 | The improver in the browser: the Console's Improve the learner page (the prompt in force, propose a change, history) and a change's page (scores side by side, the planted-fault table, the instructions line by line); learner prompt changes in the Approvals inbox, approved by two officers; `web/routes/improve.py` |
 | Oct 31 | `make demo` and `make video-seed` (`scripts/demo_all.sh`): a clean stream, the services, a seeded week and every beat headless in one command, or ready for recording; README sections for the problem, what is new, the architecture, models, offline verification, the threat model and limitations |
+| Nov 1 | Console fix: after a policy or improve action (an htmx `HX-Location` page swap), the no-JavaScript Switch button no longer reappears and the theme toggle no longer disappears; checked in Chromium with JavaScript on and off |
 
-Meta tooling used so far: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals, through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2). Muse Code will be used for at least one slice and recorded here.
+Meta tooling used: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals; Muse Wonder (`muse-wonder-1.0`, Standard mode) drafts rules from the policy PDF and revises the learner's prompt. Every call goes through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2).

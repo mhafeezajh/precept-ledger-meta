@@ -41,9 +41,14 @@
     if (field) { field.value = example.getAttribute("data-value"); field.focus(); }
   });
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function enhance() {
     applyTheme(currentTheme());
     document.querySelectorAll("[data-js-only]").forEach(function (el) { el.hidden = false; });
     document.querySelectorAll("[data-no-js]").forEach(function (el) { el.hidden = true; });
-  });
+  }
+
+  // Also after every htmx swap: an HX-Location answer swaps a whole page into <body> without a
+  // page load, so DOMContentLoaded never fires and the no-JS Switch button would come back.
+  document.addEventListener("DOMContentLoaded", enhance);
+  document.addEventListener("htmx:load", enhance);
 })();

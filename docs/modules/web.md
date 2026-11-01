@@ -2,7 +2,7 @@
 
 Guarantees that neither web app decides anything or shows anything as proven that it did not verify itself, and that signing happens only in the Approvals app, which mounts nothing else (D94). It is a client of `pl-gate` and `pl-ledger` like any other: it acts for a person with that person's Gate token (kept on the server), and every "proven" mark comes from its own run of `pl-verify`'s checks or a record's inclusion proof.
 
-Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-10-31 · Tests: 25 unit in `tests/unit/test_web.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
+Status: done for this step (all beats in the browser, `make web` + `make approvals`). · Last updated: 2026-11-01 · Tests: 25 unit in `tests/unit/test_web.py`, 1 in `tests/unit/test_web_static.py`, 2 integration in `tests/integration/test_web_tamper.py`, plus 18 console import-boundary checks. Coverage: `security.py` 98%, `routes/` 89–100%, `views.py` 93%, `agent_runs.py` 92%, `backend.py` 89%, `app.py` 86%, `demo.py` 70% in unit tests (its database edit runs in the integration test).
 
 Related pages: [`gate.md`](gate.md), [`policy.md`](policy.md), [`learn.md`](learn.md), [`agent.md`](agent.md), [`assist.md`](assist.md), [`claims.md`](claims.md), [`verify.md`](verify.md), [`../DECISIONS.md`](../DECISIONS.md) D84–D87, D93, D94.
 
@@ -21,7 +21,7 @@ Owns:
 | The tamper button and the rogue-operator scenario (demo mode) | `web/demo.py` |
 | One router per area | `web/routes/{overview,approvals,agent,policy,learn,ledger,audit,demo}.py` |
 | Templates: base layout, component macros, pages, htmx fragments | `web/templates/` |
-| Design tokens and components (one CSS file), small scripts, htmx 2.0.4 (0BSD) | `web/static/` |
+| Design tokens and components (one CSS file), small scripts, htmx 2.0.4 (0BSD). `app.js` hides the no-JS Switch button and shows the theme toggle on page load and after every htmx swap (an `HX-Location` answer swaps a whole page in without a load; fixed Nov 1, checked in Chromium with JavaScript on and off) | `web/static/` |
 
 Does not own: decisions (Gate), policy checks and approval (`policy/`), the learner's counts and replay (`learn/`), proofs (`claims/`, `verify/`), the agent itself (`agent/`). Each page calls those through their APIs or functions and shows the result.
 
@@ -137,7 +137,7 @@ make serve           # with WITNESSES=..., so checkpoints become final
 make gate DEMO_MODE=true
 DEMO_MODE=true make web    # the Console, http://127.0.0.1:8090; DEMO_MODE adds the Attacks page
 make approvals             # the Approvals app, http://127.0.0.1:8094
-uv run pytest tests/unit/test_web.py
+uv run pytest tests/unit/test_web.py tests/unit/test_web_static.py
 make test-integration      # includes the real tamper edit
 ```
 
