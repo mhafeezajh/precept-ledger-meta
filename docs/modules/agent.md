@@ -172,7 +172,7 @@ reply: Paid $48,000.00 to Northwind Supply (payment pay-01m62hghn8x1v7q6f7ybgqn5
 
 ## Known gaps
 
-- Muse Spark has not driven the agent yet. The prompt (`agent_step/1`) is tested only against the mock script. Run the `live` test before recording.
+- Muse Spark has driven the agent live (`agent_step/1` timings in `docs/MODELS.md`), but the unit tests run it against the mock script only; the `live` test is skipped by default.
 - One run at a time from the CLI. The web page will start runs and stream `Observer` events.
 - The bank is in memory and forgets between runs; the ledger is the lasting record.
 - No MCP proxy: tools are called through `@governed` only (cut order, skill §11).
