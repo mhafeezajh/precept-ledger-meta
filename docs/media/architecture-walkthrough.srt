@@ -1,0 +1,199 @@
+1
+00:00:00,400 --> 00:00:01,829
+How Precept Ledger works.
+
+2
+00:00:02,049 --> 00:00:06,650
+A tour of the services, the records they write, and the checks that make each one trustworthy.
+
+3
+00:00:07,600 --> 00:00:10,907
+Precept Ledger is a few small services around one ledger.
+
+4
+00:00:11,127 --> 00:00:14,391
+Gate stands in front of every tool call the payments agent makes.
+
+5
+00:00:14,611 --> 00:00:21,416
+The ledger keeps every decision. Three independent witnesses cosign its checkpoints, and outside time anchors seal them.
+
+6
+00:00:21,636 --> 00:00:27,247
+People sign in to two web apps: the Console to operate and prove, and the Approvals app to sign.
+
+7
+00:00:27,467 --> 00:00:32,693
+Every call to Muse Spark or Muse Wonder goes through one module, and code checks what comes back.
+
+8
+00:00:32,913 --> 00:00:36,883
+And the offline verifier checks an export, with nothing but public keys.
+
+9
+00:00:37,833 --> 00:00:39,156
+Follow one tool call.
+
+10
+00:00:39,376 --> 00:00:44,731
+Gate maps it to an action and typed facts: the amount, whether the payee is new, the local hour.
+
+11
+00:00:44,951 --> 00:00:50,071
+When delegation is on, it checks a credential signed by the business owner the agent works for.
+
+12
+00:00:50,291 --> 00:00:53,981
+Then Cedar rules decide: allow, deny, or hold for a person.
+
+13
+00:00:54,201 --> 00:00:58,468
+Gate signs the decision and appends it. The ledger answers with a signed receipt.
+
+14
+00:00:58,688 --> 00:01:05,683
+The agent's wrapper checks Gate's signature and the receipt itself, and only then does the tool run. No receipt means deny.
+
+15
+00:01:06,633 --> 00:01:08,852
+A held call opens an approval request.
+
+16
+00:01:09,072 --> 00:01:13,829
+Muse Spark writes a brief in the background, and every fact in it must cite a ledger record.
+
+17
+00:01:14,049 --> 00:01:23,159
+A supervisor signs in to the Approvals app and decides. The signed verdict is recorded first. On approval the tool runs, and its result is recorded too.
+
+18
+00:01:23,379 --> 00:01:28,483
+If nobody decides before the deadline, the request expires, and that counts as a denial.
+
+19
+00:01:29,433 --> 00:01:31,417
+Every record follows one recipe.
+
+20
+00:01:31,637 --> 00:01:36,629
+It is serialized as canonical JSON, so the same record always gives the same bytes.
+
+21
+00:01:36,849 --> 00:01:42,908
+Its producer signs those bytes with Ed25519, before the ledger ever sees them.
+
+22
+00:01:43,128 --> 00:01:49,336
+The ledger chains it. Each hash covers the previous hash and the record, so any edit breaks at its sequence number.
+
+23
+00:01:49,556 --> 00:01:55,283
+And it becomes a leaf of a Merkle tree, with its own prefix, so one kind of hash can never pass for another.
+
+24
+00:01:56,233 --> 00:02:00,393
+Every ten seconds, the ledger signs a checkpoint: the tree size and its root.
+
+25
+00:02:00,613 --> 00:02:06,907
+Each witness asks for a consistency proof from the last size it signed, checks that history only grew, and cosigns.
+
+26
+00:02:07,127 --> 00:02:09,836
+Two of three cosignatures make a checkpoint final.
+
+27
+00:02:10,056 --> 00:02:16,093
+Final checkpoints get an R F C thirty-one sixty-one timestamp, and every hour, an anchor in Bitcoin.
+
+28
+00:02:16,313 --> 00:02:22,917
+If the operator rewrites history, even with the log's own key, there is no consistency proof, and the witnesses refuse.
+
+29
+00:02:23,867 --> 00:02:26,277
+Rules begin as the bank's written policy.
+
+30
+00:02:26,497 --> 00:02:29,889
+Muse Wonder drafts each rule, with the exact quote it came from.
+
+31
+00:02:30,109 --> 00:02:40,243
+Code compiles the rules to Cedar, runs every fixture, and checks each number against its clause. A fifty thousand dollar limit under a five thousand dollar clause is refused.
+
+32
+00:02:40,463 --> 00:02:45,183
+A compliance officer approves, and Gate switches to the new rule set, recording its hash.
+
+33
+00:02:46,133 --> 00:02:51,851
+When an examiner asks a question, the export is verified first, up to the latest witnessed checkpoint.
+
+34
+00:02:52,071 --> 00:02:56,231
+The model picks the filters, and code runs the query over that proven history.
+
+35
+00:02:56,451 --> 00:03:00,525
+Muse Spark answers in claims, each citing records and asserting their fields.
+
+36
+00:03:00,745 --> 00:03:06,917
+The claim checker proves each claim, or rejects it with the exact reason. And the audit itself is recorded.
+
+37
+00:03:07,867 --> 00:03:12,645
+The Policy Learner counts patterns with SQL, and drops approvals that look rubber-stamped.
+
+38
+00:03:12,865 --> 00:03:18,476
+Muse Spark drafts a rule change, and must restate every count, which code checks against SQL.
+
+39
+00:03:18,696 --> 00:03:24,008
+A replay blocks any loosening that would have allowed a past rejection, and loosening needs two approvers.
+
+40
+00:03:24,228 --> 00:03:32,150
+Muse Wonder can even revise the learner's prompt. Code plants four faults in each draft, every one must still be caught, and two officers approve.
+
+41
+00:03:33,100 --> 00:03:36,193
+People sign in, and each role sees only its own screens.
+
+42
+00:03:36,413 --> 00:03:44,243
+Supervisors run the agent and approve payments. Compliance officers own the rules. An examiner can read and ask, but never act.
+
+43
+00:03:44,463 --> 00:03:49,683
+Other roles' pages are refused, and Gate still checks every action with the person's own token.
+
+44
+00:03:50,633 --> 00:03:52,063
+Anyone can check the result.
+
+45
+00:03:52,283 --> 00:03:59,749
+Export the stream, and the offline verifier checks every signature, the chain, the Merkle root, the witness quorum and the timestamps.
+
+46
+00:03:59,969 --> 00:04:05,250
+It opens no network connection, and if anything was changed, it names the first broken record.
+
+47
+00:04:06,200 --> 00:04:07,352
+Models extract.
+
+48
+00:04:07,572 --> 00:04:08,511
+Code decides.
+
+49
+00:04:08,731 --> 00:04:09,968
+Anyone can verify.
+
+50
+00:04:10,188 --> 00:04:11,783
+That's how Precept Ledger works.

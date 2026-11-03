@@ -37,6 +37,12 @@ flowchart LR
 
 The full design, the exact hash and signature formulas and every flow are in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
+**Architecture walkthrough (video, 4 min):** the components, one tool call through Gate, a held payment, how a record is built, checkpoints and witnesses, policy to rules, proof-checked answers, the learner, sign-in by role and offline verification, each drawn step by step.
+
+[![Architecture walkthrough: the component map](docs/media/architecture-walkthrough.jpg)](docs/media/architecture-walkthrough.mp4)
+
+[Watch `docs/media/architecture-walkthrough.mp4`](docs/media/architecture-walkthrough.mp4) · captions: [`architecture-walkthrough.srt`](docs/media/architecture-walkthrough.srt). Narration by Kokoro, an open-source voice model (Apache-2.0) run locally; diagrams drawn from `docs/ARCHITECTURE.md`.
+
 ## Meta models used and where
 
 | Model | Used for | Checked by |
@@ -206,5 +212,6 @@ Every line of code in this repository was written during the building period.
 | Oct 31 | `make demo` and `make video-seed` (`scripts/demo_all.sh`): a clean stream, the services, a seeded week and every beat headless in one command, or ready for recording; README sections for the problem, what is new, the architecture, models, offline verification, the threat model and limitations |
 | Nov 1 | Console fix: after a policy or improve action (an htmx `HX-Location` page swap), the no-JavaScript Switch button no longer reappears and the theme toggle no longer disappears; checked in Chromium with JavaScript on and off |
 | Nov 1 | Sign-in and screens by role (D96, `web/logins.py`, `web/routes/signin.py`): per-person passwords kept as scrypt hashes (`make dev-keys`), a lockout after five failures, and each role sees only its pages: supervisors run the agent and approve payments, compliance officers handle rules, the learner and Ask the record, an examiner reads and asks, a demo admin has the Attacks page. Every route is guarded by path; Gate still checks every action. Replaces the persona menu |
+| Nov 3 | `docs/media/architecture-walkthrough.mp4` (with captions and a poster): an animated walkthrough of the architecture and every flow, linked from the Architecture section |
 
 Meta tooling used: Muse Spark 1.3 (`muse-spark-1.3`, Standard mode) writes approval briefs and auditor answers, picks the payments agent's steps and drafts the learner's proposals; Muse Wonder (`muse-wonder-1.0`, Standard mode) drafts rules from the policy PDF and revises the learner's prompt. Every call goes through `assist/llm.py`; see [`docs/MODELS.md`](docs/MODELS.md). Gate itself makes no model calls (R2).
